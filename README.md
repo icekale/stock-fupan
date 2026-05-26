@@ -1,6 +1,6 @@
-# A 股收盘复盘 v0.1
+# A 股收盘复盘 v0.2
 
-A 股收盘复盘是一个本地优先的每日复盘工作流。v0.1 使用确定性的假数据提供方生成收盘复盘报告，并提供 FastAPI 后端与 Next.js 前端用于本地查看和验证报告生成链路。
+A 股收盘复盘是一个本地优先的每日复盘工作流。v0.2 默认接入 AkShare 行情与 Anspire 新闻搜索，并在真实数据不可用时自动回退到确定性 fake provider，前端会展示详细数据源诊断。
 
 ## Backend Dev Startup
 
@@ -12,6 +12,24 @@ uv run uvicorn app.main:app --reload --port 8000
 ```
 
 Backend API runs at `http://localhost:8000`. Playwright Chromium is required for `report.png` export.
+
+## Real Data Providers
+
+v0.2 defaults to real providers with fake fallback:
+
+```dotenv
+MARKET_PROVIDER=akshare
+NEWS_PROVIDER=anspire
+PROVIDER_FALLBACK_ENABLED=true
+ANSPIRE_API_KEY=
+```
+
+Behavior:
+
+- AkShare is used only for the current date/current close snapshot in v0.2.
+- Historical dates fall back to fake data and show a provider diagnostic in the frontend.
+- Anspire requires `ANSPIRE_API_KEY`; missing key, API errors, timeouts, and empty results fall back to fake news.
+- Provider diagnostics are returned in `provider_status` and saved in `snapshot.json`.
 
 ## Frontend Dev Startup
 
@@ -43,19 +61,20 @@ docker compose up --build
 
 Then open `http://localhost:3000`.
 
-## v0.1 Scope
+## v0.2 Scope
 
 - Generate a close-market review through `POST /api/reports/close`.
-- Use deterministic fake market, news, and LLM providers.
+- Use AkShare market data and Anspire news search by default.
+- Fall back to deterministic fake market/news providers with visible diagnostics.
 - Persist report metadata and generated report assets locally.
 - Render a mobile-friendly HTML/PNG report and expose it through the frontend.
 - Support local browser-to-API calls from `http://localhost:3000`.
 
-## Future v0.2/v0.3 Items
+## Future v0.3 Items
 
-- Live market/news data providers.
 - Scheduled report generation.
 - OCR and image-based evidence ingestion.
 - Watchlist import.
+- Reference HTML aligned structured long-report template.
 - Markdown/PDF export.
 - Authentication and multi-user workflows.
