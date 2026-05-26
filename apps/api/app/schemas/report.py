@@ -3,6 +3,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.schemas.structured_review import StructuredReviewDTO
+
 
 class ReportKind(StrEnum):
     CLOSE = "close"
@@ -95,6 +97,7 @@ class ReportDTO(BaseModel):
     sectors: list[SectorCandidate]
     narrative: ReportNarrative
     news: list[NewsItem] = Field(default_factory=list)
+    structured_review: StructuredReviewDTO | None = None
     overrides: list[OverrideRecord] = Field(default_factory=list)
     algorithm_versions: dict[str, str] = Field(
         default_factory=lambda: {
