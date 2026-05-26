@@ -1,3 +1,10 @@
+import pytest
+
+from app.providers.llm import FakeLLMProvider, LLMFallbackError
+from app.providers.market import FakeMarketDataProvider
+from app.providers.news import FakeNewsProvider
+from app.rules.scoring import score_sectors
+from app.schemas.report import ReportDTO, ReportKind, SectorCandidate
 from app.schemas.structured_review import (
     ActionDiscipline,
     MarketOverviewTable,
@@ -7,12 +14,8 @@ from app.schemas.structured_review import (
     SustainabilityRank,
     TomorrowJudgement,
 )
-from app.providers.llm import FakeLLMProvider
-from app.providers.market import FakeMarketDataProvider
-from app.providers.news import FakeNewsProvider
-from app.rules.scoring import score_sectors
-from app.schemas.report import ReportDTO, ReportKind, SectorCandidate
 from app.services.structured_review_builder import build_structured_review
+from app.services.structured_review_generator import generate_structured_review
 
 
 def test_structured_review_serializes_core_modules() -> None:
@@ -123,3 +126,81 @@ def test_build_structured_review_derives_core_modules_from_report() -> None:
     assert review.sector_reviews[0].sustainability == "high"
     assert review.sustainability_ranking[0].sector == "机器人"
     assert "机器人" in review.action_discipline.final_view
+class SuccessfulStructuredLLM:
+    provider_name = "openai"
+
+    def generate_structured_review(self, seed: dict[str, object]):
+        review = build_structured_review(_fake_report())
+        review.topic = "LLM生成 · 科技内部复盘"
+        return review
+
+
+class BrokenStructuredLLM:
+    provider_name = "openai"
+
+    def generate_structured_review(self, seed: dict[str, object]):
+        raise LLMFallbackError("OPENAI_API_KEY 未配置")
+
+
+def test_structured_review_generator_rule_mode_returns_rule_status() -> None:
+    report = _fake_report()
+
+    review, status = generate_structured_review(
+        report=report,
+        llm_provider=BrokenStructuredLLM(),
+        provider_mode="rule",
+        fallback_enabled=True,
+    )
+
+    assert review.topic == "放量分化 · 机器人领涨 · PCB轮动"
+    assert status.model_dump(mode="json") == {
+        "provider": "rule",
+        "status": "success",
+        "fallback_used": False,
+        "reason": None,
+    }
+
+
+def test_structured_review_generator_llm_mode_uses_llm_on_success() -> None:
+    report = _fake_report()
+
+    review, status = generate_structured_review(
+        report=report,
+        llm_provider=SuccessfulStructuredLLM(),
+        provider_mode="llm",
+        fallback_enabled=True,
+    )
+
+    assert review.topic == "LLM生成 · 科技内部复盘"
+    assert status.provider == "llm"
+    assert status.status == "success"
+    assert status.fallback_used is False
+
+
+def test_structured_review_generator_falls_back_to_rule_on_llm_failure() -> None:
+    report = _fake_report()
+
+    review, status = generate_structured_review(
+        report=report,
+        llm_provider=BrokenStructuredLLM(),
+        provider_mode="llm",
+        fallback_enabled=True,
+    )
+
+    assert review.topic == "放量分化 · 机器人领涨 · PCB轮动"
+    assert status.provider == "llm"
+    assert status.status == "fallback"
+    assert status.fallback_used is True
+    assert status.reason == "OPENAI_API_KEY 未配置"
+
+
+def test_structured_review_generator_can_raise_when_fallback_disabled() -> None:
+    report = _fake_report()
+
+    with pytest.raises(LLMFallbackError, match="OPENAI_API_KEY"):
+        generate_structured_review(
+            report=report,
+            llm_provider=BrokenStructuredLLM(),
+            provider_mode="llm",
+            fallback_enabled=False,
+        )
