@@ -9,6 +9,12 @@ from app.providers.market import (
     MarketDataProvider,
 )
 from app.providers.news import AnspireNewsProvider, FakeNewsProvider, FallbackNewsProvider, NewsProvider
+from app.providers.ocr import (
+    FakeOcrProvider,
+    FallbackOcrProvider,
+    OcrProvider,
+    OpenAIVisionOcrProvider,
+)
 from app.providers.tickflow import (
     FakeTickFlowProvider,
     FallbackTickFlowProvider,
@@ -22,12 +28,14 @@ class ProviderBundle:
     market_provider: MarketDataProvider
     news_provider: NewsProvider
     llm_provider: LLMProvider
+    ocr_provider: OcrProvider
     tickflow_provider: TickFlowQuoteProvider
 
     def close(self) -> None:
         _close_provider(self.market_provider)
         _close_provider(self.news_provider)
         _close_provider(self.llm_provider)
+        _close_provider(self.ocr_provider)
         _close_provider(self.tickflow_provider)
 
     def __enter__(self) -> "ProviderBundle":
@@ -42,6 +50,7 @@ def create_provider_bundle(settings: Settings) -> ProviderBundle:
         market_provider=_create_market_provider(settings),
         news_provider=_create_news_provider(settings),
         llm_provider=_create_llm_provider(settings),
+        ocr_provider=_create_ocr_provider(settings),
         tickflow_provider=_create_tickflow_provider(settings),
     )
 
@@ -86,6 +95,23 @@ def _create_llm_provider(settings: Settings) -> LLMProvider:
             model_name=settings.llm_model,
         )
     raise ValueError(f"Unsupported LLM_PROVIDER: {settings.llm_provider}")
+
+
+def _create_ocr_provider(settings: Settings) -> OcrProvider:
+    if settings.ocr_provider == "fake":
+        return FakeOcrProvider()
+    if settings.ocr_provider == "openai":
+        return FallbackOcrProvider(
+            primary=OpenAIVisionOcrProvider(
+                api_key=settings.openai_api_key,
+                base_url=settings.openai_base_url,
+                model_name=settings.ocr_model,
+                timeout_seconds=settings.provider_timeout_seconds,
+            ),
+            fallback=FakeOcrProvider(),
+            fallback_enabled=settings.ocr_fallback_enabled,
+        )
+    raise ValueError(f"Unsupported OCR_PROVIDER: {settings.ocr_provider}")
 
 
 def _create_tickflow_provider(settings: Settings) -> TickFlowQuoteProvider:

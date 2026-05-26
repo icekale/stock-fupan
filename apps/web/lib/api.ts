@@ -1,4 +1,4 @@
-import type { CreateReportResponse, WatchlistImportResult } from "./types";
+import type { CreateReportResponse, WatchlistImportResult, WatchlistOcrPreviewResult } from "./types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
@@ -57,6 +57,31 @@ export async function importWatchlistFile(file: File): Promise<WatchlistImportRe
   });
   if (!response.ok) {
     throw new Error(`导入失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<WatchlistImportResult>;
+}
+
+export async function previewWatchlistOcr(file: File): Promise<WatchlistOcrPreviewResult> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const response = await fetch(`${API_BASE_URL}/api/watchlists/ocr-preview`, {
+    method: "POST",
+    body: formData,
+  });
+  if (!response.ok) {
+    throw new Error(`OCR 识别失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<WatchlistOcrPreviewResult>;
+}
+
+export async function confirmWatchlistOcr(previewId: string): Promise<WatchlistImportResult> {
+  const response = await fetch(`${API_BASE_URL}/api/watchlists/ocr-confirm`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ preview_id: previewId }),
+  });
+  if (!response.ok) {
+    throw new Error(`OCR 导入失败：${response.status} ${await response.text()}`);
   }
   return response.json() as Promise<WatchlistImportResult>;
 }

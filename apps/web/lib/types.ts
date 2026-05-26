@@ -119,6 +119,26 @@ export type WatchlistImportResult = {
   warnings: string[];
 };
 
+export type OcrProviderStatus = {
+  provider: string;
+  status: "success" | "fallback";
+  fallback_used: boolean;
+  reason: string | null;
+};
+
+export type WatchlistOcrPreviewResult = {
+  preview_id: string;
+  source_name: string;
+  item_count: number;
+  items: WatchlistItem[];
+  warnings: string[];
+  ocr_text: string;
+  provider_status: OcrProviderStatus;
+  image_snapshot_path: string;
+  ocr_text_snapshot_path: string;
+  preview_snapshot_path: string;
+};
+
 export type WatchlistMatch = {
   symbol: string;
   name: string | null;

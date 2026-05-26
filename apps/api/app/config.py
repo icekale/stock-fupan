@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     openai_base_url: str = "https://api.openai.com/v1"
     llm_model: str = "gpt-4.1-mini"
     llm_provider: str = "fake"
+    ocr_provider: str = "fake"
+    ocr_fallback_enabled: bool = True
+    ocr_model: str = "gpt-4.1-mini"
     structured_review_provider: str = "rule"
     structured_review_fallback_enabled: bool = True
     anspire_api_key: str = ""
