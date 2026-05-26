@@ -1,6 +1,10 @@
+from datetime import date
+
+import pandas as pd
 import pytest
 
 from app.providers.market import (
+    AkShareMarketDataProvider,
     FakeMarketDataProvider,
     FallbackMarketDataProvider,
     MarketCloseSnapshot,
@@ -108,3 +112,58 @@ def test_news_fallback_returns_fake_items_and_reason() -> None:
     assert result.status.status == "fallback"
     assert result.status.fallback_used is True
     assert result.status.reason == "ANSPIRE_API_KEY 未配置"
+
+
+def test_akshare_provider_builds_current_market_snapshot(monkeypatch) -> None:
+    class FakeAkshare:
+        @staticmethod
+        def stock_zh_index_spot_em() -> pd.DataFrame:
+            return pd.DataFrame(
+                [
+                    {"名称": "上证指数", "代码": "000001", "最新价": 3100.5, "涨跌幅": 1.2},
+                    {"名称": "创业板指", "代码": "399006", "最新价": 1950.2, "涨跌幅": 2.1},
+                ]
+            )
+
+        @staticmethod
+        def stock_zh_a_spot_em() -> pd.DataFrame:
+            return pd.DataFrame(
+                [
+                    {"代码": "000001", "名称": "平安银行", "涨跌幅": 1.0, "成交额": 100000000},
+                    {"代码": "000002", "名称": "万科A", "涨跌幅": -1.0, "成交额": 200000000},
+                    {"代码": "000003", "名称": "涨停股", "涨跌幅": 10.0, "成交额": 300000000},
+                    {"代码": "000004", "名称": "跌停股", "涨跌幅": -10.0, "成交额": 400000000},
+                ]
+            )
+
+        @staticmethod
+        def stock_board_industry_name_em() -> pd.DataFrame:
+            return pd.DataFrame(
+                [
+                    {"板块名称": "机器人", "涨跌幅": 5.88, "上涨家数": 41, "下跌家数": 9, "总成交额": 35000000000},
+                    {"板块名称": "PCB", "涨跌幅": 3.6, "上涨家数": 35, "下跌家数": 15, "总成交额": 22000000000},
+                ]
+            )
+
+    provider = AkShareMarketDataProvider(
+        akshare_module=FakeAkshare,
+        today=date(2026, 5, 26),
+    )
+
+    snapshot = provider.get_close_snapshot("2026-05-26")
+
+    assert snapshot.indices[0].name == "上证指数"
+    assert snapshot.breadth.up_count == 2
+    assert snapshot.breadth.down_count == 2
+    assert snapshot.breadth.limit_up_count == 1
+    assert snapshot.breadth.limit_down_count == 1
+    assert snapshot.turnover_cny == 10.0
+    assert snapshot.raw_sectors[0].name == "机器人"
+    assert snapshot.raw_sectors[0].stock_up_ratio == 0.82
+
+
+def test_akshare_provider_rejects_historical_date() -> None:
+    provider = AkShareMarketDataProvider(today=date(2026, 5, 26))
+
+    with pytest.raises(ProviderFallbackError, match="历史日期"):
+        provider.get_close_snapshot("2026-05-25")
