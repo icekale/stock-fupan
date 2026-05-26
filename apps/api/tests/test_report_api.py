@@ -231,8 +231,14 @@ def test_report_generator_writes_structured_review_to_report_and_snapshot(tmp_pa
 
     report_dto = json.loads(result.assets.report_dto.read_text(encoding="utf-8"))
     snapshot = json.loads(result.assets.snapshot.read_text(encoding="utf-8"))
+    assert result.report.structured_review.after_hours_news.domestic_catalysts
+    assert result.report.structured_review.capital_rotation.actual_path
     assert report_dto["structured_review"]["tomorrow_judgement"]["most_likely_to_continue"] == "机器人"
+    assert report_dto["structured_review"]["practical_conclusion"]["headline"].startswith("明日最实战")
     assert snapshot["report"]["structured_review"] == report_dto["structured_review"]
+    assert snapshot["report"]["structured_review"]["index_mid_term_outlook"]["scenario_table"][0][
+        "scenario"
+    ] == "强势延续"
 
 
 def test_report_generator_exports_png(tmp_path: Path) -> None:
@@ -279,14 +285,24 @@ def test_mobile_report_renderer_contains_core_sections(tmp_path: Path) -> None:
         disclaimer_enabled=True,
     )
 
+    expected_titles = [
+        "昨日预判验证",
+        "先给结论",
+        "盘面总览",
+        "各板块详细分析",
+        "盘后 / 隔夜消息梳理",
+        "板块持续性排序",
+        "资金轮动路径分析",
+        "明日可介入标的与仓位建议",
+        "自选股观察",
+        "去弱留强排序",
+        "最实战的结论",
+        "上证指数中期走势研判",
+    ]
+
     assert "2026-05-26 A股复盘" in html
-    assert "昨日预判验证" in html
-    assert "明日核心判断" in html
-    assert "盘面总览" in html
-    assert "板块详细分析" in html
-    assert "持续性排序" in html
-    assert "去弱留强" in html
-    assert "回避清单" in html
+    for title in expected_titles:
+        assert title in html
     assert "科技内部" in html
     assert "非投资建议" in html
 

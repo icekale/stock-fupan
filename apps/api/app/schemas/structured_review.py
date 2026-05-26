@@ -31,6 +31,36 @@ class MarketOverviewTable(BaseModel):
     capital_flow_summary: str
 
 
+class AfterHoursNewsSummary(BaseModel):
+    us_market_mapping: list[str] = Field(default_factory=list)
+    domestic_catalysts: list[str] = Field(default_factory=list)
+    risk_notes: list[str] = Field(default_factory=list)
+
+
+class CapitalRotationPath(BaseModel):
+    actual_path: list[str] = Field(default_factory=list)
+    key_finding: str
+    next_path_watch: list[str] = Field(default_factory=list)
+
+
+class NextDayOpportunityPlan(BaseModel):
+    focus_candidates: list[str] = Field(default_factory=list)
+    position_discipline: list[str] = Field(default_factory=list)
+    trigger_conditions: list[str] = Field(default_factory=list)
+    avoid_conditions: list[str] = Field(default_factory=list)
+
+
+class PracticalConclusion(BaseModel):
+    headline: str
+    bullet_points: list[str] = Field(default_factory=list)
+
+
+class IndexMidTermOutlook(BaseModel):
+    year_review: list[str] = Field(default_factory=list)
+    current_position: str
+    scenario_table: list[dict[str, str]] = Field(default_factory=list)
+
+
 class StructuredSectorReview(BaseModel):
     sector: str
     headline: str
@@ -62,6 +92,11 @@ class StructuredReviewDTO(BaseModel):
     prediction_review: PredictionReview
     tomorrow_judgement: TomorrowJudgement
     market_overview: MarketOverviewTable
+    after_hours_news: AfterHoursNewsSummary
     sector_reviews: list[StructuredSectorReview] = Field(default_factory=list)
     sustainability_ranking: list[SustainabilityRank] = Field(default_factory=list)
+    capital_rotation: CapitalRotationPath
+    next_day_opportunity: NextDayOpportunityPlan
+    practical_conclusion: PracticalConclusion
+    index_mid_term_outlook: IndexMidTermOutlook
     action_discipline: ActionDiscipline

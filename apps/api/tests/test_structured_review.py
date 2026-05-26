@@ -7,7 +7,12 @@ from app.rules.scoring import score_sectors
 from app.schemas.report import ReportDTO, ReportKind, SectorCandidate
 from app.schemas.structured_review import (
     ActionDiscipline,
+    AfterHoursNewsSummary,
+    CapitalRotationPath,
+    IndexMidTermOutlook,
     MarketOverviewTable,
+    NextDayOpportunityPlan,
+    PracticalConclusion,
     PredictionReview,
     StructuredReviewDTO,
     StructuredSectorReview,
@@ -42,6 +47,11 @@ def test_structured_review_serializes_core_modules() -> None:
             structure_features=["放量", "分化"],
             capital_flow_summary="资金集中在科技方向内部轮动。",
         ),
+        after_hours_news=AfterHoursNewsSummary(
+            us_market_mapping=["英伟达链条映射仍需观察"],
+            domestic_catalysts=["机器人产业催化延续"],
+            risk_notes=["盘后消息只作为次日观察线索"],
+        ),
         sector_reviews=[
             StructuredSectorReview(
                 sector="机器人",
@@ -59,6 +69,29 @@ def test_structured_review_serializes_core_modules() -> None:
         sustainability_ranking=[
             SustainabilityRank(rank=1, sector="机器人", rating="high", reason="强度和催化同时领先")
         ],
+        capital_rotation=CapitalRotationPath(
+            actual_path=["机器人承接", "PCB轮动", "防御补位"],
+            key_finding="科技内部仍是资金轮动主场。",
+            next_path_watch=["观察机器人分歧后是否回流", "观察PCB是否继续扩散"],
+        ),
+        next_day_opportunity=NextDayOpportunityPlan(
+            focus_candidates=["机器人核心股承接", "PCB前排分歧转强"],
+            position_discipline=["只观察确认后的承接，不追一致加速"],
+            trigger_conditions=["指数不明显放量下杀", "主线前排分歧温和"],
+            avoid_conditions=["缩量冲高回落", "无催化后排补涨"],
+        ),
+        practical_conclusion=PracticalConclusion(
+            headline="明日重点是科技内部去弱留强。",
+            bullet_points=["先看机器人承接", "再看PCB轮动强度", "弱分支不追高"],
+        ),
+        index_mid_term_outlook=IndexMidTermOutlook(
+            year_review=["指数处于结构性修复阶段"],
+            current_position="当前位置更适合观察量能和主线扩散，而不是预设单边趋势。",
+            scenario_table=[
+                {"scenario": "强势", "condition": "放量上行", "response": "观察主线扩散"},
+                {"scenario": "震荡", "condition": "量能持平", "response": "控制节奏"},
+            ],
+        ),
         action_discipline=ActionDiscipline(
             focus=["保留机器人核心方向观察"],
             avoid=["回避无催化的跟风补涨"],
@@ -72,6 +105,11 @@ def test_structured_review_serializes_core_modules() -> None:
     assert payload["prediction_review"]["source"] == "manual_placeholder"
     assert payload["sector_reviews"][0]["sustainability"] == "high"
     assert payload["action_discipline"]["avoid"] == ["回避无催化的跟风补涨"]
+    assert payload["after_hours_news"]["domestic_catalysts"] == ["机器人产业催化延续"]
+    assert payload["capital_rotation"]["actual_path"][0] == "机器人承接"
+    assert payload["next_day_opportunity"]["focus_candidates"][0] == "机器人核心股承接"
+    assert payload["practical_conclusion"]["headline"] == "明日重点是科技内部去弱留强。"
+    assert payload["index_mid_term_outlook"]["scenario_table"][0]["scenario"] == "强势"
 
 
 def _fake_report() -> ReportDTO:
@@ -126,6 +164,14 @@ def test_build_structured_review_derives_core_modules_from_report() -> None:
     assert review.sector_reviews[0].sustainability == "high"
     assert review.sustainability_ranking[0].sector == "机器人"
     assert "机器人" in review.action_discipline.final_view
+    assert review.after_hours_news.domestic_catalysts
+    assert review.after_hours_news.risk_notes == ["盘后消息只作为次日观察线索，不作为单独决策依据。"]
+    assert review.capital_rotation.actual_path[0] == "机器人承接"
+    assert "机器人" in review.capital_rotation.key_finding
+    assert review.next_day_opportunity.focus_candidates[0] == "机器人核心股承接确认"
+    assert "不追一致加速" in review.next_day_opportunity.position_discipline[0]
+    assert review.practical_conclusion.headline.startswith("明日最实战")
+    assert review.index_mid_term_outlook.scenario_table[0]["scenario"] == "强势延续"
 class SuccessfulStructuredLLM:
     provider_name = "openai"
 

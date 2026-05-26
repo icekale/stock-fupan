@@ -69,6 +69,11 @@ def _valid_structured_payload() -> dict[str, object]:
             "structure_features": ["放量", "分化"],
             "capital_flow_summary": "资金在科技方向内部切换。",
         },
+        "after_hours_news": {
+            "us_market_mapping": ["海外科技链条反馈仍需观察"],
+            "domestic_catalysts": ["机器人产业催化延续"],
+            "risk_notes": ["盘后消息只作为次日观察线索"],
+        },
         "sector_reviews": [
             {
                 "sector": "机器人",
@@ -86,6 +91,28 @@ def _valid_structured_payload() -> dict[str, object]:
         "sustainability_ranking": [
             {"rank": 1, "sector": "机器人", "rating": "high", "reason": "强度领先"}
         ],
+        "capital_rotation": {
+            "actual_path": ["机器人承接", "PCB轮动"],
+            "key_finding": "资金仍在科技内部切换。",
+            "next_path_watch": ["观察机器人分歧后回流", "观察PCB扩散质量"],
+        },
+        "next_day_opportunity": {
+            "focus_candidates": ["机器人核心股承接确认"],
+            "position_discipline": ["不追一致加速"],
+            "trigger_conditions": ["指数不放量下杀"],
+            "avoid_conditions": ["缩量冲高回落"],
+        },
+        "practical_conclusion": {
+            "headline": "明日围绕机器人去弱留强。",
+            "bullet_points": ["先看承接", "再看轮动"],
+        },
+        "index_mid_term_outlook": {
+            "year_review": ["指数仍是结构行情载体"],
+            "current_position": "当前位置观察量能和主线扩散。",
+            "scenario_table": [
+                {"scenario": "强势延续", "condition": "放量上行", "response": "观察扩散"}
+            ],
+        },
         "action_discipline": {
             "focus": ["观察机器人核心方向"],
             "avoid": ["回避跟风补涨"],
@@ -107,6 +134,7 @@ def test_openai_llm_provider_maps_json_to_structured_review() -> None:
 
     assert review.topic == "科技内部淘汰赛 · 主线换挡日"
     assert review.sector_reviews[0].sector == "机器人"
+    assert review.capital_rotation.actual_path == ["机器人承接", "PCB轮动"]
     assert completions.last_kwargs["model"] == "gpt-4.1-mini"
     assert completions.last_kwargs["response_format"] == {"type": "json_object"}
 
