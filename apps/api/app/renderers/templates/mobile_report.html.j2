@@ -198,10 +198,10 @@
             </table>
           </section>
 
-          <section>
-            <div class="section-title"><span class="section-num">09</span><h2>自选股观察</h2></div>
-            {% set watch = report.watchlist_observation %}
-            {% if watch %}
+          {% set watch = report.watchlist_observation %}
+          {% if watch %}
+            <section>
+              <div class="section-title"><span class="section-num">09</span><h2>自选股观察</h2></div>
               <p class="muted">导入 {{ watch.total_count }} 只，行情匹配 {{ watch.quote_count }} 只。</p>
               {% if watch.strongest %}
                 <div class="info-card">
@@ -216,13 +216,11 @@
                 </div>
               {% endif %}
               {% if watch.notes %}<p class="muted">{{ watch.notes|join("；") }}</p>{% endif %}
-            {% else %}
-              <p class="muted">未导入自选股。</p>
-            {% endif %}
-          </section>
+            </section>
+          {% endif %}
 
           <section>
-            <div class="section-title"><span class="section-num">10</span><h2>去弱留强排序</h2></div>
+            <div class="section-title"><span class="section-num">{{ "10" if watch else "09" }}</span><h2>去弱留强排序</h2></div>
             <div class="avoid-box">
               <div class="mini-title">去弱留强</div>
               <ul>{% for item in structured.action_discipline.focus %}<li>{{ item }}</li>{% endfor %}</ul>
@@ -233,13 +231,13 @@
           </section>
 
           <section>
-            <div class="section-title"><span class="section-num">11</span><h2>最实战的结论</h2></div>
+            <div class="section-title"><span class="section-num">{{ "11" if watch else "10" }}</span><h2>最实战的结论</h2></div>
             <div class="conclusion-box"><p>{{ structured.practical_conclusion.headline }}</p></div>
             <ul>{% for item in structured.practical_conclusion.bullet_points %}<li>{{ item }}</li>{% endfor %}</ul>
           </section>
 
           <section>
-            <div class="section-title"><span class="section-num">12</span><h2>上证指数中期走势研判</h2></div>
+            <div class="section-title"><span class="section-num">{{ "12" if watch else "11" }}</span><h2>上证指数中期走势研判</h2></div>
             <div class="note-card">
               <ul>{% for item in structured.index_mid_term_outlook.year_review %}<li>{{ item }}</li>{% endfor %}</ul>
             </div>

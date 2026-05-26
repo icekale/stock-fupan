@@ -19,7 +19,7 @@ class Settings(BaseSettings):
     structured_review_fallback_enabled: bool = True
     anspire_api_key: str = ""
     anspire_base_url: str = "https://plugin.anspire.cn/api/ntsearch/search"
-    market_provider: str = "akshare"
+    market_provider: str = "tickflow"
     news_provider: str = "anspire"
     provider_fallback_enabled: bool = True
     provider_timeout_seconds: float = 12
@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     tickflow_api_key: str = ""
     tickflow_base_url: str = "https://api.tickflow.org"
     tickflow_provider: str = "tickflow"
+    report_watchlist_enabled: bool = False
+    production_allow_fake_providers: bool = False
     watchlist_provider: str = "local"
     watchlist_snapshot_root: Path = Path("./data/watchlists")
     report_brand_name: str = ""

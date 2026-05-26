@@ -135,6 +135,7 @@ def create_close_report(request: CreateCloseReportRequest) -> dict[str, object]:
             structured_review_fallback_enabled=settings.structured_review_fallback_enabled,
             watchlist_service=_watchlist_service(),
             tickflow_provider=providers.tickflow_provider,
+            watchlist_enabled=settings.report_watchlist_enabled,
         )
         result = generator.generate_close_report(request.trade_date)
     status = (

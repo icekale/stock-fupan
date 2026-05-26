@@ -294,7 +294,6 @@ def test_mobile_report_renderer_contains_core_sections(tmp_path: Path) -> None:
         "板块持续性排序",
         "资金轮动路径分析",
         "明日可介入标的与仓位建议",
-        "自选股观察",
         "去弱留强排序",
         "最实战的结论",
         "上证指数中期走势研判",
@@ -303,6 +302,7 @@ def test_mobile_report_renderer_contains_core_sections(tmp_path: Path) -> None:
     assert "2026-05-26 A股复盘" in html
     for title in expected_titles:
         assert title in html
+    assert "自选股观察" not in html
     assert "科技内部" in html
     assert "非投资建议" in html
 
@@ -335,7 +335,10 @@ def test_report_generator_writes_structured_review_status_on_llm_fallback(tmp_pa
     snapshot = json.loads(result.assets.snapshot.read_text(encoding="utf-8"))
     assert snapshot["structured_review_status"] == result.structured_review_status
 class StaticWatchlistService:
+    called = False
+
     def get_latest(self):
+        self.called = True
         return WatchlistImportResult(
             import_id=1,
             item_count=2,
@@ -347,7 +350,39 @@ class StaticWatchlistService:
         )
 
 
-def test_report_generator_writes_watchlist_observation_and_tickflow_status(tmp_path: Path) -> None:
+class ExplodingTickFlowProvider:
+    def get_quotes(self, symbols: list[str]):
+        raise AssertionError(f"TickFlow should not be called: {symbols}")
+
+
+def test_report_generator_disables_watchlist_by_default(tmp_path: Path) -> None:
+    watchlist_service = StaticWatchlistService()
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=FakeMarketDataProvider(),
+        news_provider=FakeNewsProvider(),
+        llm_provider=FakeLLMProvider(),
+        watchlist_service=watchlist_service,
+        tickflow_provider=ExplodingTickFlowProvider(),
+    )
+
+    result = generator.generate_close_report("2026-05-26")
+
+    assert watchlist_service.called is False
+    assert result.report.watchlist_observation is None
+    assert result.provider_status["tickflow"] == {
+        "provider": "tickflow",
+        "status": "disabled",
+        "fallback_used": False,
+        "reason": "自选股模块未开启",
+    }
+    html = render_mobile_report_html(result.report)
+    assert "自选股观察" not in html
+
+
+def test_report_generator_writes_watchlist_observation_and_tickflow_status_when_enabled(
+    tmp_path: Path,
+) -> None:
     generator = ReportGenerator(
         reports_root=tmp_path,
         market_provider=FakeMarketDataProvider(),
@@ -355,6 +390,7 @@ def test_report_generator_writes_watchlist_observation_and_tickflow_status(tmp_p
         llm_provider=FakeLLMProvider(),
         watchlist_service=StaticWatchlistService(),
         tickflow_provider=FakeTickFlowProvider(),
+        watchlist_enabled=True,
     )
 
     result = generator.generate_close_report("2026-05-26")
@@ -380,6 +416,7 @@ def test_mobile_report_renderer_contains_watchlist_section(tmp_path: Path) -> No
         llm_provider=FakeLLMProvider(),
         watchlist_service=StaticWatchlistService(),
         tickflow_provider=FakeTickFlowProvider(),
+        watchlist_enabled=True,
     )
 
     result = generator.generate_close_report("2026-05-26")
