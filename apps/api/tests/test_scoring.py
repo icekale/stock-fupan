@@ -1,3 +1,5 @@
+import math
+
 from app.rules.scoring import RawSectorInput, score_sectors
 from app.schemas.report import (
     IndexSnapshot,
@@ -168,6 +170,9 @@ def test_score_sectors_treats_non_finite_inputs_as_minimum() -> None:
         "news": 0.0,
     }
     assert scored[0].score == 35.0
+    assert math.isfinite(scored[0].score)
+    assert math.isfinite(scored[0].pct_change)
+    assert all(math.isfinite(value) for value in scored[0].factor_scores.values())
 
 
 def test_score_sectors_calculates_expected_factor_scores() -> None:
@@ -191,4 +196,8 @@ def test_score_sectors_calculates_expected_factor_scores() -> None:
         "turnover": 50.0,
         "news": 30.0,
     }
-    assert scored[0].score == 49.5
+    expected_score = round(
+        50.0 * 0.35 + 50.0 * 0.20 + 50.0 * 0.20 + 60.0 * 0.15 + 30.0 * 0.10,
+        2,
+    )
+    assert scored[0].score == expected_score
