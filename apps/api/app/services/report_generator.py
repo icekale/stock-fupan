@@ -10,11 +10,21 @@ from app.schemas.report import ReportDTO, ReportKind, SectorCandidate
 from app.services.assets import AssetPaths, create_report_asset_dir, write_json
 
 
+DEFAULT_LLM_METADATA_VALUE = "unknown"
+
+
 @dataclass(frozen=True)
 class GeneratedReport:
     report: ReportDTO
     validation: ValidationResult
     assets: AssetPaths
+
+
+def _provider_metadata(provider: object, attribute_name: str) -> str:
+    value = getattr(provider, attribute_name, DEFAULT_LLM_METADATA_VALUE)
+    if isinstance(value, str) and value:
+        return value
+    return DEFAULT_LLM_METADATA_VALUE
 
 
 class ReportGenerator:
@@ -78,8 +88,8 @@ class ReportGenerator:
             assets.llm_calls,
             [
                 {
-                    "provider": "fake",
-                    "model": "fake-llm",
+                    "provider": _provider_metadata(self.llm_provider, "provider_name"),
+                    "model": _provider_metadata(self.llm_provider, "model_name"),
                     "prompt": "seed-json",
                     "parameters": {},
                     "output": narrative.model_dump(),
@@ -95,6 +105,7 @@ class ReportGenerator:
                 "validation": {"is_valid": validation.is_valid, "errors": validation.errors},
             },
         )
+        assets.report_html.write_text("", encoding="utf-8")
         write_json(assets.notes, {"overrides": []})
 
         return GeneratedReport(report=report, validation=validation, assets=assets)

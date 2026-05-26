@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from sqlalchemy import text
@@ -126,3 +127,19 @@ def test_report_generator_writes_snapshot_files(tmp_path: Path) -> None:
     assert result.assets.snapshot.exists()
     assert result.assets.news_raw.exists()
     assert result.assets.llm_calls.exists()
+    assert result.assets.report_html.exists()
+
+
+def test_report_generator_writes_neutral_llm_metadata(tmp_path: Path) -> None:
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=FakeMarketDataProvider(),
+        news_provider=FakeNewsProvider(),
+        llm_provider=FakeLLMProvider(),
+    )
+
+    result = generator.generate_close_report("2026-05-26")
+
+    llm_calls = json.loads(result.assets.llm_calls.read_text(encoding="utf-8"))
+    assert llm_calls[0]["provider"] == "unknown"
+    assert llm_calls[0]["model"] == "unknown"
