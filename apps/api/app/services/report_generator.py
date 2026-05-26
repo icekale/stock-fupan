@@ -45,6 +45,7 @@ class ReportGenerator:
         structured_review_fallback_enabled: bool = True,
         watchlist_service: object | None = None,
         tickflow_provider: TickFlowQuoteProvider | None = None,
+        watchlist_enabled: bool = False,
     ) -> None:
         self.reports_root = reports_root
         self.market_provider = market_provider
@@ -54,6 +55,7 @@ class ReportGenerator:
         self.structured_review_fallback_enabled = structured_review_fallback_enabled
         self.watchlist_service = watchlist_service
         self.tickflow_provider = tickflow_provider
+        self.watchlist_enabled = watchlist_enabled
 
     def generate_close_report(self, trade_date: str) -> GeneratedReport:
         assets = create_report_asset_dir(self.reports_root, trade_date, ReportKind.CLOSE.value)
@@ -135,9 +137,9 @@ class ReportGenerator:
             provider="tickflow",
             status="disabled",
             fallback_used=False,
-            reason="未配置自选股服务",
+            reason="自选股模块未开启",
         )
-        if self.watchlist_service is not None:
+        if self.watchlist_enabled and self.watchlist_service is not None:
             latest_watchlist = self.watchlist_service.get_latest()
             symbols = [item.symbol for item in latest_watchlist.items]
             quotes = []
