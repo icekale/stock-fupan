@@ -3,6 +3,8 @@ from datetime import date
 import pandas as pd
 import pytest
 
+from app.config import Settings
+from app.providers.factory import create_provider_bundle
 from app.providers.market import (
     AkShareMarketDataProvider,
     FakeMarketDataProvider,
@@ -415,3 +417,28 @@ def test_anspire_provider_sanitizes_request_failures() -> None:
     assert leaked_token not in message
     assert "secret-key" not in message
     assert "Authorization" not in message
+
+
+def test_provider_factory_uses_real_providers_by_default() -> None:
+    settings = Settings(
+        market_provider="akshare",
+        news_provider="anspire",
+        provider_fallback_enabled=True,
+        anspire_api_key="secret-key",
+    )
+
+    bundle = create_provider_bundle(settings)
+
+    assert isinstance(bundle.market_provider, FallbackMarketDataProvider)
+    assert isinstance(bundle.market_provider.primary, AkShareMarketDataProvider)
+    assert isinstance(bundle.news_provider, FallbackNewsProvider)
+    assert isinstance(bundle.news_provider.primary, AnspireNewsProvider)
+
+
+def test_provider_factory_can_force_fake_providers() -> None:
+    settings = Settings(market_provider="fake", news_provider="fake")
+
+    bundle = create_provider_bundle(settings)
+
+    assert isinstance(bundle.market_provider, FakeMarketDataProvider)
+    assert isinstance(bundle.news_provider, FakeNewsProvider)

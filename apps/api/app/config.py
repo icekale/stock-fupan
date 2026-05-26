@@ -12,7 +12,11 @@ class Settings(BaseSettings):
     openai_base_url: str = "https://api.openai.com/v1"
     llm_model: str = "gpt-4.1-mini"
     anspire_api_key: str = ""
+    anspire_base_url: str = "https://plugin.anspire.cn/api/ntsearch/search"
+    market_provider: str = "akshare"
     news_provider: str = "anspire"
+    provider_fallback_enabled: bool = True
+    provider_timeout_seconds: float = 12
     news_top_k: int = 10
     news_lookback_hours: int = 36
     report_brand_name: str = ""
