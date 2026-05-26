@@ -50,6 +50,9 @@
     th, td { border: 1px solid var(--line); padding: 8px; text-align: left; vertical-align: top; }
     .conclusion-box { background: var(--gold-soft); border: 1px solid var(--gold); border-left: 5px solid var(--gold); border-radius: 14px; padding: 12px; }
     .avoid-box { background: var(--green-soft); border: 1px solid var(--green-line); border-radius: 14px; padding: 12px; }
+    .info-card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px; }
+    .note-card { background: #f8f4ea; border: 1px solid var(--line); border-radius: 14px; padding: 12px; margin-top: 10px; }
+    .lead { color: var(--navy-soft); font-weight: 700; }
     .muted { color: var(--muted); }
     .pill-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
     .pill { border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 4px 10px; color: var(--navy); font-size: 12px; font-weight: 700; }
@@ -95,7 +98,7 @@
           </section>
 
           <section>
-            <div class="section-title"><span class="section-num">02</span><h2>先给结论 · 明日核心判断</h2></div>
+            <div class="section-title"><span class="section-num">02</span><h2>先给结论</h2></div>
             <div class="conclusion-box"><p>{{ structured.tomorrow_judgement.core_view }}</p></div>
             <table aria-label="明日核心判断">
               <tr><th>最容易继续</th><td>{{ structured.tomorrow_judgement.most_likely_to_continue }}</td></tr>
@@ -123,26 +126,7 @@
           </section>
 
           <section>
-            <div class="section-title"><span class="section-num">04</span><h2>自选股观察</h2></div>
-            {% set watch = report.watchlist_observation %}
-            {% if watch %}
-              <p class="muted">导入 {{ watch.total_count }} 只，行情匹配 {{ watch.quote_count }} 只。</p>
-              {% if watch.strongest %}
-                <h3>强势自选</h3>
-                <ul>{% for item in watch.strongest %}<li>{{ item.symbol }} {{ item.name or '' }} {{ "%+.2f"|format(item.pct_change or 0) }}% · {{ item.reason }}</li>{% endfor %}</ul>
-              {% endif %}
-              {% if watch.weakest %}
-                <h3>风险观察</h3>
-                <ul>{% for item in watch.weakest %}<li>{{ item.symbol }} {{ item.name or '' }} {{ "%+.2f"|format(item.pct_change or 0) }}% · {{ item.reason }}</li>{% endfor %}</ul>
-              {% endif %}
-              {% if watch.notes %}<p class="muted">{{ watch.notes|join("；") }}</p>{% endif %}
-            {% else %}
-              <p class="muted">未导入自选股。</p>
-            {% endif %}
-          </section>
-
-          <section>
-            <div class="section-title"><span class="section-num">05</span><h2>板块详细分析</h2></div>
+            <div class="section-title"><span class="section-num">04</span><h2>各板块详细分析</h2></div>
             {% for sector in structured.sector_reviews %}
               <article class="sector-card">
                 <div class="sector-head"><strong>{{ sector.headline }}</strong><span class="rating">{{ sector.sustainability|upper }}</span></div>
@@ -158,6 +142,23 @@
           </section>
 
           <section>
+            <div class="section-title"><span class="section-num">05</span><h2>盘后 / 隔夜消息梳理</h2></div>
+            <div class="grid-2">
+              <div class="info-card">
+                <div class="mini-title">美股映射</div>
+                <ul>{% for item in structured.after_hours_news.us_market_mapping %}<li>{{ item }}</li>{% endfor %}</ul>
+              </div>
+              <div class="info-card">
+                <div class="mini-title">国内催化</div>
+                <ul>{% for item in structured.after_hours_news.domestic_catalysts %}<li>{{ item }}</li>{% endfor %}</ul>
+              </div>
+            </div>
+            <div class="note-card">
+              <ul>{% for item in structured.after_hours_news.risk_notes %}<li>{{ item }}</li>{% endfor %}</ul>
+            </div>
+          </section>
+
+          <section>
             <div class="section-title"><span class="section-num">06</span><h2>板块持续性排序</h2></div>
             <table>
               <tr><th>排序</th><th>板块</th><th>持续性</th><th>理由</th></tr>
@@ -168,7 +169,60 @@
           </section>
 
           <section>
-            <div class="section-title"><span class="section-num">07</span><h2>去弱留强 / 回避清单</h2></div>
+            <div class="section-title"><span class="section-num">07</span><h2>资金轮动路径分析</h2></div>
+            <div class="conclusion-box"><p>{{ structured.capital_rotation.key_finding }}</p></div>
+            <div class="pill-row">{% for item in structured.capital_rotation.actual_path %}<span class="pill">{{ item }}</span>{% endfor %}</div>
+            <div class="mini-title">次日路径观察</div>
+            <ul>{% for item in structured.capital_rotation.next_path_watch %}<li>{{ item }}</li>{% endfor %}</ul>
+          </section>
+
+          <section>
+            <div class="section-title"><span class="section-num">08</span><h2>明日可介入标的与仓位建议</h2></div>
+            <p class="lead">以下内容统一表达为观察条件与仓位纪律，不构成确定性交易指令。</p>
+            <div class="grid-2">
+              <div class="info-card">
+                <div class="mini-title">观察候选</div>
+                <ul>{% for item in structured.next_day_opportunity.focus_candidates %}<li>{{ item }}</li>{% endfor %}</ul>
+              </div>
+              <div class="info-card">
+                <div class="mini-title">仓位纪律</div>
+                <ul>{% for item in structured.next_day_opportunity.position_discipline %}<li>{{ item }}</li>{% endfor %}</ul>
+              </div>
+            </div>
+            <table>
+              <tr><th>触发条件</th><th>回避条件</th></tr>
+              <tr>
+                <td><ul>{% for item in structured.next_day_opportunity.trigger_conditions %}<li>{{ item }}</li>{% endfor %}</ul></td>
+                <td><ul>{% for item in structured.next_day_opportunity.avoid_conditions %}<li>{{ item }}</li>{% endfor %}</ul></td>
+              </tr>
+            </table>
+          </section>
+
+          <section>
+            <div class="section-title"><span class="section-num">09</span><h2>自选股观察</h2></div>
+            {% set watch = report.watchlist_observation %}
+            {% if watch %}
+              <p class="muted">导入 {{ watch.total_count }} 只，行情匹配 {{ watch.quote_count }} 只。</p>
+              {% if watch.strongest %}
+                <div class="info-card">
+                  <div class="mini-title">强势自选</div>
+                  <ul>{% for item in watch.strongest %}<li>{{ item.symbol }} {{ item.name or '' }} {{ "%+.2f"|format(item.pct_change or 0) }}% · {{ item.reason }}</li>{% endfor %}</ul>
+                </div>
+              {% endif %}
+              {% if watch.weakest %}
+                <div class="info-card">
+                  <div class="mini-title">风险观察</div>
+                  <ul>{% for item in watch.weakest %}<li>{{ item.symbol }} {{ item.name or '' }} {{ "%+.2f"|format(item.pct_change or 0) }}% · {{ item.reason }}</li>{% endfor %}</ul>
+                </div>
+              {% endif %}
+              {% if watch.notes %}<p class="muted">{{ watch.notes|join("；") }}</p>{% endif %}
+            {% else %}
+              <p class="muted">未导入自选股。</p>
+            {% endif %}
+          </section>
+
+          <section>
+            <div class="section-title"><span class="section-num">10</span><h2>去弱留强排序</h2></div>
             <div class="avoid-box">
               <div class="mini-title">去弱留强</div>
               <ul>{% for item in structured.action_discipline.focus %}<li>{{ item }}</li>{% endfor %}</ul>
@@ -176,6 +230,26 @@
               <ul>{% for item in structured.action_discipline.avoid %}<li>{{ item }}</li>{% endfor %}</ul>
               <p><strong>最终判断：</strong>{{ structured.action_discipline.final_view }}</p>
             </div>
+          </section>
+
+          <section>
+            <div class="section-title"><span class="section-num">11</span><h2>最实战的结论</h2></div>
+            <div class="conclusion-box"><p>{{ structured.practical_conclusion.headline }}</p></div>
+            <ul>{% for item in structured.practical_conclusion.bullet_points %}<li>{{ item }}</li>{% endfor %}</ul>
+          </section>
+
+          <section>
+            <div class="section-title"><span class="section-num">12</span><h2>上证指数中期走势研判</h2></div>
+            <div class="note-card">
+              <ul>{% for item in structured.index_mid_term_outlook.year_review %}<li>{{ item }}</li>{% endfor %}</ul>
+            </div>
+            <p>{{ structured.index_mid_term_outlook.current_position }}</p>
+            <table>
+              <tr><th>情景</th><th>条件</th><th>应对</th></tr>
+              {% for row in structured.index_mid_term_outlook.scenario_table %}
+                <tr><td>{{ row.scenario }}</td><td>{{ row.condition }}</td><td>{{ row.response }}</td></tr>
+              {% endfor %}
+            </table>
           </section>
         {% else %}
           <section><div class="section-title"><span class="section-num">01</span><h2>先给结论</h2></div><p>{{ report.narrative.conclusion }}</p></section>
