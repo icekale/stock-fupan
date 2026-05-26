@@ -2,8 +2,8 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, Enum, Integer, String
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy import JSON, DateTime, Enum, ForeignKey, Integer, String
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
 class Base(DeclarativeBase):
@@ -47,3 +47,35 @@ class Report(Base):
         default=lambda: datetime.now(UTC),
         onupdate=lambda: datetime.now(UTC),
     )
+
+
+class WatchlistImport(Base):
+    __tablename__ = "watchlist_imports"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source_type: Mapped[str] = mapped_column(String(32))
+    source_name: Mapped[str] = mapped_column(String(255))
+    snapshot_path: Mapped[str] = mapped_column(String(1024))
+    parsed_snapshot_path: Mapped[str] = mapped_column(String(1024))
+    item_count: Mapped[int] = mapped_column(Integer)
+    warnings: Mapped[list[str]] = mapped_column(JSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    items: Mapped[list["WatchlistItemModel"]] = relationship(
+        back_populates="import_record",
+        cascade="all, delete-orphan",
+    )
+
+
+class WatchlistItemModel(Base):
+    __tablename__ = "watchlist_items"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    import_id: Mapped[int] = mapped_column(ForeignKey("watchlist_imports.id"), index=True)
+    symbol: Mapped[str] = mapped_column(String(16), index=True)
+    code: Mapped[str] = mapped_column(String(8), index=True)
+    exchange: Mapped[str] = mapped_column(String(4))
+    name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    display_order: Mapped[int] = mapped_column(Integer)
+    import_record: Mapped[WatchlistImport] = relationship(back_populates="items")

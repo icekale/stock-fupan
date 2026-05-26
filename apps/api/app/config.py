@@ -22,6 +22,11 @@ class Settings(BaseSettings):
     provider_timeout_seconds: float = 12
     news_top_k: int = 10
     news_lookback_hours: int = 36
+    tickflow_api_key: str = ""
+    tickflow_base_url: str = "https://api.tickflow.org"
+    tickflow_provider: str = "tickflow"
+    watchlist_provider: str = "local"
+    watchlist_snapshot_root: Path = Path("./data/watchlists")
     report_brand_name: str = ""
     report_brand_footer: str = ""
     report_disclaimer_enabled: bool = True
