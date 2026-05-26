@@ -7,13 +7,19 @@
   <style>
     :root {
       color-scheme: light;
-      --bg: #f7f3ec;
-      --card: #fffaf2;
-      --ink: #1f1f1f;
-      --muted: #71665a;
-      --accent: #b42318;
-      --accent-soft: #fff0ea;
-      --line: #eadfce;
+      --bg: #ece7dc;
+      --paper: #fffdf8;
+      --panel: #ffffff;
+      --navy: #17233b;
+      --navy-soft: #243653;
+      --gold: #c9a34e;
+      --gold-soft: #fff5d8;
+      --green-soft: #edf7ee;
+      --green-line: #8fb99a;
+      --ink: #1d2433;
+      --muted: #6f6a60;
+      --line: #e2d7c3;
+      --red: #b42318;
     }
     * { box-sizing: border-box; }
     body {
@@ -21,211 +27,147 @@
       background: var(--bg);
       color: var(--ink);
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
-      line-height: 1.65;
+      line-height: 1.72;
     }
-    .page {
-      max-width: 720px;
-      margin: 0 auto;
-      padding: 28px 22px 34px;
-    }
-    .hero {
-      padding: 28px;
-      border-radius: 28px;
-      background: linear-gradient(135deg, #fffaf2 0%, #fff3e7 100%);
-      border: 1px solid var(--line);
-      box-shadow: 0 18px 48px rgba(91, 61, 31, 0.12);
-    }
-    .brand {
-      color: var(--accent);
-      font-size: 14px;
-      font-weight: 700;
-      letter-spacing: 0.08em;
-      margin-bottom: 12px;
-    }
-    h1 {
-      margin: 0;
-      font-size: 34px;
-      line-height: 1.2;
-      letter-spacing: -0.03em;
-    }
-    .tags {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 18px;
-    }
-    .tag {
-      border-radius: 999px;
-      background: var(--accent-soft);
-      color: var(--accent);
-      font-size: 13px;
-      font-weight: 650;
-      padding: 5px 10px;
-    }
-    section {
-      margin-top: 18px;
-      padding: 22px;
-      border-radius: 24px;
-      background: var(--card);
-      border: 1px solid var(--line);
-    }
-    h2 {
-      margin: 0 0 12px;
-      font-size: 22px;
-      letter-spacing: -0.02em;
-    }
+    .page { max-width: 640px; margin: 0 auto; padding: 24px 16px 36px; }
+    .paper { background: var(--paper); border: 1px solid var(--line); box-shadow: 0 20px 50px rgba(23, 35, 59, .14); }
+    .hero { background: linear-gradient(135deg, var(--navy), #0f1a2d); color: white; padding: 28px 24px; text-align: center; border-bottom: 4px solid var(--gold); }
+    .brand { color: var(--gold); font-size: 12px; font-weight: 800; letter-spacing: .22em; text-transform: uppercase; }
+    h1 { margin: 8px 0 0; font-size: 30px; line-height: 1.2; letter-spacing: -.04em; }
+    .topic { margin-top: 10px; color: #f6dd92; font-size: 14px; font-weight: 700; }
+    .body { padding: 18px; }
+    section { padding: 18px 0; border-bottom: 1px dashed var(--line); }
+    section:last-child { border-bottom: 0; }
+    .section-title { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+    .section-num { background: var(--navy); color: var(--gold); border-radius: 8px; min-width: 34px; padding: 4px 7px; text-align: center; font-weight: 900; font-size: 13px; }
+    h2 { margin: 0; color: var(--navy); font-size: 20px; letter-spacing: -.02em; }
     p { margin: 0; }
-    ul {
-      margin: 0;
-      padding-left: 20px;
-    }
-    li + li { margin-top: 8px; }
-    .metrics {
-      display: grid;
-      grid-template-columns: repeat(2, 1fr);
-      gap: 10px;
-      margin-top: 14px;
-    }
-    .metric {
-      padding: 12px;
-      border-radius: 16px;
-      background: #ffffff;
-      border: 1px solid var(--line);
-    }
-    .metric-label {
-      color: var(--muted);
-      font-size: 12px;
-    }
-    .metric-value {
-      margin-top: 4px;
-      font-size: 18px;
-      font-weight: 800;
-    }
-    .sector {
-      padding: 14px 0;
-      border-top: 1px solid var(--line);
-    }
-    .sector:first-of-type { border-top: 0; }
-    .sector-title {
-      display: flex;
-      align-items: baseline;
-      justify-content: space-between;
-      gap: 12px;
-      font-weight: 800;
-    }
-    .sector-meta {
-      color: var(--accent);
-      font-size: 14px;
-      white-space: nowrap;
-    }
-    .sector-reason {
-      color: var(--muted);
-      margin-top: 6px;
-      font-size: 14px;
-    }
-    .footer {
-      color: var(--muted);
-      margin-top: 18px;
-      text-align: center;
-      font-size: 13px;
-    }
-    .disclaimer {
-      color: var(--muted);
-      margin-top: 10px;
-      text-align: center;
-      font-size: 12px;
-    }
+    p + p { margin-top: 7px; }
+    ul { margin: 0; padding-left: 19px; }
+    li + li { margin-top: 6px; }
+    table { width: 100%; border-collapse: collapse; background: var(--panel); margin-top: 10px; font-size: 13px; }
+    th { background: var(--navy); color: white; font-weight: 800; }
+    th, td { border: 1px solid var(--line); padding: 8px; text-align: left; vertical-align: top; }
+    .conclusion-box { background: var(--gold-soft); border: 1px solid var(--gold); border-left: 5px solid var(--gold); border-radius: 14px; padding: 12px; }
+    .avoid-box { background: var(--green-soft); border: 1px solid var(--green-line); border-radius: 14px; padding: 12px; }
+    .muted { color: var(--muted); }
+    .pill-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .pill { border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 4px 10px; color: var(--navy); font-size: 12px; font-weight: 700; }
+    .sector-card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px; margin-top: 12px; }
+    .sector-head { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; border-bottom: 1px solid var(--line); padding-bottom: 8px; margin-bottom: 10px; }
+    .sector-head strong { color: var(--navy); }
+    .rating { color: var(--red); font-weight: 900; white-space: nowrap; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .mini-title { color: var(--navy); font-size: 13px; font-weight: 900; margin: 10px 0 4px; }
+    .footer, .disclaimer { color: var(--muted); text-align: center; font-size: 12px; margin-top: 14px; }
+    @media (max-width: 520px) { .grid-2 { grid-template-columns: 1fr; } h1 { font-size: 25px; } .body { padding: 14px; } }
   </style>
 </head>
 <body>
   <main class="page">
-    <header class="hero">
-      {% if brand_name %}<div class="brand">{{ brand_name }}</div>{% endif %}
-      <h1>{{ report.title }}</h1>
-      {% if report.market_state_tags %}
-        <div class="tags">
-          {% for tag in report.market_state_tags %}
-            <span class="tag">{{ tag }}</span>
-          {% endfor %}
-        </div>
-      {% endif %}
-    </header>
+    <article class="paper">
+      {% set structured = report.structured_review %}
+      <header class="hero">
+        <div class="brand">{{ brand_name or "A-Share Review" }}</div>
+        <h1>{{ report.title }}</h1>
+        <div class="topic">{{ structured.topic if structured else "结构复盘 · 风险分层 · 非投资建议" }}</div>
+      </header>
 
-    <section>
-      <h2>先给结论</h2>
-      <p>{{ report.narrative.conclusion }}</p>
-    </section>
+      <div class="body">
+        {% if structured %}
+          <section>
+            <div class="section-title"><span class="section-num">01</span><h2>昨日预判验证</h2></div>
+            <div class="conclusion-box">
+              <p><strong>昨日预判：</strong>{{ structured.prediction_review.previous_prediction }}</p>
+              <p><strong>今日验证：</strong>{{ structured.prediction_review.actual_result }}</p>
+              <p><strong>修正判断：</strong>{{ structured.prediction_review.revision }}</p>
+            </div>
+            <div class="grid-2">
+              <div>
+                <div class="mini-title">验证正确项</div>
+                <ul>{% for item in structured.prediction_review.correct_items %}<li>{{ item }}</li>{% endfor %}</ul>
+              </div>
+              <div>
+                <div class="mini-title">偏差 / 保守项</div>
+                <ul>{% for item in structured.prediction_review.missed_items %}<li>{{ item }}</li>{% endfor %}</ul>
+              </div>
+            </div>
+          </section>
 
-    <section>
-      <h2>盘面总览</h2>
-      <p>{{ report.narrative.overview }}</p>
-      <div class="metrics">
-        <div class="metric">
-          <div class="metric-label">上涨 / 下跌</div>
-          <div class="metric-value">{{ report.breadth.up_count }} / {{ report.breadth.down_count }}</div>
-        </div>
-        <div class="metric">
-          <div class="metric-label">涨停 / 跌停</div>
-          <div class="metric-value">{{ report.breadth.limit_up_count }} / {{ report.breadth.limit_down_count }}</div>
-        </div>
-        <div class="metric">
-          <div class="metric-label">成交额</div>
-          <div class="metric-value">{{ "%.0f"|format(report.turnover_cny) }} 亿</div>
-        </div>
-        <div class="metric">
-          <div class="metric-label">指数数量</div>
-          <div class="metric-value">{{ report.indices|length }}</div>
-        </div>
-      </div>
-    </section>
+          <section>
+            <div class="section-title"><span class="section-num">02</span><h2>先给结论 · 明日核心判断</h2></div>
+            <div class="conclusion-box"><p>{{ structured.tomorrow_judgement.core_view }}</p></div>
+            <table aria-label="明日核心判断">
+              <tr><th>最容易继续</th><td>{{ structured.tomorrow_judgement.most_likely_to_continue }}</td></tr>
+              <tr><th>最容易分化</th><td>{{ structured.tomorrow_judgement.most_likely_to_diverge }}</td></tr>
+              <tr><th>轮动方向</th><td>{{ structured.tomorrow_judgement.rotation_candidates|join("、") }}</td></tr>
+              <tr><th>防御方向</th><td>{{ structured.tomorrow_judgement.defensive_candidates|join("、") }}</td></tr>
+            </table>
+          </section>
 
-    <section>
-      <h2>强势板块</h2>
-      {% for sector in report.sectors %}
-        <article class="sector">
-          <div class="sector-title">
-            <span>{{ sector.rank }}. {{ sector.name }}</span>
-            <span class="sector-meta">{{ "%+.2f"|format(sector.pct_change) }}% · {{ "%.1f"|format(sector.score) }}分</span>
-          </div>
-          <div class="sector-reason">{{ sector.reason }}</div>
-          {% if sector.news_summaries %}
-            <ul>
-              {% for summary in sector.news_summaries %}
-                <li>{{ summary }}</li>
+          <section>
+            <div class="section-title"><span class="section-num">03</span><h2>盘面总览</h2></div>
+            <table>
+              <tr><th>指数</th><th>收盘</th><th>涨跌幅</th></tr>
+              {% for row in structured.market_overview.index_rows %}
+                <tr><td>{{ row.name }}</td><td>{{ row.close }}</td><td>{{ row.change }}</td></tr>
               {% endfor %}
-            </ul>
-          {% endif %}
-        </article>
-      {% endfor %}
-    </section>
+            </table>
+            <table>
+              {% for row in structured.market_overview.emotion_rows %}
+                <tr><th>{{ row.label }}</th><td>{{ row.value }}</td></tr>
+              {% endfor %}
+            </table>
+            <div class="pill-row">{% for feature in structured.market_overview.structure_features %}<span class="pill">{{ feature }}</span>{% endfor %}</div>
+            <p class="muted">{{ structured.market_overview.capital_flow_summary }}</p>
+          </section>
 
-    <section>
-      <h2>观察清单</h2>
-      {% if report.narrative.watchlist %}
-        <ul>
-          {% for item in report.narrative.watchlist %}
-            <li>{{ item }}</li>
-          {% endfor %}
-        </ul>
-      {% else %}
-        <p>暂无观察项。</p>
-      {% endif %}
-    </section>
+          <section>
+            <div class="section-title"><span class="section-num">04</span><h2>板块详细分析</h2></div>
+            {% for sector in structured.sector_reviews %}
+              <article class="sector-card">
+                <div class="sector-head"><strong>{{ sector.headline }}</strong><span class="rating">{{ sector.sustainability|upper }}</span></div>
+                <p><strong>当前阶段：</strong>{{ sector.stage }}</p>
+                <p><strong>板块逻辑：</strong>{{ sector.logic }}</p>
+                <div class="grid-2">
+                  <div><div class="mini-title">强势证据</div><ul>{% for item in sector.strengths %}<li>{{ item }}</li>{% endfor %}</ul></div>
+                  <div><div class="mini-title">弱势 / 分歧</div><ul>{% for item in sector.weaknesses %}<li>{{ item }}</li>{% endfor %}</ul></div>
+                </div>
+                <p><strong>下个交易日看法：</strong>{{ sector.next_day_view }}</p>
+              </article>
+            {% endfor %}
+          </section>
 
-    <section>
-      <h2>明日关注与风险</h2>
-      <p>{{ report.narrative.tomorrow }}</p>
-      {% if report.narrative.risks %}
-        <ul>
-          {% for risk in report.narrative.risks %}
-            <li>{{ risk }}</li>
-          {% endfor %}
-        </ul>
-      {% endif %}
-    </section>
+          <section>
+            <div class="section-title"><span class="section-num">05</span><h2>板块持续性排序</h2></div>
+            <table>
+              <tr><th>排序</th><th>板块</th><th>持续性</th><th>理由</th></tr>
+              {% for item in structured.sustainability_ranking %}
+                <tr><td>{{ item.rank }}</td><td>{{ item.sector }}</td><td>{{ item.rating|upper }}</td><td>{{ item.reason }}</td></tr>
+              {% endfor %}
+            </table>
+          </section>
 
-    {% if brand_footer %}<div class="footer">{{ brand_footer }}</div>{% endif %}
-    {% if disclaimer_enabled %}<div class="disclaimer">非投资建议，仅用于复盘研究与信息整理。</div>{% endif %}
+          <section>
+            <div class="section-title"><span class="section-num">06</span><h2>去弱留强 / 回避清单</h2></div>
+            <div class="avoid-box">
+              <div class="mini-title">去弱留强</div>
+              <ul>{% for item in structured.action_discipline.focus %}<li>{{ item }}</li>{% endfor %}</ul>
+              <div class="mini-title">回避清单</div>
+              <ul>{% for item in structured.action_discipline.avoid %}<li>{{ item }}</li>{% endfor %}</ul>
+              <p><strong>最终判断：</strong>{{ structured.action_discipline.final_view }}</p>
+            </div>
+          </section>
+        {% else %}
+          <section><div class="section-title"><span class="section-num">01</span><h2>先给结论</h2></div><p>{{ report.narrative.conclusion }}</p></section>
+          <section><div class="section-title"><span class="section-num">02</span><h2>盘面总览</h2></div><p>{{ report.narrative.overview }}</p></section>
+          <section><div class="section-title"><span class="section-num">03</span><h2>强势板块</h2></div>{% for sector in report.sectors %}<p>{{ sector.rank }}. {{ sector.name }} {{ "%+.2f"|format(sector.pct_change) }}%</p>{% endfor %}</section>
+        {% endif %}
+
+        {% if brand_footer %}<div class="footer">{{ brand_footer }}</div>{% endif %}
+        {% if disclaimer_enabled %}<div class="disclaimer">非投资建议，仅用于复盘研究与信息整理。</div>{% endif %}
+      </div>
+    </article>
   </main>
 </body>
 </html>

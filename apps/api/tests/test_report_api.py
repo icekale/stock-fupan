@@ -277,8 +277,12 @@ def test_mobile_report_renderer_contains_core_sections(tmp_path: Path) -> None:
     )
 
     assert "2026-05-26 A股复盘" in html
-    assert "先给结论" in html
+    assert "昨日预判验证" in html
+    assert "明日核心判断" in html
     assert "盘面总览" in html
-    assert "强势板块" in html
-    assert "机器人" in html
+    assert "板块详细分析" in html
+    assert "持续性排序" in html
+    assert "去弱留强" in html
+    assert "回避清单" in html
+    assert "科技内部" in html
     assert "非投资建议" in html
