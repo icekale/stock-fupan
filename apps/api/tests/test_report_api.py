@@ -10,6 +10,7 @@ from app.providers.news import FakeNewsProvider
 from app.rules.scoring import score_sectors
 from app.rules.validation import validate_narrative_facts
 from app.schemas.report import ReportDTO, ReportKind, SectorCandidate
+from app.services.report_generator import ReportGenerator
 
 
 def test_report_model_persists_asset_path(tmp_path: Path) -> None:
@@ -106,3 +107,22 @@ def test_fake_providers_return_deterministic_payloads() -> None:
     assert narrative.conclusion
     assert validation.is_valid
     assert validation.errors == []
+
+
+def test_report_generator_writes_snapshot_files(tmp_path: Path) -> None:
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=FakeMarketDataProvider(),
+        news_provider=FakeNewsProvider(),
+        llm_provider=FakeLLMProvider(),
+    )
+
+    result = generator.generate_close_report("2026-05-26")
+
+    assert result.report.trade_date == "2026-05-26"
+    assert result.report.sectors[0].name == "机器人"
+    assert result.validation.is_valid
+    assert result.assets.report_dto.exists()
+    assert result.assets.snapshot.exists()
+    assert result.assets.news_raw.exists()
+    assert result.assets.llm_calls.exists()
