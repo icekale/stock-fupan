@@ -80,3 +80,85 @@ def test_ocr_confirm_missing_preview_raises_not_found(tmp_path: Path) -> None:
 
     with pytest.raises(OcrPreviewNotFoundError, match="OCR 预览不存在"):
         service.confirm_preview("999999")
+
+from fastapi.testclient import TestClient
+
+from app.config import get_settings
+from app.main import app
+
+
+def test_ocr_preview_api_returns_preview_without_importing(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'api.db'}")
+    monkeypatch.setenv("WATCHLIST_SNAPSHOT_ROOT", str(tmp_path / "watchlists"))
+    monkeypatch.setenv("OCR_PROVIDER", "fake")
+    get_settings.cache_clear()
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/watchlists/ocr-preview",
+            files={"file": ("watch.png", b"fake-png", "image/png")},
+        )
+        latest_response = client.get("/api/watchlists/latest")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["preview_id"] == "000001"
+    assert payload["item_count"] == 3
+    assert [item["symbol"] for item in payload["items"]] == ["600000.SH", "000001.SZ", "300750.SZ"]
+    assert latest_response.json()["item_count"] == 0
+    get_settings.cache_clear()
+
+
+def test_ocr_confirm_api_imports_preview(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'api.db'}")
+    monkeypatch.setenv("WATCHLIST_SNAPSHOT_ROOT", str(tmp_path / "watchlists"))
+    monkeypatch.setenv("OCR_PROVIDER", "fake")
+    get_settings.cache_clear()
+
+    with TestClient(app) as client:
+        preview_response = client.post(
+            "/api/watchlists/ocr-preview",
+            files={"file": ("watch.png", b"fake-png", "image/png")},
+        )
+        response = client.post(
+            "/api/watchlists/ocr-confirm",
+            json={"preview_id": preview_response.json()["preview_id"]},
+        )
+        latest_response = client.get("/api/watchlists/latest")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["item_count"] == 3
+    assert latest_response.json()["item_count"] == 3
+    get_settings.cache_clear()
+
+
+def test_ocr_preview_api_rejects_unsupported_file_type(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'api.db'}")
+    monkeypatch.setenv("WATCHLIST_SNAPSHOT_ROOT", str(tmp_path / "watchlists"))
+    monkeypatch.setenv("OCR_PROVIDER", "fake")
+    get_settings.cache_clear()
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/watchlists/ocr-preview",
+            files={"file": ("watch.txt", b"600000", "text/plain")},
+        )
+
+    assert response.status_code == 400
+    assert "仅支持 PNG/JPEG/WebP 图片" in response.json()["detail"]
+    get_settings.cache_clear()
+
+
+def test_ocr_confirm_api_returns_404_for_missing_preview(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'api.db'}")
+    monkeypatch.setenv("WATCHLIST_SNAPSHOT_ROOT", str(tmp_path / "watchlists"))
+    monkeypatch.setenv("OCR_PROVIDER", "fake")
+    get_settings.cache_clear()
+
+    with TestClient(app) as client:
+        response = client.post("/api/watchlists/ocr-confirm", json={"preview_id": "999999"})
+
+    assert response.status_code == 404
+    assert "OCR 预览不存在" in response.json()["detail"]
+    get_settings.cache_clear()
