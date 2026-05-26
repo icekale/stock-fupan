@@ -1,9 +1,11 @@
 import json
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
+from app.config import get_settings
 from app.main import app
 from app.db.models import Report, ReportKindModel, ReportStatusModel
 from app.db.session import create_sqlite_engine, init_db, session_scope
@@ -14,7 +16,21 @@ from app.renderers.html_renderer import render_mobile_report_html
 from app.rules.scoring import score_sectors
 from app.rules.validation import validate_narrative_facts
 from app.schemas.report import ReportDTO, ReportKind, SectorCandidate
+from app.services import report_generator as report_generator_module
 from app.services.report_generator import ReportGenerator
+
+
+@pytest.fixture(autouse=True)
+def isolate_settings_and_png_export(monkeypatch: pytest.MonkeyPatch):
+    get_settings.cache_clear()
+
+    def fake_export_png(html_path: Path, output_path: Path) -> None:
+        assert html_path.exists()
+        output_path.write_bytes(b"fake-png")
+
+    monkeypatch.setattr(report_generator_module, "export_png", fake_export_png, raising=False)
+    yield
+    get_settings.cache_clear()
 
 
 def test_create_close_report_api_returns_generated_report(
@@ -31,6 +47,30 @@ def test_create_close_report_api_returns_generated_report(
     assert payload["report"]["sectors"][0]["name"] == "机器人"
     assert payload["validation"]["is_valid"] is True
     assert payload["assets"]["version"] == "v001"
+
+
+def test_create_close_report_api_persists_report_metadata(
+    tmp_path: Path, monkeypatch
+) -> None:
+    reports_root = tmp_path / "reports"
+    database_url = f"sqlite:///{tmp_path / 'api.db'}"
+    monkeypatch.setenv("REPORTS_ROOT", str(reports_root))
+    monkeypatch.setenv("DATABASE_URL", database_url)
+
+    with TestClient(app) as client:
+        response = client.post("/api/reports/close", json={"trade_date": "2026-05-26"})
+
+    assert response.status_code == 200
+    engine = create_sqlite_engine(database_url)
+    with session_scope(engine) as session:
+        persisted = session.query(Report).one()
+
+    assert persisted.trade_date == "2026-05-26"
+    assert persisted.kind == ReportKindModel.CLOSE
+    assert persisted.version == "v001"
+    assert persisted.status == ReportStatusModel.READY_FOR_REVIEW
+    assert persisted.asset_dir == str(reports_root / "2026-05-26" / "close" / "v001")
+    assert persisted.algorithm_versions["sector_score"] == "sector_score_v1"
 
 
 def test_report_model_persists_asset_path(tmp_path: Path) -> None:
@@ -147,6 +187,20 @@ def test_report_generator_writes_snapshot_files(tmp_path: Path) -> None:
     assert result.assets.news_raw.exists()
     assert result.assets.llm_calls.exists()
     assert result.assets.report_html.exists()
+
+
+def test_report_generator_exports_png(tmp_path: Path) -> None:
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=FakeMarketDataProvider(),
+        news_provider=FakeNewsProvider(),
+        llm_provider=FakeLLMProvider(),
+    )
+
+    result = generator.generate_close_report("2026-05-26")
+
+    assert result.assets.report_png.exists()
+    assert result.assets.report_png.read_bytes() == b"fake-png"
 
 
 def test_report_generator_writes_neutral_llm_metadata(tmp_path: Path) -> None:

@@ -5,6 +5,7 @@ from app.providers.llm import LLMProvider
 from app.providers.market import MarketDataProvider
 from app.providers.news import NewsProvider
 from app.renderers.html_renderer import render_mobile_report_html
+from app.renderers.png_exporter import export_png
 from app.rules.scoring import score_sectors
 from app.rules.validation import ValidationResult, validate_narrative_facts
 from app.schemas.report import ReportDTO, ReportKind, SectorCandidate
@@ -107,6 +108,7 @@ class ReportGenerator:
             },
         )
         assets.report_html.write_text(render_mobile_report_html(report), encoding="utf-8")
+        export_png(assets.report_html, assets.report_png)
         write_json(assets.notes, {"overrides": []})
 
         return GeneratedReport(report=report, validation=validation, assets=assets)
