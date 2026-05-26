@@ -8,6 +8,7 @@ from app.db.session import create_sqlite_engine, init_db, session_scope
 from app.providers.llm import FakeLLMProvider
 from app.providers.market import FakeMarketDataProvider
 from app.providers.news import FakeNewsProvider
+from app.renderers.html_renderer import render_mobile_report_html
 from app.rules.scoring import score_sectors
 from app.rules.validation import validate_narrative_facts
 from app.schemas.report import ReportDTO, ReportKind, SectorCandidate
@@ -143,3 +144,26 @@ def test_report_generator_writes_neutral_llm_metadata(tmp_path: Path) -> None:
     llm_calls = json.loads(result.assets.llm_calls.read_text(encoding="utf-8"))
     assert llm_calls[0]["provider"] == "unknown"
     assert llm_calls[0]["model"] == "unknown"
+
+
+def test_mobile_report_renderer_contains_core_sections(tmp_path: Path) -> None:
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=FakeMarketDataProvider(),
+        news_provider=FakeNewsProvider(),
+        llm_provider=FakeLLMProvider(),
+    )
+
+    result = generator.generate_close_report("2026-05-26")
+    html = render_mobile_report_html(
+        result.report,
+        brand_name="复盘测试",
+        disclaimer_enabled=True,
+    )
+
+    assert "2026-05-26 A股复盘" in html
+    assert "先给结论" in html
+    assert "盘面总览" in html
+    assert "强势板块" in html
+    assert "机器人" in html
+    assert "非投资建议" in html
