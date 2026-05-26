@@ -2,8 +2,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app.providers.llm import LLMProvider
-from app.providers.market import MarketDataProvider
-from app.providers.news import NewsProvider
+from app.providers.market import MarketDataProvider, ProviderStatus
+from app.providers.news import NewsProvider, SectorNewsResult
 from app.renderers.html_renderer import render_mobile_report_html
 from app.renderers.png_exporter import export_png
 from app.rules.scoring import score_sectors
@@ -20,6 +20,7 @@ class GeneratedReport:
     report: ReportDTO
     validation: ValidationResult
     assets: AssetPaths
+    provider_status: dict[str, object]
 
 
 def _provider_metadata(provider: object, attribute_name: str) -> str:
@@ -44,12 +45,41 @@ class ReportGenerator:
 
     def generate_close_report(self, trade_date: str) -> GeneratedReport:
         assets = create_report_asset_dir(self.reports_root, trade_date, ReportKind.CLOSE.value)
-        market_snapshot = self.market_provider.get_close_snapshot(trade_date)
+        if hasattr(self.market_provider, "get_close_snapshot_with_status"):
+            market_snapshot, market_status = self.market_provider.get_close_snapshot_with_status(trade_date)
+        else:
+            market_snapshot = self.market_provider.get_close_snapshot(trade_date)
+            market_status = ProviderStatus(
+                provider=getattr(self.market_provider, "provider_name", "fake"),
+                status="success",
+                fallback_used=False,
+                reason=None,
+            )
         scored_sectors = score_sectors(market_snapshot.raw_sectors, top_n=5)
 
         news_items = []
+        news_statuses = []
         for sector in scored_sectors:
-            news_items.extend(self.news_provider.search_sector_news(sector.name, trade_date))
+            if hasattr(self.news_provider, "search_sector_news_with_status"):
+                sector_news = self.news_provider.search_sector_news_with_status(sector.name, trade_date)
+            else:
+                sector_news = SectorNewsResult(
+                    sector=sector.name,
+                    items=self.news_provider.search_sector_news(sector.name, trade_date),
+                    status=ProviderStatus(
+                        provider=getattr(self.news_provider, "provider_name", "fake"),
+                        status="success",
+                        fallback_used=False,
+                        reason=None,
+                    ),
+                )
+            news_items.extend(sector_news.items)
+            news_statuses.append(
+                {
+                    "sector": sector_news.sector,
+                    **sector_news.status.model_dump(mode="json"),
+                }
+            )
 
         seed = market_snapshot.to_report_seed(news_items)
         narrative = self.llm_provider.generate_narrative(seed)
@@ -83,6 +113,10 @@ class ReportGenerator:
             news=news_items,
         )
         validation = validate_narrative_facts(report)
+        provider_status = {
+            "market": market_status.model_dump(mode="json"),
+            "news": news_statuses,
+        }
 
         write_json(assets.facts, market_snapshot.to_report_seed(news=[]))
         write_json(assets.news_raw, [item.model_dump() for item in news_items])
@@ -105,10 +139,16 @@ class ReportGenerator:
             {
                 "report": report.model_dump(mode="json"),
                 "validation": {"is_valid": validation.is_valid, "errors": validation.errors},
+                "provider_status": provider_status,
             },
         )
         assets.report_html.write_text(render_mobile_report_html(report), encoding="utf-8")
         export_png(assets.report_html, assets.report_png)
         write_json(assets.notes, {"overrides": []})
 
-        return GeneratedReport(report=report, validation=validation, assets=assets)
+        return GeneratedReport(
+            report=report,
+            validation=validation,
+            assets=assets,
+            provider_status=provider_status,
+        )

@@ -9,9 +9,7 @@ from pydantic import BaseModel
 from app.config import get_settings
 from app.db.models import Report, ReportKindModel, ReportStatusModel
 from app.db.session import get_engine, init_db, session_scope
-from app.providers.llm import FakeLLMProvider
-from app.providers.market import FakeMarketDataProvider
-from app.providers.news import FakeNewsProvider
+from app.providers.factory import create_provider_bundle
 from app.services.report_generator import ReportGenerator
 
 
@@ -45,13 +43,14 @@ def health() -> dict[str, str]:
 @app.post("/api/reports/close")
 def create_close_report(request: CreateCloseReportRequest) -> dict[str, object]:
     settings = get_settings()
-    generator = ReportGenerator(
-        reports_root=Path(settings.reports_root),
-        market_provider=FakeMarketDataProvider(),
-        news_provider=FakeNewsProvider(),
-        llm_provider=FakeLLMProvider(),
-    )
-    result = generator.generate_close_report(request.trade_date)
+    with create_provider_bundle(settings) as providers:
+        generator = ReportGenerator(
+            reports_root=Path(settings.reports_root),
+            market_provider=providers.market_provider,
+            news_provider=providers.news_provider,
+            llm_provider=providers.llm_provider,
+        )
+        result = generator.generate_close_report(request.trade_date)
     status = (
         ReportStatusModel.READY_FOR_REVIEW
         if result.validation.is_valid
@@ -82,4 +81,5 @@ def create_close_report(request: CreateCloseReportRequest) -> dict[str, object]:
             "html": str(result.assets.report_html),
             "png": str(result.assets.report_png),
         },
+        "provider_status": result.provider_status,
     }

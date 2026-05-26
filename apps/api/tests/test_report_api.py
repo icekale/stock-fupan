@@ -49,6 +49,29 @@ def test_create_close_report_api_returns_generated_report(
     assert payload["assets"]["version"] == "v001"
 
 
+def test_create_close_report_api_returns_provider_status(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("REPORTS_ROOT", str(tmp_path))
+    monkeypatch.setenv("MARKET_PROVIDER", "fake")
+    monkeypatch.setenv("NEWS_PROVIDER", "fake")
+
+    with TestClient(app) as client:
+        response = client.post("/api/reports/close", json={"trade_date": "2026-05-26"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["provider_status"]["market"] == {
+        "provider": "fake",
+        "status": "success",
+        "fallback_used": False,
+        "reason": None,
+    }
+    assert payload["provider_status"]["news"][0]["sector"] == "机器人"
+
+    snapshot_path = Path(payload["assets"]["root"]) / "snapshot.json"
+    snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    assert snapshot["provider_status"] == payload["provider_status"]
+
+
 def test_create_close_report_api_persists_report_metadata(
     tmp_path: Path, monkeypatch
 ) -> None:
