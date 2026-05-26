@@ -1,4 +1,5 @@
 import type { CreateReportResponse } from "../lib/types";
+import { ProviderStatusPanel } from "./ProviderStatusPanel";
 
 export function ReportPreview({ result }: { result: CreateReportResponse }) {
   const { report, validation, assets } = result;
@@ -28,6 +29,10 @@ export function ReportPreview({ result }: { result: CreateReportResponse }) {
           </span>
         </div>
       </header>
+
+      <div className="mt-5">
+        <ProviderStatusPanel status={result.provider_status} />
+      </div>
 
       <section className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="市场概览指标">
         <Metric label="上涨 / 下跌" value={`${report.breadth.up_count} / ${report.breadth.down_count}`} tone="slate" />

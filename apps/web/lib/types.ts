@@ -63,6 +63,22 @@ export type ReportDTO = {
   algorithm_versions: Record<string, string>;
 };
 
+export type ProviderStatus = {
+  provider: string;
+  status: "success" | "fallback" | "disabled" | "failed";
+  fallback_used: boolean;
+  reason: string | null;
+};
+
+export type SectorProviderStatus = ProviderStatus & {
+  sector: string;
+};
+
+export type ProviderStatusSummary = {
+  market: ProviderStatus;
+  news: SectorProviderStatus[];
+};
+
 export type CreateReportResponse = {
   report: ReportDTO;
   validation: {
@@ -75,4 +91,5 @@ export type CreateReportResponse = {
     html: string;
     png: string;
   };
+  provider_status: ProviderStatusSummary;
 };
