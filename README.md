@@ -51,6 +51,28 @@ Behavior:
 - `snapshot.json` includes `structured_review_status` so the frontend and generated assets can explain whether the review came from rules, LLM, or fallback.
 - API keys must be supplied through local environment variables only and are never written to generated assets.
 
+## Watchlist and TickFlow Enrichment
+
+v0.3b imports local watchlists and adds a `自选股观察` block to generated HTML reports.
+
+Supported import inputs:
+
+- TongHuaShun-style `.blk` files containing six-digit A-share codes.
+- `.csv` files with `代码`/`名称` or `code`/`name` columns.
+- Plain text pasted codes.
+
+TickFlow settings:
+
+```dotenv
+TICKFLOW_API_KEY=
+TICKFLOW_BASE_URL=https://api.tickflow.org
+TICKFLOW_PROVIDER=tickflow
+WATCHLIST_PROVIDER=local
+WATCHLIST_SNAPSHOT_ROOT=./data/watchlists
+```
+
+No key mode still works: TickFlow falls back to deterministic fake quotes and writes `provider_status.tickflow` to `snapshot.json`.
+
 ## Frontend Dev Startup
 
 From the repository root:
