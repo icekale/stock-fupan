@@ -26,7 +26,7 @@ If the `pnpm` shim is unavailable even after enabling Corepack, run the same com
 
 ```bash
 corepack pnpm install
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 corepack pnpm dev:web
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 corepack pnpm --filter @stock-review/web dev
 ```
 
 Open `http://localhost:3000` after both dev servers are running.
