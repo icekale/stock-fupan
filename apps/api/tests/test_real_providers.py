@@ -11,7 +11,7 @@ from app.providers.market import (
     ProviderFallbackError,
 )
 from app.providers.market import ProviderStatus
-from app.providers.news import FakeNewsProvider, FallbackNewsProvider, SectorNewsResult
+from app.providers.news import AnspireNewsProvider, FakeNewsProvider, FallbackNewsProvider, SectorNewsResult
 from app.schemas.report import NewsItem
 
 
@@ -288,3 +288,82 @@ def test_akshare_provider_raises_for_invalid_required_numbers(bad_value, frame_n
 
     with pytest.raises(ProviderFallbackError, match="非数字字段"):
         provider.get_close_snapshot("2026-05-26")
+
+
+class FakeResponse:
+    def __init__(self, status_code: int, payload: dict[str, object]) -> None:
+        self.status_code = status_code
+        self._payload = payload
+        self.text = str(payload)
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            raise ProviderFallbackError(f"Anspire HTTP {self.status_code}")
+
+    def json(self) -> dict[str, object]:
+        return self._payload
+
+
+class FakeHttpClient:
+    def __init__(self, response: FakeResponse) -> None:
+        self.response = response
+        self.last_headers: dict[str, str] = {}
+        self.last_params: dict[str, object] = {}
+
+    def get(self, _url: str, headers: dict[str, str], params: dict[str, object], timeout: float) -> FakeResponse:
+        self.last_headers = headers
+        self.last_params = params
+        return self.response
+
+
+def test_anspire_provider_maps_results_to_news_items() -> None:
+    client = FakeHttpClient(
+        FakeResponse(
+            200,
+            {
+                "data": [
+                    {
+                        "title": "机器人产业链催化增强",
+                        "url": "https://example.com/robot",
+                        "source": "财联社",
+                        "summary": "机器人方向出现政策催化。",
+                        "published_at": "2026-05-26T14:30:00+08:00",
+                    }
+                ]
+            },
+        )
+    )
+    provider = AnspireNewsProvider(
+        api_key="secret-key",
+        base_url="https://plugin.anspire.cn/api/ntsearch/search",
+        top_k=5,
+        lookback_hours=36,
+        http_client=client,
+    )
+
+    items = provider.search_sector_news("机器人", "2026-05-26")
+
+    assert client.last_headers["Authorization"] == "Bearer secret-key"
+    assert client.last_params["query"] == "机器人 A股"
+    assert client.last_params["top_k"] == 5
+    assert items[0].title == "机器人产业链催化增强"
+    assert items[0].source == "财联社"
+    assert items[0].matched_sector == "机器人"
+    assert items[0].weight == 0.9
+
+
+def test_anspire_provider_rejects_missing_key() -> None:
+    provider = AnspireNewsProvider(api_key="")
+
+    with pytest.raises(ProviderFallbackError, match="ANSPIRE_API_KEY"):
+        provider.search_sector_news("机器人", "2026-05-26")
+
+
+def test_anspire_provider_rejects_empty_results() -> None:
+    provider = AnspireNewsProvider(
+        api_key="secret-key",
+        http_client=FakeHttpClient(FakeResponse(200, {"data": []})),
+    )
+
+    with pytest.raises(ProviderFallbackError, match="无结果"):
+        provider.search_sector_news("机器人", "2026-05-26")
