@@ -1,8 +1,10 @@
 import json
 from pathlib import Path
 
+from fastapi.testclient import TestClient
 from sqlalchemy import text
 
+from app.main import app
 from app.db.models import Report, ReportKindModel, ReportStatusModel
 from app.db.session import create_sqlite_engine, init_db, session_scope
 from app.providers.llm import FakeLLMProvider
@@ -13,6 +15,22 @@ from app.rules.scoring import score_sectors
 from app.rules.validation import validate_narrative_facts
 from app.schemas.report import ReportDTO, ReportKind, SectorCandidate
 from app.services.report_generator import ReportGenerator
+
+
+def test_create_close_report_api_returns_generated_report(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.setenv("REPORTS_ROOT", str(tmp_path))
+
+    with TestClient(app) as client:
+        response = client.post("/api/reports/close", json={"trade_date": "2026-05-26"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["report"]["trade_date"] == "2026-05-26"
+    assert payload["report"]["sectors"][0]["name"] == "机器人"
+    assert payload["validation"]["is_valid"] is True
+    assert payload["assets"]["version"] == "v001"
 
 
 def test_report_model_persists_asset_path(tmp_path: Path) -> None:
