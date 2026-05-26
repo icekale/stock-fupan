@@ -292,6 +292,20 @@ def test_akshare_provider_raises_for_invalid_required_numbers(bad_value, frame_n
         provider.get_close_snapshot("2026-05-26")
 
 
+def test_akshare_provider_sanitizes_unexpected_fetch_failures() -> None:
+    class BrokenAkshare:
+        @staticmethod
+        def stock_zh_index_spot_em() -> pd.DataFrame:
+            raise RuntimeError("('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))")
+
+    provider = AkShareMarketDataProvider(akshare_module=BrokenAkshare, today=date(2026, 5, 26))
+
+    with pytest.raises(ProviderFallbackError) as exc_info:
+        provider.get_close_snapshot("2026-05-26")
+
+    assert str(exc_info.value) == "AkShare 请求失败: RuntimeError"
+
+
 class FakeResponse:
     def __init__(self, status_code: int, payload: dict[str, object]) -> None:
         self.status_code = status_code

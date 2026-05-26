@@ -138,22 +138,27 @@ class AkShareMarketDataProvider:
         if trade_date != current_date.isoformat():
             raise ProviderFallbackError("AkShare v0.2 暂不支持历史日期")
 
-        ak = self._akshare()
-        index_df = ak.stock_zh_index_spot_em()
-        stock_df = ak.stock_zh_a_spot_em()
-        sector_df = ak.stock_board_industry_name_em()
-        if index_df.empty or stock_df.empty or sector_df.empty:
-            raise ProviderFallbackError("AkShare 返回空数据")
+        try:
+            ak = self._akshare()
+            index_df = ak.stock_zh_index_spot_em()
+            stock_df = ak.stock_zh_a_spot_em()
+            sector_df = ak.stock_board_industry_name_em()
+            if index_df.empty or stock_df.empty or sector_df.empty:
+                raise ProviderFallbackError("AkShare 返回空数据")
 
-        indices = self._build_indices(index_df)
-        pct_changes = [_to_float(_pick(row, "涨跌幅")) for _idx, row in stock_df.iterrows()]
-        up_count = sum(1 for value in pct_changes if value > 0)
-        down_count = sum(1 for value in pct_changes if value < 0)
-        turnover_cny = round(
-            sum(_to_float(_pick(row, "成交额")) for _idx, row in stock_df.iterrows()) / 100_000_000,
-            2,
-        )
-        raw_sectors = self._build_sectors(sector_df)
+            indices = self._build_indices(index_df)
+            pct_changes = [_to_float(_pick(row, "涨跌幅")) for _idx, row in stock_df.iterrows()]
+            up_count = sum(1 for value in pct_changes if value > 0)
+            down_count = sum(1 for value in pct_changes if value < 0)
+            turnover_cny = round(
+                sum(_to_float(_pick(row, "成交额")) for _idx, row in stock_df.iterrows()) / 100_000_000,
+                2,
+            )
+            raw_sectors = self._build_sectors(sector_df)
+        except ProviderFallbackError:
+            raise
+        except Exception as exc:
+            raise ProviderFallbackError(f"AkShare 请求失败: {exc.__class__.__name__}") from exc
 
         return MarketCloseSnapshot(
             trade_date=trade_date,

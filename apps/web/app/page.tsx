@@ -43,7 +43,7 @@ export default function HomePage() {
           <div>
             <p className="text-xs font-semibold uppercase tracking-[0.35em] text-slate-500">Stock Review</p>
             <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-950 sm:text-4xl">A 股每日复盘工作台</h1>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">v0.1 手动生成收盘复盘，完成事实校验后预览长图资产。</p>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-600">v0.2 接入真实行情与新闻搜索，自动回退并展示数据源诊断。</p>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-white/80 px-4 py-3 text-sm text-slate-600 shadow-sm">
             API：<span className="font-semibold text-slate-950">/api/reports/close</span>
