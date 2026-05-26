@@ -10,6 +10,7 @@ FACT_NUMBER_PATTERN = re.compile(
     r"(?P<number>[+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?)"
     r"(?P<unit>万亿|亿元|％|%|只|家|亿|点)"
 )
+SECURITY_CODE_PATTERN = re.compile(r"(?<![A-Za-z0-9])(?P<code>\d{6})(?![A-Za-z0-9])")
 SECTOR_CANDIDATES = [
     "低空经济",
     "电力设备",
@@ -156,6 +157,27 @@ def _known_stock_values(report: ReportDTO) -> set[str]:
     return values
 
 
+def _known_security_codes(report: ReportDTO) -> set[str]:
+    values = {index.code for index in report.indices}
+    for sector in report.sectors:
+        for stock in sector.top_stocks:
+            values.add(stock.code)
+    return values
+
+
+def _validate_security_codes(
+    text: str,
+    report: ReportDTO,
+    errors: list[str],
+    seen_errors: set[str],
+) -> None:
+    known_codes = _known_security_codes(report)
+    for match in SECURITY_CODE_PATTERN.finditer(text):
+        code = match.group("code")
+        if code not in known_codes:
+            _add_error(errors, seen_errors, f"unknown code: {code}")
+
+
 def _validate_index_mentions(
     text: str,
     report: ReportDTO,
@@ -204,6 +226,7 @@ def validate_narrative_facts(report: ReportDTO) -> ValidationResult:
 
     _validate_sector_mentions(text, known_sector_names, errors, seen_errors)
     _validate_fact_numbers(text, report, errors, seen_errors)
+    _validate_security_codes(text, report, errors, seen_errors)
     _validate_index_mentions(text, report, errors, seen_errors)
     _validate_stock_mentions(text, report, known_sector_names, errors, seen_errors)
 

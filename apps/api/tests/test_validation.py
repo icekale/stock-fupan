@@ -162,6 +162,45 @@ def test_validate_narrative_accepts_known_top_stock_and_index_names() -> None:
     assert result.errors == []
 
 
+def test_validate_narrative_accepts_known_index_and_stock_codes() -> None:
+    report = make_report(
+        ReportNarrative(
+            conclusion="上证指数上涨1.2%，机器人科技涨幅10.00%。",
+            overview="000001与300001同步走强。",
+            sector_commentary=[],
+            watchlist=[],
+            tomorrow="观察机器人科技。",
+            risks=[],
+        )
+    )
+    report.sectors[0].top_stocks = [
+        StockCandidate(code="300001", name="机器人科技", pct_change=10.0)
+    ]
+
+    result = validate_narrative_facts(report)
+
+    assert result.is_valid
+    assert result.errors == []
+
+
+def test_validate_narrative_flags_unknown_code_without_number_error() -> None:
+    report = make_report(
+        ReportNarrative(
+            conclusion="999999走强，999999继续活跃。",
+            overview="上证指数上涨1.2%。",
+            sector_commentary=[],
+            watchlist=[],
+            tomorrow="观察机器人方向。",
+            risks=[],
+        )
+    )
+
+    result = validate_narrative_facts(report)
+
+    assert result.errors.count("unknown code: 999999") == 1
+    assert "unknown number: 999999" not in result.errors
+
+
 def test_validate_narrative_dedupes_unknown_values_and_avoids_sector_overlap() -> None:
     report = make_report(
         ReportNarrative(
