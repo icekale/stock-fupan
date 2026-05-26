@@ -164,6 +164,14 @@ def test_build_structured_review_derives_core_modules_from_report() -> None:
     assert review.sector_reviews[0].sustainability == "high"
     assert review.sustainability_ranking[0].sector == "机器人"
     assert "机器人" in review.action_discipline.final_view
+    assert review.after_hours_news.domestic_catalysts
+    assert review.after_hours_news.risk_notes == ["盘后消息只作为次日观察线索，不作为单独决策依据。"]
+    assert review.capital_rotation.actual_path[0] == "机器人承接"
+    assert "机器人" in review.capital_rotation.key_finding
+    assert review.next_day_opportunity.focus_candidates[0] == "机器人核心股承接确认"
+    assert "不追一致加速" in review.next_day_opportunity.position_discipline[0]
+    assert review.practical_conclusion.headline.startswith("明日最实战")
+    assert review.index_mid_term_outlook.scenario_table[0]["scenario"] == "强势延续"
 class SuccessfulStructuredLLM:
     provider_name = "openai"
 
