@@ -17,15 +17,16 @@ Backend API runs at `http://localhost:8000`.
 From the repository root:
 
 ```bash
-corepack pnpm install
+corepack enable
+pnpm install
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 pnpm dev:web
 ```
 
-If the `pnpm` shim is already available, `pnpm install` is also fine. If `pnpm` is missing, run through Corepack first:
+If the `pnpm` shim is unavailable even after enabling Corepack, run the same commands through Corepack:
 
 ```bash
-corepack enable
 corepack pnpm install
+NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 corepack pnpm dev:web
 ```
 
 Open `http://localhost:3000` after both dev servers are running.
@@ -35,6 +36,7 @@ Open `http://localhost:3000` after both dev servers are running.
 The local compose stack builds the API image from `apps/api/Dockerfile` and runs the web app with Node:
 
 ```bash
+cp .env.example .env
 docker compose up --build
 ```
 
