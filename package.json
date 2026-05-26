@@ -1,0 +1,10 @@
+{
+  "name": "stock-review-monorepo",
+  "private": true,
+  "scripts": {
+    "dev:web": "pnpm --filter @stock-review/web dev",
+    "test:web": "pnpm --filter @stock-review/web test",
+    "lint:web": "pnpm --filter @stock-review/web lint"
+  },
+  "packageManager": "pnpm@9.15.0"
+}

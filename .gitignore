@@ -1,0 +1,16 @@
+.DS_Store
+.env
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+node_modules/
+.next/
+dist/
+build/
+reports/**
+!reports/.gitkeep
+.superpowers/
+apps/api/data/
+apps/api/playwright-report/
+apps/api/test-results/

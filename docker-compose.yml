@@ -1,0 +1,21 @@
+services:
+  api:
+    build:
+      context: ./apps/api
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./reports:/workspace/reports
+      - ./apps/api/data:/workspace/apps/api/data
+  web:
+    image: node:22-alpine
+    working_dir: /workspace
+    command: sh -c "corepack enable && pnpm install && pnpm dev:web"
+    ports:
+      - "3000:3000"
+    volumes:
+      - .:/workspace
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
