@@ -7,6 +7,12 @@ from app.schemas.structured_review import (
     SustainabilityRank,
     TomorrowJudgement,
 )
+from app.providers.llm import FakeLLMProvider
+from app.providers.market import FakeMarketDataProvider
+from app.providers.news import FakeNewsProvider
+from app.rules.scoring import score_sectors
+from app.schemas.report import ReportDTO, ReportKind, SectorCandidate
+from app.services.structured_review_builder import build_structured_review
 
 
 def test_structured_review_serializes_core_modules() -> None:
@@ -63,3 +69,57 @@ def test_structured_review_serializes_core_modules() -> None:
     assert payload["prediction_review"]["source"] == "manual_placeholder"
     assert payload["sector_reviews"][0]["sustainability"] == "high"
     assert payload["action_discipline"]["avoid"] == ["回避无催化的跟风补涨"]
+
+
+def _fake_report() -> ReportDTO:
+    market = FakeMarketDataProvider()
+    news = FakeNewsProvider()
+    llm = FakeLLMProvider()
+    snapshot = market.get_close_snapshot("2026-05-26")
+    news_items = []
+    for raw_sector in snapshot.raw_sectors:
+        news_items.extend(news.search_sector_news(raw_sector.name, snapshot.trade_date))
+    scored = score_sectors(snapshot.raw_sectors, top_n=5)
+    return ReportDTO(
+        trade_date=snapshot.trade_date,
+        kind=ReportKind.CLOSE,
+        title="2026-05-26 A股复盘",
+        indices=snapshot.indices,
+        breadth=snapshot.breadth,
+        turnover_cny=snapshot.turnover_cny,
+        market_state_tags=snapshot.market_state_tags,
+        sectors=[
+            SectorCandidate(
+                name=sector.name,
+                score=sector.score,
+                rank=sector.rank,
+                pct_change=sector.pct_change,
+                reason="综合评分靠前",
+                news_summaries=[item.summary for item in news_items if item.matched_sector == sector.name],
+                factor_scores=sector.factor_scores,
+            )
+            for sector in scored
+        ],
+        narrative=llm.generate_narrative(snapshot.to_report_seed(news_items)),
+        news=news_items,
+    )
+
+
+def test_build_structured_review_derives_core_modules_from_report() -> None:
+    report = _fake_report()
+
+    review = build_structured_review(report)
+
+    assert review.topic == "放量分化 · 机器人领涨 · PCB轮动"
+    assert review.prediction_review.source == "manual_placeholder"
+    assert review.tomorrow_judgement.most_likely_to_continue == "机器人"
+    assert review.tomorrow_judgement.most_likely_to_diverge == "PCB"
+    assert review.market_overview.emotion_rows == [
+        {"label": "上涨 / 下跌", "value": "3200 / 1800"},
+        {"label": "涨停 / 跌停", "value": "86 / 8"},
+        {"label": "成交额", "value": "12345.67 亿"},
+    ]
+    assert review.sector_reviews[0].sector == "机器人"
+    assert review.sector_reviews[0].sustainability == "high"
+    assert review.sustainability_ranking[0].sector == "机器人"
+    assert "机器人" in review.action_discipline.final_view
