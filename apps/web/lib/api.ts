@@ -11,17 +11,19 @@ export async function createCloseReport(tradeDate: string): Promise<CreateReport
 
   if (!response.ok) {
     let detail = response.statusText;
+    const bodyText = await response.text();
 
-    try {
-      const payload = (await response.json()) as { detail?: unknown; message?: unknown };
-      const message = payload.detail ?? payload.message;
-      if (typeof message === "string") {
-        detail = message;
-      }
-    } catch {
-      const text = await response.text().catch(() => "");
-      if (text) {
-        detail = text;
+    if (bodyText) {
+      try {
+        const payload = JSON.parse(bodyText) as { detail?: unknown; message?: unknown };
+        const message = payload.detail ?? payload.message;
+        if (typeof message === "string") {
+          detail = message;
+        } else {
+          detail = bodyText;
+        }
+      } catch {
+        detail = bodyText;
       }
     }
 
