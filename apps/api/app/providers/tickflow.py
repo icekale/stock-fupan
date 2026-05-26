@@ -134,14 +134,23 @@ def _quote_from_item(item: dict[str, Any]) -> WatchlistQuote:
     symbol = str(item.get("symbol") or item.get("ticker") or item.get("code") or "")
     if not symbol:
         raise ProviderFallbackError("TickFlow 响应缺少 symbol")
+    ext = item.get("ext")
+    ext_item = ext if isinstance(ext, dict) else {}
+    change_pct = (
+        item.get("pct_change")
+        or item.get("change_percent")
+        or item.get("percent")
+        or ext_item.get("change_pct")
+    )
+    pct_change = _optional_float(change_pct)
+    if pct_change is not None and abs(pct_change) <= 1:
+        pct_change = pct_change * 100
     return WatchlistQuote(
         symbol=symbol,
-        name=_optional_str(item.get("name")),
+        name=_optional_str(item.get("name") or ext_item.get("name")),
         last_price=_optional_float(item.get("last_price") or item.get("price") or item.get("last")),
-        pct_change=_optional_float(
-            item.get("pct_change") or item.get("change_percent") or item.get("percent")
-        ),
-        turnover_cny=_optional_float(item.get("turnover_cny") or item.get("turnover")),
+        pct_change=pct_change,
+        turnover_cny=_optional_float(item.get("turnover_cny") or item.get("turnover") or item.get("amount")),
         volume=_optional_float(item.get("volume")),
         quote_time=_optional_str(item.get("quote_time") or item.get("time") or item.get("timestamp")),
     )

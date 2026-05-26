@@ -82,7 +82,6 @@ class AnspireNewsProvider:
                 params={
                     "query": f"{sector_name} A股",
                     "top_k": self.top_k,
-                    "search_type": "hybrid",
                     "FromTime": from_time.isoformat(),
                     "ToTime": to_time.isoformat(),
                 },

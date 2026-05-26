@@ -73,6 +73,40 @@ def test_tickflow_provider_maps_batch_quotes() -> None:
     assert client.last_request["headers"] == {"x-api-key": "tk-test-local"}
 
 
+def test_tickflow_provider_maps_nested_ext_quote_fields() -> None:
+    client = FakeClient(
+        FakeResponse(
+            {
+                "data": [
+                    {
+                        "symbol": "600000.SH",
+                        "last_price": 9.27,
+                        "volume": 1464375,
+                        "amount": 135000000,
+                        "timestamp": "1779778804000",
+                        "ext": {
+                            "name": "浦发银行",
+                            "change_pct": 0.020925110132158534,
+                        },
+                    }
+                ]
+            }
+        )
+    )
+    provider = TickFlowProvider(
+        api_key="tk-test-local",
+        base_url="https://api.tickflow.org",
+        http_client=client,
+    )
+
+    quotes = provider.get_quotes(["600000.SH"])
+
+    assert quotes[0].name == "浦发银行"
+    assert quotes[0].pct_change == pytest.approx(2.0925110132158534)
+    assert quotes[0].turnover_cny == 135000000
+    assert quotes[0].quote_time == "1779778804000"
+
+
 def test_tickflow_provider_rejects_missing_key() -> None:
     provider = TickFlowProvider(api_key="", base_url="https://api.tickflow.org")
 

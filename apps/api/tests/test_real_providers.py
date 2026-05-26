@@ -373,6 +373,7 @@ def test_anspire_provider_maps_results_to_news_items() -> None:
     assert client.last_headers["Authorization"] == "Bearer secret-key"
     assert client.last_params["query"] == "机器人 A股"
     assert client.last_params["top_k"] == 5
+    assert "search_type" not in client.last_params
     assert items[0].title == "机器人产业链催化增强"
     assert items[0].source == "财联社"
     assert items[0].matched_sector == "机器人"
