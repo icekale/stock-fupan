@@ -1,3 +1,4 @@
+from app.rules.scoring import RawSectorInput, score_sectors
 from app.schemas.report import (
     IndexSnapshot,
     MarketBreadth,
@@ -56,9 +57,6 @@ def test_report_dto_serializes_core_fields() -> None:
     assert dumped["narrative"]["risks"] == ["高位分歧加大。"]
 
 
-from app.rules.scoring import RawSectorInput, score_sectors
-
-
 def test_score_sectors_ranks_by_short_term_strength() -> None:
     sectors = [
         RawSectorInput(
@@ -104,3 +102,93 @@ def test_score_sectors_caps_to_top_n() -> None:
 
     assert len(scored) == 5
     assert scored[0].name == "板块7"
+
+
+def test_score_sectors_returns_empty_for_non_positive_top_n() -> None:
+    sectors = [
+        RawSectorInput(
+            name=f"板块{i}",
+            pct_change=5.0,
+            limit_up_count=8,
+            stock_up_ratio=0.8,
+            turnover_change=0.3,
+            news_weight=0.5,
+        )
+        for i in range(2)
+    ]
+
+    assert score_sectors(sectors, top_n=0) == []
+    assert score_sectors(sectors, top_n=-1) == []
+
+
+def test_score_sectors_orders_ties_by_name() -> None:
+    sectors = [
+        RawSectorInput(
+            name="B板块",
+            pct_change=1.0,
+            limit_up_count=2,
+            stock_up_ratio=0.5,
+            turnover_change=0.1,
+            news_weight=0.0,
+        ),
+        RawSectorInput(
+            name="A板块",
+            pct_change=1.0,
+            limit_up_count=2,
+            stock_up_ratio=0.5,
+            turnover_change=0.1,
+            news_weight=0.0,
+        ),
+    ]
+
+    scored = score_sectors(sectors)
+
+    assert [sector.name for sector in scored] == ["A板块", "B板块"]
+
+
+def test_score_sectors_treats_non_finite_inputs_as_minimum() -> None:
+    sectors = [
+        RawSectorInput(
+            name="异常值",
+            pct_change=float("inf"),
+            limit_up_count=10,
+            stock_up_ratio=float("nan"),
+            turnover_change=float("-inf"),
+            news_weight=float("inf"),
+        )
+    ]
+
+    scored = score_sectors(sectors)
+
+    assert scored[0].factor_scores == {
+        "pct_change": 0.0,
+        "limit_up": 100.0,
+        "breadth": 0.0,
+        "turnover": 0.0,
+        "news": 0.0,
+    }
+    assert scored[0].score == 35.0
+
+
+def test_score_sectors_calculates_expected_factor_scores() -> None:
+    sectors = [
+        RawSectorInput(
+            name="公式校验",
+            pct_change=4.0,
+            limit_up_count=5,
+            stock_up_ratio=0.6,
+            turnover_change=0.2,
+            news_weight=0.3,
+        )
+    ]
+
+    scored = score_sectors(sectors)
+
+    assert scored[0].factor_scores == {
+        "pct_change": 50.0,
+        "limit_up": 50.0,
+        "breadth": 60.0,
+        "turnover": 50.0,
+        "news": 30.0,
+    }
+    assert scored[0].score == 49.5

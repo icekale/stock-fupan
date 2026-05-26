@@ -1,3 +1,4 @@
+import math
 from dataclasses import dataclass, field
 
 
@@ -25,6 +26,8 @@ class ScoredSector:
 
 
 def _clamp(value: float, minimum: float = 0.0, maximum: float = 100.0) -> float:
+    if not math.isfinite(value):
+        return minimum
     return max(minimum, min(maximum, value))
 
 
@@ -49,6 +52,9 @@ def _normalize_news(value: float) -> float:
 
 
 def score_sectors(sectors: list[RawSectorInput], top_n: int = 5) -> list[ScoredSector]:
+    if top_n <= 0:
+        return []
+
     scored: list[ScoredSector] = []
     for sector in sectors:
         factor_scores = {
@@ -75,7 +81,7 @@ def score_sectors(sectors: list[RawSectorInput], top_n: int = 5) -> list[ScoredS
             )
         )
 
-    ranked = sorted(scored, key=lambda item: item.score, reverse=True)[:top_n]
+    ranked = sorted(scored, key=lambda item: (-item.score, item.name))[:top_n]
     return [
         ScoredSector(
             name=item.name,
