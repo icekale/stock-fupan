@@ -73,6 +73,25 @@ WATCHLIST_SNAPSHOT_ROOT=./data/watchlists
 
 No key mode still works: TickFlow falls back to deterministic fake quotes and writes `provider_status.tickflow` to `snapshot.json`.
 
+## OCR Watchlist Import
+
+v0.3c supports screenshot-based watchlist import. Uploading an image creates an OCR preview first; the latest SQLite watchlist is updated only after clicking confirm.
+
+```dotenv
+OCR_PROVIDER=fake
+OCR_FALLBACK_ENABLED=true
+OCR_MODEL=gpt-4.1-mini
+```
+
+Behavior:
+
+- Supported image uploads: PNG, JPEG, and WebP.
+- `OCR_PROVIDER=fake` returns deterministic local data for offline development and tests.
+- `OCR_PROVIDER=openai` uses the existing OpenAI-compatible `OPENAI_API_KEY` and `OPENAI_BASE_URL` settings with `OCR_MODEL`.
+- OCR preview artifacts are stored under `WATCHLIST_SNAPSHOT_ROOT/ocr`.
+- Confirmed OCR imports reuse the normal watchlist import path and appear in generated HTML reports through `自选股观察`.
+- API keys are read only from local environment variables and are not written to snapshots or generated report assets.
+
 ## Frontend Dev Startup
 
 From the repository root:
