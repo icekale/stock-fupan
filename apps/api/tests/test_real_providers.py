@@ -15,6 +15,7 @@ from app.providers.market import (
 )
 from app.providers.market import ProviderStatus
 from app.providers.news import AnspireNewsProvider, FakeNewsProvider, FallbackNewsProvider, SectorNewsResult
+from app.providers.tickflow import FallbackTickFlowProvider
 from app.schemas.report import NewsItem
 
 
@@ -494,3 +495,13 @@ def test_provider_factory_can_create_openai_llm_provider() -> None:
 
     assert isinstance(bundle.llm_provider, OpenAILLMProvider)
     assert bundle.llm_provider.model_name == "gpt-4.1-mini"
+def test_provider_factory_includes_tickflow_provider() -> None:
+    settings = Settings(
+        tickflow_provider="tickflow",
+        tickflow_api_key="tk-test-local",
+        tickflow_base_url="https://api.tickflow.org",
+    )
+
+    bundle = create_provider_bundle(settings)
+
+    assert isinstance(bundle.tickflow_provider, FallbackTickFlowProvider)

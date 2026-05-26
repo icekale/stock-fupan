@@ -12,12 +12,15 @@ from app.db.session import create_sqlite_engine, init_db, session_scope
 from app.providers.llm import FakeLLMProvider, LLMFallbackError
 from app.providers.market import FakeMarketDataProvider
 from app.providers.news import FakeNewsProvider
+from app.providers.tickflow import FakeTickFlowProvider
 from app.renderers.html_renderer import render_mobile_report_html
 from app.rules.scoring import score_sectors
 from app.rules.validation import validate_narrative_facts
 from app.schemas.report import ReportDTO, ReportKind, SectorCandidate
 from app.services import report_generator as report_generator_module
 from app.services.report_generator import ReportGenerator
+from app.watchlist.parser import WatchlistItem
+from app.watchlist.service import WatchlistImportResult
 
 
 @pytest.fixture(autouse=True)
@@ -286,6 +289,8 @@ def test_mobile_report_renderer_contains_core_sections(tmp_path: Path) -> None:
     assert "回避清单" in html
     assert "科技内部" in html
     assert "非投资建议" in html
+
+
 class BrokenStructuredReviewLLM(FakeLLMProvider):
     provider_name = "openai"
 
@@ -313,3 +318,56 @@ def test_report_generator_writes_structured_review_status_on_llm_fallback(tmp_pa
     }
     snapshot = json.loads(result.assets.snapshot.read_text(encoding="utf-8"))
     assert snapshot["structured_review_status"] == result.structured_review_status
+class StaticWatchlistService:
+    def get_latest(self):
+        return WatchlistImportResult(
+            import_id=1,
+            item_count=2,
+            items=[
+                WatchlistItem(symbol="600000.SH", code="600000", exchange="SH", name="浦发银行"),
+                WatchlistItem(symbol="000001.SZ", code="000001", exchange="SZ", name="平安银行"),
+            ],
+            warnings=[],
+        )
+
+
+def test_report_generator_writes_watchlist_observation_and_tickflow_status(tmp_path: Path) -> None:
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=FakeMarketDataProvider(),
+        news_provider=FakeNewsProvider(),
+        llm_provider=FakeLLMProvider(),
+        watchlist_service=StaticWatchlistService(),
+        tickflow_provider=FakeTickFlowProvider(),
+    )
+
+    result = generator.generate_close_report("2026-05-26")
+
+    assert result.report.watchlist_observation is not None
+    assert result.report.watchlist_observation.total_count == 2
+    assert result.provider_status["tickflow"] == {
+        "provider": "fake_tickflow",
+        "status": "success",
+        "fallback_used": False,
+        "reason": None,
+    }
+    snapshot = json.loads(result.assets.snapshot.read_text(encoding="utf-8"))
+    assert snapshot["report"]["watchlist_observation"]["total_count"] == 2
+    assert snapshot["provider_status"]["tickflow"] == result.provider_status["tickflow"]
+
+
+def test_mobile_report_renderer_contains_watchlist_section(tmp_path: Path) -> None:
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=FakeMarketDataProvider(),
+        news_provider=FakeNewsProvider(),
+        llm_provider=FakeLLMProvider(),
+        watchlist_service=StaticWatchlistService(),
+        tickflow_provider=FakeTickFlowProvider(),
+    )
+
+    result = generator.generate_close_report("2026-05-26")
+    html = render_mobile_report_html(result.report)
+
+    assert "自选股观察" in html
+    assert "600000.SH" in html

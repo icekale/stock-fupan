@@ -123,7 +123,26 @@
           </section>
 
           <section>
-            <div class="section-title"><span class="section-num">04</span><h2>板块详细分析</h2></div>
+            <div class="section-title"><span class="section-num">04</span><h2>自选股观察</h2></div>
+            {% set watch = report.watchlist_observation %}
+            {% if watch %}
+              <p class="muted">导入 {{ watch.total_count }} 只，行情匹配 {{ watch.quote_count }} 只。</p>
+              {% if watch.strongest %}
+                <h3>强势自选</h3>
+                <ul>{% for item in watch.strongest %}<li>{{ item.symbol }} {{ item.name or '' }} {{ "%+.2f"|format(item.pct_change or 0) }}% · {{ item.reason }}</li>{% endfor %}</ul>
+              {% endif %}
+              {% if watch.weakest %}
+                <h3>风险观察</h3>
+                <ul>{% for item in watch.weakest %}<li>{{ item.symbol }} {{ item.name or '' }} {{ "%+.2f"|format(item.pct_change or 0) }}% · {{ item.reason }}</li>{% endfor %}</ul>
+              {% endif %}
+              {% if watch.notes %}<p class="muted">{{ watch.notes|join("；") }}</p>{% endif %}
+            {% else %}
+              <p class="muted">未导入自选股。</p>
+            {% endif %}
+          </section>
+
+          <section>
+            <div class="section-title"><span class="section-num">05</span><h2>板块详细分析</h2></div>
             {% for sector in structured.sector_reviews %}
               <article class="sector-card">
                 <div class="sector-head"><strong>{{ sector.headline }}</strong><span class="rating">{{ sector.sustainability|upper }}</span></div>
@@ -139,7 +158,7 @@
           </section>
 
           <section>
-            <div class="section-title"><span class="section-num">05</span><h2>板块持续性排序</h2></div>
+            <div class="section-title"><span class="section-num">06</span><h2>板块持续性排序</h2></div>
             <table>
               <tr><th>排序</th><th>板块</th><th>持续性</th><th>理由</th></tr>
               {% for item in structured.sustainability_ranking %}
@@ -149,7 +168,7 @@
           </section>
 
           <section>
-            <div class="section-title"><span class="section-num">06</span><h2>去弱留强 / 回避清单</h2></div>
+            <div class="section-title"><span class="section-num">07</span><h2>去弱留强 / 回避清单</h2></div>
             <div class="avoid-box">
               <div class="mini-title">去弱留强</div>
               <ul>{% for item in structured.action_discipline.focus %}<li>{{ item }}</li>{% endfor %}</ul>

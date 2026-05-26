@@ -9,6 +9,12 @@ from app.providers.market import (
     MarketDataProvider,
 )
 from app.providers.news import AnspireNewsProvider, FakeNewsProvider, FallbackNewsProvider, NewsProvider
+from app.providers.tickflow import (
+    FakeTickFlowProvider,
+    FallbackTickFlowProvider,
+    TickFlowProvider,
+    TickFlowQuoteProvider,
+)
 
 
 @dataclass(frozen=True)
@@ -16,11 +22,13 @@ class ProviderBundle:
     market_provider: MarketDataProvider
     news_provider: NewsProvider
     llm_provider: LLMProvider
+    tickflow_provider: TickFlowQuoteProvider
 
     def close(self) -> None:
         _close_provider(self.market_provider)
         _close_provider(self.news_provider)
         _close_provider(self.llm_provider)
+        _close_provider(self.tickflow_provider)
 
     def __enter__(self) -> "ProviderBundle":
         return self
@@ -34,6 +42,7 @@ def create_provider_bundle(settings: Settings) -> ProviderBundle:
         market_provider=_create_market_provider(settings),
         news_provider=_create_news_provider(settings),
         llm_provider=_create_llm_provider(settings),
+        tickflow_provider=_create_tickflow_provider(settings),
     )
 
 
@@ -77,6 +86,22 @@ def _create_llm_provider(settings: Settings) -> LLMProvider:
             model_name=settings.llm_model,
         )
     raise ValueError(f"Unsupported LLM_PROVIDER: {settings.llm_provider}")
+
+
+def _create_tickflow_provider(settings: Settings) -> TickFlowQuoteProvider:
+    if settings.tickflow_provider == "fake":
+        return FakeTickFlowProvider()
+    if settings.tickflow_provider == "tickflow":
+        return FallbackTickFlowProvider(
+            primary=TickFlowProvider(
+                api_key=settings.tickflow_api_key,
+                base_url=settings.tickflow_base_url,
+                timeout_seconds=settings.provider_timeout_seconds,
+            ),
+            fallback=FakeTickFlowProvider(),
+            fallback_enabled=settings.provider_fallback_enabled,
+        )
+    raise ValueError(f"Unsupported TICKFLOW_PROVIDER: {settings.tickflow_provider}")
 
 
 def _close_provider(provider: object) -> None:

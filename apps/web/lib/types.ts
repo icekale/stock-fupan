@@ -104,6 +104,39 @@ export type StructuredReviewDTO = {
   action_discipline: ActionDiscipline;
 };
 
+export type WatchlistItem = {
+  symbol: string;
+  code: string;
+  exchange: "SH" | "SZ" | "BJ";
+  name: string | null;
+  source: string;
+};
+
+export type WatchlistImportResult = {
+  import_id: number | null;
+  item_count: number;
+  items: WatchlistItem[];
+  warnings: string[];
+};
+
+export type WatchlistMatch = {
+  symbol: string;
+  name: string | null;
+  sector: string | null;
+  pct_change: number | null;
+  reason: string;
+};
+
+export type WatchlistObservation = {
+  import_id: number | null;
+  total_count: number;
+  quote_count: number;
+  strongest: WatchlistMatch[];
+  weakest: WatchlistMatch[];
+  sector_matches: WatchlistMatch[];
+  notes: string[];
+};
+
 export type ReportDTO = {
   trade_date: string;
   kind: "close";
@@ -121,6 +154,7 @@ export type ReportDTO = {
   narrative: ReportNarrative;
   news: NewsItem[];
   structured_review?: StructuredReviewDTO | null;
+  watchlist_observation?: WatchlistObservation | null;
   algorithm_versions: Record<string, string>;
 };
 
@@ -138,6 +172,7 @@ export type SectorProviderStatus = ProviderStatus & {
 export type ProviderStatusSummary = {
   market: ProviderStatus;
   news: SectorProviderStatus[];
+  tickflow?: ProviderStatus;
 };
 
 export type CreateReportResponse = {

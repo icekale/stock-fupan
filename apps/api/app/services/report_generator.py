@@ -4,6 +4,7 @@ from pathlib import Path
 from app.providers.llm import LLMProvider
 from app.providers.market import MarketDataProvider, ProviderStatus
 from app.providers.news import NewsProvider, SectorNewsResult
+from app.providers.tickflow import TickFlowQuoteProvider
 from app.renderers.html_renderer import render_mobile_report_html
 from app.renderers.png_exporter import export_png
 from app.rules.scoring import score_sectors
@@ -11,6 +12,7 @@ from app.rules.validation import ValidationResult, validate_narrative_facts
 from app.schemas.report import ReportDTO, ReportKind, SectorCandidate
 from app.services.assets import AssetPaths, create_report_asset_dir, write_json
 from app.services.structured_review_generator import generate_structured_review
+from app.services.watchlist_observation import build_watchlist_observation
 
 
 DEFAULT_LLM_METADATA_VALUE = "unknown"
@@ -41,6 +43,8 @@ class ReportGenerator:
         llm_provider: LLMProvider,
         structured_review_provider: str = "rule",
         structured_review_fallback_enabled: bool = True,
+        watchlist_service: object | None = None,
+        tickflow_provider: TickFlowQuoteProvider | None = None,
     ) -> None:
         self.reports_root = reports_root
         self.market_provider = market_provider
@@ -48,6 +52,8 @@ class ReportGenerator:
         self.llm_provider = llm_provider
         self.structured_review_provider = structured_review_provider
         self.structured_review_fallback_enabled = structured_review_fallback_enabled
+        self.watchlist_service = watchlist_service
+        self.tickflow_provider = tickflow_provider
 
     def generate_close_report(self, trade_date: str) -> GeneratedReport:
         assets = create_report_asset_dir(self.reports_root, trade_date, ReportKind.CLOSE.value)
@@ -125,10 +131,38 @@ class ReportGenerator:
             fallback_enabled=self.structured_review_fallback_enabled,
         )
         report.structured_review = structured_review
+        tickflow_status = ProviderStatus(
+            provider="tickflow",
+            status="disabled",
+            fallback_used=False,
+            reason="未配置自选股服务",
+        )
+        if self.watchlist_service is not None:
+            latest_watchlist = self.watchlist_service.get_latest()
+            symbols = [item.symbol for item in latest_watchlist.items]
+            quotes = []
+            if self.tickflow_provider is not None and symbols:
+                if hasattr(self.tickflow_provider, "get_quotes_with_status"):
+                    quotes, tickflow_status = self.tickflow_provider.get_quotes_with_status(symbols)
+                else:
+                    quotes = self.tickflow_provider.get_quotes(symbols)
+                    tickflow_status = ProviderStatus(
+                        provider=getattr(self.tickflow_provider, "provider_name", "tickflow"),
+                        status="success",
+                        fallback_used=False,
+                        reason=None,
+                    )
+            report.watchlist_observation = build_watchlist_observation(
+                import_id=latest_watchlist.import_id,
+                items=latest_watchlist.items,
+                quotes=quotes,
+                sectors=report.sectors,
+            )
         validation = validate_narrative_facts(report)
         provider_status = {
             "market": market_status.model_dump(mode="json"),
             "news": news_statuses,
+            "tickflow": tickflow_status.model_dump(mode="json"),
         }
         structured_review_status_payload = structured_review_status.model_dump(mode="json")
 

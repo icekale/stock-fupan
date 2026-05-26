@@ -86,6 +86,24 @@ class LLMCallRecord(BaseModel):
     validation_errors: list[str] = Field(default_factory=list)
 
 
+class WatchlistMatch(BaseModel):
+    symbol: str
+    name: str | None = None
+    sector: str | None = None
+    pct_change: float | None = None
+    reason: str
+
+
+class WatchlistObservation(BaseModel):
+    import_id: int | None = None
+    total_count: int = 0
+    quote_count: int = 0
+    strongest: list[WatchlistMatch] = Field(default_factory=list)
+    weakest: list[WatchlistMatch] = Field(default_factory=list)
+    sector_matches: list[WatchlistMatch] = Field(default_factory=list)
+    notes: list[str] = Field(default_factory=list)
+
+
 class ReportDTO(BaseModel):
     trade_date: str
     kind: ReportKind
@@ -98,6 +116,7 @@ class ReportDTO(BaseModel):
     narrative: ReportNarrative
     news: list[NewsItem] = Field(default_factory=list)
     structured_review: StructuredReviewDTO | None = None
+    watchlist_observation: WatchlistObservation | None = None
     overrides: list[OverrideRecord] = Field(default_factory=list)
     algorithm_versions: dict[str, str] = Field(
         default_factory=lambda: {
