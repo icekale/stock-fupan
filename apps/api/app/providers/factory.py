@@ -18,6 +18,7 @@ from app.providers.ocr import (
 from app.providers.tickflow import (
     FakeTickFlowProvider,
     FallbackTickFlowProvider,
+    TickFlowMarketDataProvider,
     TickFlowProvider,
     TickFlowQuoteProvider,
 )
@@ -46,6 +47,7 @@ class ProviderBundle:
 
 
 def create_provider_bundle(settings: Settings) -> ProviderBundle:
+    _validate_production_providers(settings)
     return ProviderBundle(
         market_provider=_create_market_provider(settings),
         news_provider=_create_news_provider(settings),
@@ -58,6 +60,16 @@ def create_provider_bundle(settings: Settings) -> ProviderBundle:
 def _create_market_provider(settings: Settings) -> MarketDataProvider:
     if settings.market_provider == "fake":
         return FakeMarketDataProvider()
+    if settings.market_provider == "tickflow":
+        return FallbackMarketDataProvider(
+            primary=TickFlowMarketDataProvider(
+                api_key=settings.tickflow_api_key,
+                base_url=settings.tickflow_base_url,
+                timeout_seconds=settings.provider_timeout_seconds,
+            ),
+            fallback=AkShareMarketDataProvider(),
+            fallback_enabled=settings.provider_fallback_enabled,
+        )
     if settings.market_provider == "akshare":
         return FallbackMarketDataProvider(
             primary=AkShareMarketDataProvider(),
@@ -138,3 +150,24 @@ def _close_provider(provider: object) -> None:
         child = getattr(provider, child_name, None)
         if child is not None:
             _close_provider(child)
+
+
+def _validate_production_providers(settings: Settings) -> None:
+    if settings.app_env != "production" or settings.production_allow_fake_providers:
+        return
+    fake_providers = {
+        "MARKET_PROVIDER": settings.market_provider,
+        "NEWS_PROVIDER": settings.news_provider,
+        "LLM_PROVIDER": settings.llm_provider,
+        "OCR_PROVIDER": settings.ocr_provider,
+        "TICKFLOW_PROVIDER": settings.tickflow_provider,
+    }
+    for name, value in fake_providers.items():
+        if value == "fake":
+            raise ValueError(f"Production cannot use fake provider: {name}")
+    if settings.provider_fallback_enabled:
+        raise ValueError("Production cannot use fake fallback: PROVIDER_FALLBACK_ENABLED")
+    if settings.ocr_fallback_enabled:
+        raise ValueError("Production cannot use fake fallback: OCR_FALLBACK_ENABLED")
+    if settings.structured_review_fallback_enabled and settings.structured_review_provider == "llm":
+        raise ValueError("Production cannot use fake fallback: STRUCTURED_REVIEW_FALLBACK_ENABLED")

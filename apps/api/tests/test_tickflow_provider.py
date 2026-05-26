@@ -2,7 +2,12 @@ import httpx
 import pytest
 
 from app.providers.market import ProviderFallbackError
-from app.providers.tickflow import FallbackTickFlowProvider, FakeTickFlowProvider, TickFlowProvider
+from app.providers.tickflow import (
+    FallbackTickFlowProvider,
+    FakeTickFlowProvider,
+    TickFlowMarketDataProvider,
+    TickFlowProvider,
+)
 
 
 class FakeResponse:
@@ -105,6 +110,63 @@ def test_tickflow_provider_maps_nested_ext_quote_fields() -> None:
     assert quotes[0].pct_change == pytest.approx(2.0925110132158534)
     assert quotes[0].turnover_cny == 135000000
     assert quotes[0].quote_time == "1779778804000"
+
+
+def test_tickflow_market_provider_builds_snapshot_from_real_quotes() -> None:
+    client = FakeClient(
+        FakeResponse(
+            {
+                "data": [
+                    {
+                        "symbol": "000001.SH",
+                        "last_price": 4145.37,
+                        "amount": 500000000000,
+                        "ext": {"name": "上证指数", "change_pct": -0.0017},
+                    },
+                    {
+                        "symbol": "399006.SZ",
+                        "last_price": 2600.12,
+                        "amount": 300000000000,
+                        "ext": {"name": "创业板指", "change_pct": 0.012},
+                    },
+                    {
+                        "symbol": "600000.SH",
+                        "last_price": 9.27,
+                        "amount": 1350000000,
+                        "ext": {"name": "浦发银行", "change_pct": 0.0209},
+                    },
+                    {
+                        "symbol": "000001.SZ",
+                        "last_price": 10.79,
+                        "amount": 900000000,
+                        "ext": {"name": "平安银行", "change_pct": 0.0102},
+                    },
+                    {
+                        "symbol": "300750.SZ",
+                        "last_price": 402.5,
+                        "amount": 14100000000,
+                        "ext": {"name": "宁德时代", "change_pct": -0.0009},
+                    },
+                ]
+            }
+        )
+    )
+    provider = TickFlowMarketDataProvider(
+        api_key="tk-test-local",
+        base_url="https://api.tickflow.org",
+        symbols=["600000.SH", "000001.SZ", "300750.SZ"],
+        http_client=client,
+    )
+
+    snapshot = provider.get_close_snapshot("2026-05-27")
+
+    assert snapshot.indices[0].name == "上证指数"
+    assert snapshot.indices[0].pct_change == pytest.approx(-0.17)
+    assert snapshot.breadth.up_count == 2
+    assert snapshot.breadth.down_count == 1
+    assert snapshot.turnover_cny == pytest.approx(163.5)
+    assert snapshot.raw_sectors[0].name == "浦发银行"
+    assert snapshot.raw_sectors[0].pct_change == pytest.approx(2.09)
 
 
 def test_tickflow_provider_rejects_missing_key() -> None:

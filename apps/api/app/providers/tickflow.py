@@ -3,7 +3,13 @@ from typing import Any, Protocol
 import httpx
 from pydantic import BaseModel
 
-from app.providers.market import ProviderFallbackError, ProviderStatus
+from app.providers.market import MarketBreadth, MarketCloseSnapshot, ProviderFallbackError, ProviderStatus
+from app.rules.scoring import RawSectorInput
+from app.schemas.report import IndexSnapshot
+
+
+DEFAULT_MARKET_SYMBOLS = ["600000.SH", "000001.SZ", "300750.SZ", "002594.SZ", "601318.SH"]
+INDEX_SYMBOLS = ["000001.SH", "399006.SZ"]
 
 
 class WatchlistQuote(BaseModel):
@@ -84,6 +90,57 @@ class TickFlowProvider:
         return [_quote_from_item(item) for item in _extract_items(payload)]
 
 
+class TickFlowMarketDataProvider:
+    provider_name = "tickflow"
+
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str,
+        symbols: list[str] | None = None,
+        timeout_seconds: float = 12,
+        http_client: object | None = None,
+    ) -> None:
+        self.quote_provider = TickFlowProvider(
+            api_key=api_key,
+            base_url=base_url,
+            timeout_seconds=timeout_seconds,
+            http_client=http_client,
+        )
+        self.symbols = symbols or DEFAULT_MARKET_SYMBOLS
+
+    def close(self) -> None:
+        self.quote_provider.close()
+
+    def get_close_snapshot(self, trade_date: str) -> MarketCloseSnapshot:
+        quotes = self.quote_provider.get_quotes([*INDEX_SYMBOLS, *self.symbols])
+        indices = _indices_from_quotes(quotes)
+        equity_quotes = [quote for quote in quotes if quote.symbol not in set(INDEX_SYMBOLS)]
+        quoted_changes = [quote.pct_change for quote in equity_quotes if quote.pct_change is not None]
+        if not indices or not quoted_changes:
+            raise ProviderFallbackError("TickFlow 行情数据不足")
+        turnover_cny = round(
+            sum(quote.turnover_cny or 0 for quote in equity_quotes) / 100_000_000,
+            2,
+        )
+        raw_sectors = _sectors_from_quotes(equity_quotes)
+        if not raw_sectors:
+            raise ProviderFallbackError("TickFlow 未返回可排序标的")
+        return MarketCloseSnapshot(
+            trade_date=trade_date,
+            indices=indices,
+            breadth=MarketBreadth(
+                up_count=sum(1 for change in quoted_changes if change > 0),
+                down_count=sum(1 for change in quoted_changes if change < 0),
+                limit_up_count=sum(1 for change in quoted_changes if change >= 9.8),
+                limit_down_count=sum(1 for change in quoted_changes if change <= -9.8),
+            ),
+            turnover_cny=turnover_cny,
+            market_state_tags=_market_tags(quoted_changes, turnover_cny),
+            raw_sectors=raw_sectors,
+        )
+
+
 class FallbackTickFlowProvider:
     def __init__(
         self,
@@ -154,6 +211,54 @@ def _quote_from_item(item: dict[str, Any]) -> WatchlistQuote:
         volume=_optional_float(item.get("volume")),
         quote_time=_optional_str(item.get("quote_time") or item.get("time") or item.get("timestamp")),
     )
+
+
+def _indices_from_quotes(quotes: list[WatchlistQuote]) -> list[IndexSnapshot]:
+    index_names = {"000001.SH": "上证指数", "399006.SZ": "创业板指"}
+    results: list[IndexSnapshot] = []
+    for quote in quotes:
+        if quote.symbol not in index_names or quote.last_price is None or quote.pct_change is None:
+            continue
+        results.append(
+            IndexSnapshot(
+                name=quote.name or index_names[quote.symbol],
+                code=quote.symbol.split(".")[0],
+                close=quote.last_price,
+                pct_change=quote.pct_change,
+            )
+        )
+    return results
+
+
+def _sectors_from_quotes(quotes: list[WatchlistQuote]) -> list[RawSectorInput]:
+    ranked = sorted(
+        [quote for quote in quotes if quote.pct_change is not None],
+        key=lambda quote: quote.pct_change or 0,
+        reverse=True,
+    )
+    return [
+        RawSectorInput(
+            name=quote.name or quote.symbol,
+            pct_change=quote.pct_change or 0,
+            limit_up_count=1 if (quote.pct_change or 0) >= 9.8 else 0,
+            stock_up_ratio=1.0 if (quote.pct_change or 0) > 0 else 0.0,
+            turnover_change=0.0,
+            news_weight=min(max(abs(quote.pct_change or 0) / 8, 0.0), 1.0),
+        )
+        for quote in ranked[:10]
+    ]
+
+
+def _market_tags(changes: list[float], turnover_cny: float) -> list[str]:
+    up_count = sum(1 for change in changes if change > 0)
+    down_count = sum(1 for change in changes if change < 0)
+    if up_count > down_count * 1.5:
+        breadth = "普涨"
+    elif down_count > up_count * 1.5:
+        breadth = "普跌"
+    else:
+        breadth = "分化"
+    return [breadth, "放量" if turnover_cny >= 10000 else "缩量"]
 
 
 def _optional_str(value: object) -> str | None:

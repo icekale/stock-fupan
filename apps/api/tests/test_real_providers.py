@@ -484,6 +484,40 @@ def test_settings_default_to_rule_structured_review() -> None:
     assert settings.structured_review_fallback_enabled is True
 
 
+def test_settings_defaults_disable_watchlist_and_production_fake_allowance() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.market_provider == "tickflow"
+    assert settings.report_watchlist_enabled is False
+    assert settings.production_allow_fake_providers is False
+
+
+def test_provider_factory_rejects_fake_market_provider_in_production() -> None:
+    settings = Settings(app_env="production", market_provider="fake")
+
+    with pytest.raises(ValueError, match="Production cannot use fake provider"):
+        create_provider_bundle(settings)
+
+
+def test_provider_factory_rejects_fake_fallback_in_production() -> None:
+    settings = Settings(
+        app_env="production",
+        market_provider="akshare",
+        news_provider="anspire",
+        llm_provider="openai",
+        openai_api_key="sk-test-local",
+        ocr_provider="openai",
+        ocr_fallback_enabled=False,
+        tickflow_provider="tickflow",
+        anspire_api_key="secret-key",
+        tickflow_api_key="tk-test-local",
+        provider_fallback_enabled=True,
+    )
+
+    with pytest.raises(ValueError, match="Production cannot use fake fallback"):
+        create_provider_bundle(settings)
+
+
 def test_provider_factory_can_create_openai_llm_provider() -> None:
     settings = Settings(
         llm_provider="openai",
