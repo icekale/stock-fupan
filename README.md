@@ -1,6 +1,6 @@
-# A 股收盘复盘 v0.2
+# A 股收盘复盘 v0.3e
 
-A 股收盘复盘是一个本地优先的每日复盘工作流。v0.2 默认接入 AkShare 行情与 Anspire 新闻搜索，并在真实数据不可用时自动回退到确定性 fake provider，前端会展示详细数据源诊断。
+A 股收盘复盘是一个本地优先的每日复盘工作流。v0.3e 优先使用 TickFlow 行情、Anspire 新闻搜索和 TickFlow 自选股行情；生产报告默认不允许使用 fake 数据。
 
 ## Backend Dev Startup
 
@@ -15,21 +15,32 @@ Backend API runs at `http://localhost:8000`. Playwright Chromium is required for
 
 ## Real Data Providers
 
-v0.2 defaults to real providers with fake fallback:
+v0.3e defaults to TickFlow-first real data:
 
 ```dotenv
-MARKET_PROVIDER=akshare
+MARKET_PROVIDER=tickflow
 NEWS_PROVIDER=anspire
-PROVIDER_FALLBACK_ENABLED=true
+TICKFLOW_API_KEY=
 ANSPIRE_API_KEY=
 ```
 
 Behavior:
 
-- AkShare is used only for the current date/current close snapshot in v0.2.
-- Historical dates fall back to fake data and show a provider diagnostic in the frontend.
-- Anspire requires `ANSPIRE_API_KEY`; missing key, API errors, timeouts, and empty results fall back to fake news.
+- TickFlow is the preferred market data source for generated reports.
+- AkShare remains available as a real provider path, but production reports should fail visibly rather than emit fake market data.
+- Anspire requires `ANSPIRE_API_KEY`; missing key, API errors, timeouts, and empty results are reflected in provider diagnostics.
 - Provider diagnostics are returned in `provider_status` and saved in `snapshot.json`.
+
+Production controls:
+
+```dotenv
+APP_ENV=production
+PRODUCTION_ALLOW_FAKE_PROVIDERS=false
+PROVIDER_FALLBACK_ENABLED=false
+OCR_FALLBACK_ENABLED=false
+```
+
+Set `MARKET_PROVIDER=fake`, `NEWS_PROVIDER=fake`, or `TICKFLOW_PROVIDER=fake` only for local demos/tests, never for production-grade reports.
 
 ## LLM Structured Review
 
@@ -53,7 +64,7 @@ Behavior:
 
 ## Watchlist and TickFlow Enrichment
 
-v0.3b imports local watchlists and adds a `自选股观察` block to generated HTML reports.
+v0.3b imports local watchlists. v0.3e keeps the `自选股观察` report block behind an explicit switch and disables it by default.
 
 Supported import inputs:
 
@@ -67,11 +78,12 @@ TickFlow settings:
 TICKFLOW_API_KEY=
 TICKFLOW_BASE_URL=https://api.tickflow.org
 TICKFLOW_PROVIDER=tickflow
+REPORT_WATCHLIST_ENABLED=false
 WATCHLIST_PROVIDER=local
 WATCHLIST_SNAPSHOT_ROOT=./data/watchlists
 ```
 
-No key mode still works: TickFlow falls back to deterministic fake quotes and writes `provider_status.tickflow` to `snapshot.json`.
+Set `REPORT_WATCHLIST_ENABLED=true` to include `自选股观察` and call TickFlow for imported watchlist quotes. When disabled, report generation skips watchlist loading and TickFlow watchlist enrichment.
 
 ## OCR Watchlist Import
 
