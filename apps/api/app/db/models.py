@@ -21,14 +21,22 @@ class ReportStatusModel(StrEnum):
     EXPORTED = "exported"
 
 
+def _enum_values(enum_cls: type[StrEnum]) -> list[str]:
+    return [member.value for member in enum_cls]
+
+
 class Report(Base):
     __tablename__ = "reports"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     trade_date: Mapped[str] = mapped_column(String(10), index=True)
-    kind: Mapped[ReportKindModel] = mapped_column(Enum(ReportKindModel), index=True)
+    kind: Mapped[ReportKindModel] = mapped_column(
+        Enum(ReportKindModel, values_callable=_enum_values), index=True
+    )
     version: Mapped[str] = mapped_column(String(16))
-    status: Mapped[ReportStatusModel] = mapped_column(Enum(ReportStatusModel), index=True)
+    status: Mapped[ReportStatusModel] = mapped_column(
+        Enum(ReportStatusModel, values_callable=_enum_values), index=True
+    )
     asset_dir: Mapped[str] = mapped_column(String(1024))
     algorithm_versions: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(

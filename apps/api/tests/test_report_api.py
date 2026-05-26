@@ -1,5 +1,7 @@
 from pathlib import Path
 
+from sqlalchemy import text
+
 from app.db.models import Report, ReportKindModel, ReportStatusModel
 from app.db.session import create_sqlite_engine, init_db, session_scope
 
@@ -28,3 +30,11 @@ def test_report_model_persists_asset_path(tmp_path: Path) -> None:
     assert loaded.status == ReportStatusModel.READY_FOR_REVIEW
     assert loaded.asset_dir == "/tmp/reports/2026-05-26/close/v001"
     assert loaded.algorithm_versions["sector_score"] == "sector_score_v1"
+    assert loaded.created_at is not None
+    assert loaded.updated_at is not None
+
+    with engine.connect() as connection:
+        row = connection.execute(text("select kind, status from reports")).one()
+
+    assert row.kind == "close"
+    assert row.status == "ready_for_review"
