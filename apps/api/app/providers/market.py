@@ -1,8 +1,20 @@
 from dataclasses import asdict, dataclass
-from typing import Protocol
+from typing import Literal, Protocol
+
+from pydantic import BaseModel
 
 from app.rules.scoring import RawSectorInput
 from app.schemas.report import IndexSnapshot, MarketBreadth, NewsItem
+
+
+ProviderState = Literal["success", "fallback", "disabled", "failed"]
+
+
+class ProviderStatus(BaseModel):
+    provider: str
+    status: ProviderState
+    fallback_used: bool = False
+    reason: str | None = None
 
 
 @dataclass(frozen=True)

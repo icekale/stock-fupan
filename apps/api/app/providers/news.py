@@ -1,6 +1,15 @@
 from typing import Protocol
 
+from pydantic import BaseModel
+
+from app.providers.market import ProviderStatus
 from app.schemas.report import NewsItem
+
+
+class SectorNewsResult(BaseModel):
+    sector: str
+    items: list[NewsItem]
+    status: ProviderStatus
 
 
 class NewsProvider(Protocol):
