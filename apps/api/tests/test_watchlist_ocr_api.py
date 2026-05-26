@@ -2,9 +2,12 @@ import json
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
+from app.config import get_settings
 from app.db.models import WatchlistImport
 from app.db.session import create_sqlite_engine, init_db, session_scope
+from app.main import app
 from app.providers.ocr import FakeOcrProvider
 from app.watchlist.ocr_service import (
     OcrPreviewNotFoundError,
@@ -80,11 +83,6 @@ def test_ocr_confirm_missing_preview_raises_not_found(tmp_path: Path) -> None:
 
     with pytest.raises(OcrPreviewNotFoundError, match="OCR 预览不存在"):
         service.confirm_preview("999999")
-
-from fastapi.testclient import TestClient
-
-from app.config import get_settings
-from app.main import app
 
 
 def test_ocr_preview_api_returns_preview_without_importing(tmp_path: Path, monkeypatch) -> None:
