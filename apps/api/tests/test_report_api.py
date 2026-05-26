@@ -7,6 +7,9 @@ from app.db.session import create_sqlite_engine, init_db, session_scope
 from app.providers.llm import FakeLLMProvider
 from app.providers.market import FakeMarketDataProvider
 from app.providers.news import FakeNewsProvider
+from app.rules.scoring import score_sectors
+from app.rules.validation import validate_narrative_facts
+from app.schemas.report import ReportDTO, ReportKind, SectorCandidate
 
 
 def test_report_model_persists_asset_path(tmp_path: Path) -> None:
@@ -50,9 +53,56 @@ def test_fake_providers_return_deterministic_payloads() -> None:
 
     market_snapshot = market.get_close_snapshot("2026-05-26")
     news_items = news.search_sector_news("机器人", "2026-05-26")
-    narrative = llm.generate_narrative(market_snapshot.to_report_seed(news_items))
+    report_seed = market_snapshot.to_report_seed(news_items)
+    narrative = llm.generate_narrative(report_seed)
+    scored_sectors = score_sectors(market_snapshot.raw_sectors)
+    report = ReportDTO(
+        trade_date=market_snapshot.trade_date,
+        kind=ReportKind.CLOSE,
+        title="2026.05.26 A股复盘",
+        indices=market_snapshot.indices,
+        breadth=market_snapshot.breadth,
+        turnover_cny=market_snapshot.turnover_cny,
+        market_state_tags=market_snapshot.market_state_tags,
+        sectors=[
+            SectorCandidate(
+                name=sector.name,
+                score=sector.score,
+                rank=sector.rank,
+                pct_change=sector.pct_change,
+                reason="fake provider contract",
+                factor_scores=sector.factor_scores,
+            )
+            for sector in scored_sectors
+        ],
+        narrative=narrative,
+        news=news_items,
+    )
+    validation = validate_narrative_facts(report)
 
     assert market_snapshot.trade_date == "2026-05-26"
     assert market_snapshot.raw_sectors[0].name == "机器人"
     assert news_items[0].matched_sector == "机器人"
+    assert set(report_seed) == {
+        "trade_date",
+        "indices",
+        "breadth",
+        "turnover_cny",
+        "market_state_tags",
+        "raw_sectors",
+        "news",
+    }
+    assert report_seed["raw_sectors"][0] == {
+        "name": "机器人",
+        "pct_change": 5.88,
+        "limit_up_count": 8,
+        "stock_up_ratio": 0.82,
+        "turnover_change": 0.35,
+        "news_weight": 0.8,
+    }
+    assert report_seed["raw_sectors"][0] is not market_snapshot.raw_sectors[0].__dict__
+    assert scored_sectors[0].name == "机器人"
+    assert scored_sectors[0].rank == 1
     assert narrative.conclusion
+    assert validation.is_valid
+    assert validation.errors == []

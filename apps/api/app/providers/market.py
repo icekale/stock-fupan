@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from typing import Protocol
 
 from app.rules.scoring import RawSectorInput
@@ -21,7 +21,7 @@ class MarketCloseSnapshot:
             "breadth": self.breadth.model_dump(),
             "turnover_cny": self.turnover_cny,
             "market_state_tags": self.market_state_tags,
-            "raw_sectors": [sector.__dict__ for sector in self.raw_sectors],
+            "raw_sectors": [asdict(sector) for sector in self.raw_sectors],
             "news": [item.model_dump() for item in news],
         }
 
