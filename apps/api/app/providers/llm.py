@@ -1,10 +1,14 @@
 from typing import Protocol
 
 from app.schemas.report import ReportNarrative
+from app.schemas.structured_review import StructuredReviewDTO
 
 
 class LLMProvider(Protocol):
     def generate_narrative(self, seed: dict[str, object]) -> ReportNarrative:
+        raise NotImplementedError
+
+    def generate_structured_review(self, seed: dict[str, object]) -> StructuredReviewDTO:
         raise NotImplementedError
 
 
@@ -18,3 +22,34 @@ class FakeLLMProvider:
             tomorrow="明日观察机器人方向分歧后的承接。",
             risks=["涨停86只后高位分歧可能加大。"],
         )
+
+    def generate_structured_review(self, seed: dict[str, object]) -> StructuredReviewDTO:
+        from app.services.structured_review_builder import build_structured_review_from_seed
+
+        return build_structured_review_from_seed(seed)
+
+
+class LLMFallbackError(RuntimeError):
+    pass
+
+
+class OpenAILLMProvider:
+    provider_name = "openai"
+
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str,
+        model_name: str,
+        client: object | None = None,
+    ) -> None:
+        self.api_key = api_key
+        self.base_url = base_url
+        self.model_name = model_name
+        self.client = client
+
+    def generate_narrative(self, seed: dict[str, object]) -> ReportNarrative:
+        return FakeLLMProvider().generate_narrative(seed)
+
+    def generate_structured_review(self, seed: dict[str, object]) -> StructuredReviewDTO:
+        raise LLMFallbackError("OpenAI structured review generation not implemented")

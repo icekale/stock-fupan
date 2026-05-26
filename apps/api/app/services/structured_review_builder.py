@@ -1,4 +1,4 @@
-from app.schemas.report import ReportDTO, SectorCandidate
+from app.schemas.report import IndexSnapshot, MarketBreadth, ReportDTO, ReportKind, ReportNarrative, SectorCandidate
 from app.schemas.structured_review import (
     ActionDiscipline,
     MarketOverviewTable,
@@ -135,3 +135,26 @@ def _sustainability_reason(sector: SectorCandidate) -> str:
     if sector.news_summaries:
         return f"评分{sector.score:.1f}，且具备消息催化。"
     return f"评分{sector.score:.1f}，消息确认度仍需观察。"
+
+
+def build_structured_review_from_seed(seed: dict[str, object]) -> StructuredReviewDTO:
+    report = ReportDTO(
+        trade_date=str(seed.get("trade_date") or "unknown"),
+        kind=ReportKind.CLOSE,
+        title=f"{seed.get('trade_date') or 'unknown'} A股复盘",
+        indices=[IndexSnapshot.model_validate(item) for item in seed.get("indices", [])],
+        breadth=MarketBreadth.model_validate(seed.get("breadth", {})),
+        turnover_cny=float(seed.get("turnover_cny") or 0),
+        market_state_tags=[str(item) for item in seed.get("market_state_tags", [])],
+        sectors=[],
+        narrative=ReportNarrative(
+            conclusion="",
+            overview="",
+            sector_commentary=[],
+            watchlist=[],
+            tomorrow="",
+            risks=[],
+        ),
+        news=[],
+    )
+    return build_structured_review(report)
