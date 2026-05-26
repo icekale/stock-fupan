@@ -56,7 +56,18 @@ class AnspireNewsProvider:
         self.top_k = top_k
         self.lookback_hours = lookback_hours
         self.timeout_seconds = timeout_seconds
+        self._owns_client = http_client is None
         self.http_client = http_client or httpx.Client()
+
+    def close(self) -> None:
+        if self._owns_client:
+            self.http_client.close()
+
+    def __enter__(self) -> "AnspireNewsProvider":
+        return self
+
+    def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
+        self.close()
 
     def search_sector_news(self, sector_name: str, trade_date: str) -> list[NewsItem]:
         if not self.api_key:
@@ -78,11 +89,20 @@ class AnspireNewsProvider:
                 timeout=self.timeout_seconds,
             )
             response.raise_for_status()
-            payload = response.json()
-        except ProviderFallbackError:
-            raise
+        except httpx.TimeoutException as exc:
+            raise ProviderFallbackError("Anspire 请求超时") from exc
+        except ProviderFallbackError as exc:
+            raise ProviderFallbackError(self._safe_request_error(exc)) from exc
+        except httpx.HTTPStatusError as exc:
+            status_code = exc.response.status_code if exc.response is not None else None
+            raise ProviderFallbackError(self._safe_http_status_error(status_code)) from exc
         except Exception as exc:
-            raise ProviderFallbackError(f"Anspire 请求失败: {exc}") from exc
+            raise ProviderFallbackError(self._safe_request_error(exc)) from exc
+
+        try:
+            payload = response.json()
+        except Exception as exc:
+            raise ProviderFallbackError("Anspire JSON 解析失败") from exc
 
         raw_items = self._extract_items(payload)
         if not raw_items:
@@ -130,6 +150,19 @@ class AnspireNewsProvider:
             return 0.5
         trusted_sources = ("财联社", "东方财富", "证券时报", "上海证券报", "上证报", "交易所")
         return 0.9 if any(name in source for name in trusted_sources) else 0.6
+
+    def _safe_request_error(self, exc: Exception) -> str:
+        if isinstance(exc, ProviderFallbackError):
+            text = str(exc)
+            if text.startswith("Anspire HTTP "):
+                status_code = text.removeprefix("Anspire HTTP ").split()[0]
+                return self._safe_http_status_error(status_code)
+        return f"Anspire 请求失败: {exc.__class__.__name__}"
+
+    def _safe_http_status_error(self, status_code: object) -> str:
+        if status_code is None:
+            return "Anspire HTTP 请求失败"
+        return f"Anspire HTTP {status_code}"
 
 
 class FallbackNewsProvider:

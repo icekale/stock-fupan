@@ -305,15 +305,24 @@ class FakeResponse:
 
 
 class FakeHttpClient:
-    def __init__(self, response: FakeResponse) -> None:
+    def __init__(self, response: FakeResponse | None = None, error: Exception | None = None) -> None:
         self.response = response
+        self.error = error
         self.last_headers: dict[str, str] = {}
         self.last_params: dict[str, object] = {}
+        self.closed = False
 
     def get(self, _url: str, headers: dict[str, str], params: dict[str, object], timeout: float) -> FakeResponse:
         self.last_headers = headers
         self.last_params = params
+        if self.error is not None:
+            raise self.error
+        if self.response is None:
+            raise RuntimeError("missing fake response")
         return self.response
+
+    def close(self) -> None:
+        self.closed = True
 
 
 def test_anspire_provider_maps_results_to_news_items() -> None:
@@ -367,3 +376,42 @@ def test_anspire_provider_rejects_empty_results() -> None:
 
     with pytest.raises(ProviderFallbackError, match="无结果"):
         provider.search_sector_news("机器人", "2026-05-26")
+
+
+def test_anspire_provider_closes_owned_client(monkeypatch) -> None:
+    owned_client = FakeHttpClient()
+    monkeypatch.setattr("app.providers.news.httpx.Client", lambda: owned_client)
+
+    provider = AnspireNewsProvider(api_key="secret-key")
+    returned = provider.__enter__()
+
+    assert returned is provider
+    provider.__exit__(None, None, None)
+
+    assert owned_client.closed is True
+
+
+def test_anspire_provider_does_not_close_injected_client() -> None:
+    injected_client = FakeHttpClient()
+    provider = AnspireNewsProvider(api_key="secret-key", http_client=injected_client)
+
+    provider.close()
+
+    assert injected_client.closed is False
+
+
+def test_anspire_provider_sanitizes_request_failures() -> None:
+    leaked_token = "sk-test-secret-token"
+    provider = AnspireNewsProvider(
+        api_key="secret-key",
+        http_client=FakeHttpClient(error=RuntimeError(f"boom Authorization Bearer {leaked_token}")),
+    )
+
+    with pytest.raises(ProviderFallbackError) as exc_info:
+        provider.search_sector_news("机器人", "2026-05-26")
+
+    message = str(exc_info.value)
+    assert "Anspire 请求失败" in message
+    assert leaked_token not in message
+    assert "secret-key" not in message
+    assert "Authorization" not in message
