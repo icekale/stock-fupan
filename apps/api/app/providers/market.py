@@ -17,6 +17,15 @@ class ProviderStatus(BaseModel):
     reason: str | None = None
 
 
+class ProviderFallbackError(RuntimeError):
+    pass
+
+
+def _provider_name(provider: object, default: str) -> str:
+    value = getattr(provider, "provider_name", default)
+    return value if isinstance(value, str) and value else default
+
+
 @dataclass(frozen=True)
 class MarketCloseSnapshot:
     trade_date: str
@@ -77,4 +86,42 @@ class FakeMarketDataProvider:
                     news_weight=0.5,
                 ),
             ],
+        )
+
+
+class FallbackMarketDataProvider:
+    def __init__(
+        self,
+        primary: MarketDataProvider,
+        fallback: MarketDataProvider,
+        fallback_enabled: bool = True,
+    ) -> None:
+        self.primary = primary
+        self.fallback = fallback
+        self.fallback_enabled = fallback_enabled
+
+    def get_close_snapshot(self, trade_date: str) -> MarketCloseSnapshot:
+        snapshot, _status = self.get_close_snapshot_with_status(trade_date)
+        return snapshot
+
+    def get_close_snapshot_with_status(self, trade_date: str) -> tuple[MarketCloseSnapshot, ProviderStatus]:
+        provider = _provider_name(self.primary, "market")
+        try:
+            snapshot = self.primary.get_close_snapshot(trade_date)
+        except Exception as exc:
+            reason = str(exc) or exc.__class__.__name__
+            if not self.fallback_enabled:
+                raise
+            return self.fallback.get_close_snapshot(trade_date), ProviderStatus(
+                provider=provider,
+                status="fallback",
+                fallback_used=True,
+                reason=reason,
+            )
+
+        return snapshot, ProviderStatus(
+            provider=provider,
+            status="success",
+            fallback_used=False,
+            reason=None,
         )

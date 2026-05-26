@@ -12,6 +12,11 @@ class SectorNewsResult(BaseModel):
     status: ProviderStatus
 
 
+def _provider_name(provider: object, default: str) -> str:
+    value = getattr(provider, "provider_name", default)
+    return value if isinstance(value, str) and value else default
+
+
 class NewsProvider(Protocol):
     def search_sector_news(self, sector_name: str, trade_date: str) -> list[NewsItem]:
         raise NotImplementedError
@@ -30,3 +35,49 @@ class FakeNewsProvider:
                 weight=0.8,
             )
         ]
+
+
+class FallbackNewsProvider:
+    def __init__(
+        self,
+        primary: NewsProvider,
+        fallback: NewsProvider,
+        fallback_enabled: bool = True,
+    ) -> None:
+        self.primary = primary
+        self.fallback = fallback
+        self.fallback_enabled = fallback_enabled
+
+    def search_sector_news(self, sector_name: str, trade_date: str) -> list[NewsItem]:
+        result = self.search_sector_news_with_status(sector_name, trade_date)
+        return result.items
+
+    def search_sector_news_with_status(self, sector_name: str, trade_date: str) -> SectorNewsResult:
+        provider = _provider_name(self.primary, "news")
+        try:
+            items = self.primary.search_sector_news(sector_name, trade_date)
+        except Exception as exc:
+            reason = str(exc) or exc.__class__.__name__
+            if not self.fallback_enabled:
+                raise
+            return SectorNewsResult(
+                sector=sector_name,
+                items=self.fallback.search_sector_news(sector_name, trade_date),
+                status=ProviderStatus(
+                    provider=provider,
+                    status="fallback",
+                    fallback_used=True,
+                    reason=reason,
+                ),
+            )
+
+        return SectorNewsResult(
+            sector=sector_name,
+            items=items,
+            status=ProviderStatus(
+                provider=provider,
+                status="success",
+                fallback_used=False,
+                reason=None,
+            ),
+        )
