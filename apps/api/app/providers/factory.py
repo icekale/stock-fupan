@@ -17,6 +17,17 @@ class ProviderBundle:
     news_provider: NewsProvider
     llm_provider: LLMProvider
 
+    def close(self) -> None:
+        _close_provider(self.market_provider)
+        _close_provider(self.news_provider)
+        _close_provider(self.llm_provider)
+
+    def __enter__(self) -> "ProviderBundle":
+        return self
+
+    def __exit__(self, exc_type: object, exc_value: object, traceback: object) -> None:
+        self.close()
+
 
 def create_provider_bundle(settings: Settings) -> ProviderBundle:
     return ProviderBundle(
@@ -54,3 +65,13 @@ def _create_news_provider(settings: Settings) -> NewsProvider:
             fallback_enabled=settings.provider_fallback_enabled,
         )
     raise ValueError(f"Unsupported NEWS_PROVIDER: {settings.news_provider}")
+
+
+def _close_provider(provider: object) -> None:
+    close = getattr(provider, "close", None)
+    if callable(close):
+        close()
+    for child_name in ("primary", "fallback"):
+        child = getattr(provider, child_name, None)
+        if child is not None:
+            _close_provider(child)

@@ -442,3 +442,18 @@ def test_provider_factory_can_force_fake_providers() -> None:
 
     assert isinstance(bundle.market_provider, FakeMarketDataProvider)
     assert isinstance(bundle.news_provider, FakeNewsProvider)
+
+
+def test_provider_bundle_close_closes_nested_anspire_owned_client(monkeypatch) -> None:
+    owned_client = FakeHttpClient()
+    monkeypatch.setattr("app.providers.news.httpx.Client", lambda: owned_client)
+    settings = Settings(
+        market_provider="akshare",
+        news_provider="anspire",
+        anspire_api_key="secret-key",
+    )
+
+    bundle = create_provider_bundle(settings)
+    bundle.close()
+
+    assert owned_client.closed is True
