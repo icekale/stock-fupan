@@ -9,7 +9,7 @@ from app.config import get_settings
 from app.main import app
 from app.db.models import Report, ReportKindModel, ReportStatusModel
 from app.db.session import create_sqlite_engine, init_db, session_scope
-from app.providers.llm import FakeLLMProvider
+from app.providers.llm import FakeLLMProvider, LLMFallbackError
 from app.providers.market import FakeMarketDataProvider
 from app.providers.news import FakeNewsProvider
 from app.renderers.html_renderer import render_mobile_report_html
@@ -286,3 +286,30 @@ def test_mobile_report_renderer_contains_core_sections(tmp_path: Path) -> None:
     assert "回避清单" in html
     assert "科技内部" in html
     assert "非投资建议" in html
+class BrokenStructuredReviewLLM(FakeLLMProvider):
+    provider_name = "openai"
+
+    def generate_structured_review(self, seed: dict[str, object]):
+        raise LLMFallbackError("OPENAI_API_KEY 未配置")
+
+
+def test_report_generator_writes_structured_review_status_on_llm_fallback(tmp_path: Path) -> None:
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=FakeMarketDataProvider(),
+        news_provider=FakeNewsProvider(),
+        llm_provider=BrokenStructuredReviewLLM(),
+        structured_review_provider="llm",
+        structured_review_fallback_enabled=True,
+    )
+
+    result = generator.generate_close_report("2026-05-26")
+
+    assert result.structured_review_status == {
+        "provider": "llm",
+        "status": "fallback",
+        "fallback_used": True,
+        "reason": "OPENAI_API_KEY 未配置",
+    }
+    snapshot = json.loads(result.assets.snapshot.read_text(encoding="utf-8"))
+    assert snapshot["structured_review_status"] == result.structured_review_status

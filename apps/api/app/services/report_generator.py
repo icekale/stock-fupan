@@ -10,7 +10,7 @@ from app.rules.scoring import score_sectors
 from app.rules.validation import ValidationResult, validate_narrative_facts
 from app.schemas.report import ReportDTO, ReportKind, SectorCandidate
 from app.services.assets import AssetPaths, create_report_asset_dir, write_json
-from app.services.structured_review_builder import build_structured_review
+from app.services.structured_review_generator import generate_structured_review
 
 
 DEFAULT_LLM_METADATA_VALUE = "unknown"
@@ -22,6 +22,7 @@ class GeneratedReport:
     validation: ValidationResult
     assets: AssetPaths
     provider_status: dict[str, object]
+    structured_review_status: dict[str, object]
 
 
 def _provider_metadata(provider: object, attribute_name: str) -> str:
@@ -38,11 +39,15 @@ class ReportGenerator:
         market_provider: MarketDataProvider,
         news_provider: NewsProvider,
         llm_provider: LLMProvider,
+        structured_review_provider: str = "rule",
+        structured_review_fallback_enabled: bool = True,
     ) -> None:
         self.reports_root = reports_root
         self.market_provider = market_provider
         self.news_provider = news_provider
         self.llm_provider = llm_provider
+        self.structured_review_provider = structured_review_provider
+        self.structured_review_fallback_enabled = structured_review_fallback_enabled
 
     def generate_close_report(self, trade_date: str) -> GeneratedReport:
         assets = create_report_asset_dir(self.reports_root, trade_date, ReportKind.CLOSE.value)
@@ -113,12 +118,19 @@ class ReportGenerator:
             narrative=narrative,
             news=news_items,
         )
-        report.structured_review = build_structured_review(report)
+        structured_review, structured_review_status = generate_structured_review(
+            report=report,
+            llm_provider=self.llm_provider,
+            provider_mode=self.structured_review_provider,
+            fallback_enabled=self.structured_review_fallback_enabled,
+        )
+        report.structured_review = structured_review
         validation = validate_narrative_facts(report)
         provider_status = {
             "market": market_status.model_dump(mode="json"),
             "news": news_statuses,
         }
+        structured_review_status_payload = structured_review_status.model_dump(mode="json")
 
         write_json(assets.facts, market_snapshot.to_report_seed(news=[]))
         write_json(assets.news_raw, [item.model_dump() for item in news_items])
@@ -132,6 +144,14 @@ class ReportGenerator:
                     "parameters": {},
                     "output": narrative.model_dump(),
                     "validation_errors": validation.errors,
+                },
+                {
+                    "provider": _provider_metadata(self.llm_provider, "provider_name"),
+                    "model": _provider_metadata(self.llm_provider, "model_name"),
+                    "prompt": "structured-review-json",
+                    "parameters": {"provider_mode": self.structured_review_provider},
+                    "output": report.structured_review.model_dump(mode="json") if report.structured_review else {},
+                    "validation_errors": [],
                 }
             ],
         )
@@ -142,6 +162,7 @@ class ReportGenerator:
                 "report": report.model_dump(mode="json"),
                 "validation": {"is_valid": validation.is_valid, "errors": validation.errors},
                 "provider_status": provider_status,
+                "structured_review_status": structured_review_status_payload,
             },
         )
         assets.report_html.write_text(render_mobile_report_html(report), encoding="utf-8")
@@ -153,4 +174,5 @@ class ReportGenerator:
             validation=validation,
             assets=assets,
             provider_status=provider_status,
+            structured_review_status=structured_review_status_payload,
         )
