@@ -172,6 +172,25 @@ def test_build_structured_review_derives_core_modules_from_report() -> None:
     assert "不追一致加速" in review.next_day_opportunity.position_discipline[0]
     assert review.practical_conclusion.headline.startswith("明日最实战")
     assert review.index_mid_term_outlook.scenario_table[0]["scenario"] == "强势延续"
+
+
+def test_build_structured_review_keeps_news_evidence_compact() -> None:
+    report = _fake_report()
+    long_news = (
+        "浦发银行(600000)\n"
+        "9.27↑\n"
+        "0.19 2.09%\n"
+        "基本资料 公司全称 上海浦东发展银行股份有限公司 英文名称 Shanghai Pudong Development Bank Co.,Ltd. "
+        "A股代码 600000 B股代码 -- H股代码 -- 证券类别 上交所主板A股 联系电话 021-63611226 传真 021-63230807"
+    )
+    report.sectors[0].news_summaries = [long_news]
+
+    review = build_structured_review(report)
+
+    evidence = review.sector_reviews[0].strengths[2]
+    assert "\n" not in evidence
+    assert len(evidence) <= 72
+    assert "联系电话" not in evidence
 class SuccessfulStructuredLLM:
     provider_name = "openai"
 

@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from app.providers.llm import LLMFallbackError, OpenAILLMProvider
+from app.providers.llm import FakeLLMProvider, LLMFallbackError, OpenAILLMProvider
 
 
 class FakeMessage:
@@ -119,6 +119,68 @@ def _valid_structured_payload() -> dict[str, object]:
             "final_view": "围绕机器人去弱留强。",
         },
     }
+
+
+def test_fake_llm_narrative_is_derived_from_seed_facts() -> None:
+    provider = FakeLLMProvider()
+    narrative = provider.generate_narrative(
+        {
+            "trade_date": "2026-05-27",
+            "indices": [
+                {"name": "上证指数", "code": "000001", "close": 3350.12, "pct_change": -0.42},
+                {"name": "创业板指", "code": "399006", "close": 2201.3, "pct_change": 1.18},
+            ],
+            "breadth": {
+                "up_count": 2810,
+                "down_count": 2190,
+                "limit_up_count": 54,
+                "limit_down_count": 12,
+            },
+            "turnover_cny": 9876.54,
+            "market_state_tags": ["分化", "缩量"],
+            "raw_sectors": [
+                {
+                    "name": "半导体",
+                    "pct_change": 4.32,
+                    "limit_up_count": 6,
+                    "stock_up_ratio": 0.76,
+                    "turnover_change": 0.28,
+                    "news_weight": 0.7,
+                },
+                {
+                    "name": "银行",
+                    "pct_change": -1.15,
+                    "limit_up_count": 0,
+                    "stock_up_ratio": 0.25,
+                    "turnover_change": -0.08,
+                    "news_weight": 0.2,
+                },
+            ],
+            "news": [
+                {
+                    "title": "半导体设备订单改善",
+                    "summary": "半导体产业链订单边际改善。",
+                    "matched_sector": "半导体",
+                }
+            ],
+        }
+    )
+
+    full_text = "\n".join(
+        [
+            narrative.conclusion,
+            narrative.overview,
+            *narrative.sector_commentary,
+            *narrative.watchlist,
+            narrative.tomorrow,
+            *narrative.risks,
+        ]
+    )
+    assert "半导体" in full_text
+    assert "机器人" not in full_text
+    assert "3350.12" in full_text
+    assert "9876.54" in full_text
+    assert "54" in narrative.overview
 
 
 def test_openai_llm_provider_maps_json_to_structured_review() -> None:

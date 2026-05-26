@@ -1,3 +1,5 @@
+import re
+
 from app.schemas.report import IndexSnapshot, MarketBreadth, ReportDTO, ReportKind, ReportNarrative, SectorCandidate
 from app.schemas.structured_review import (
     ActionDiscipline,
@@ -185,6 +187,7 @@ def _build_index_mid_term_outlook(report: ReportDTO) -> IndexMidTermOutlook:
 
 def _build_sector_review(sector: SectorCandidate) -> StructuredSectorReview:
     rating = _rating_for_sector(sector)
+    news_evidence = _compact_news_evidence(sector.news_summaries)
     return StructuredSectorReview(
         sector=sector.name,
         headline=f"{sector.name}：{_headline_suffix(rating)}",
@@ -192,7 +195,7 @@ def _build_sector_review(sector: SectorCandidate) -> StructuredSectorReview:
         strengths=[
             f"涨跌幅{sector.pct_change:+.2f}%",
             f"综合评分{sector.score:.1f}",
-            *(sector.news_summaries[:1] or [sector.reason]),
+            news_evidence or sector.reason,
         ],
         weaknesses=["短线一致后可能出现分歧", "后排跟风股承接要求更高"],
         logic="短线强度、板块广度与消息催化共同决定当前排序。",
@@ -201,6 +204,21 @@ def _build_sector_review(sector: SectorCandidate) -> StructuredSectorReview:
         watch_items=[f"{sector.name}核心股回踩承接", "板块内强弱切换是否温和"],
         avoid_items=["缩量冲高回落", "无催化的低位跟风"],
     )
+
+
+def _compact_news_evidence(news_summaries: list[str], max_length: int = 72) -> str | None:
+    for summary in news_summaries:
+        normalized = re.sub(r"\s+", " ", summary).strip()
+        if not normalized:
+            continue
+        for marker in (" 基本资料", " 公司全称", " 联系电话", " 传真", " 工商登记"):
+            marker_index = normalized.find(marker)
+            if marker_index > 0:
+                normalized = normalized[:marker_index].strip()
+        if len(normalized) > max_length:
+            normalized = f"{normalized[: max_length - 1].rstrip()}…"
+        return normalized
+    return None
 
 
 def _rating_for_sector(sector: SectorCandidate) -> SustainabilityRating:

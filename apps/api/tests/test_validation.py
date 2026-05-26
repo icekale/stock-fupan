@@ -105,6 +105,42 @@ def test_validate_narrative_accepts_signed_percent_and_trailing_zero_known_numbe
     assert result.errors == []
 
 
+def test_validate_narrative_accepts_rounded_display_numbers() -> None:
+    report = make_report(
+        ReportNarrative(
+            conclusion="上证指数收于4145.37点，涨跌幅-0.17%。",
+            overview="成交额250.76亿元。",
+            sector_commentary=["浦发银行涨跌幅+2.09%。"],
+            watchlist=["观察浦发银行方向在涨幅+2.09%后的承接强度。"],
+            tomorrow="观察浦发银行承接。",
+            risks=[],
+        )
+    )
+    report.indices = [
+        IndexSnapshot(
+            name="上证指数",
+            code="000001",
+            close=4145.3730000000005,
+            pct_change=-0.1732807014915805,
+        )
+    ]
+    report.turnover_cny = 250.755
+    report.sectors = [
+        SectorCandidate(
+            name="浦发银行",
+            score=80,
+            rank=1,
+            pct_change=2.0925110132158533,
+            reason="TickFlow quote derived",
+        )
+    ]
+
+    result = validate_narrative_facts(report)
+
+    assert result.is_valid
+    assert result.errors == []
+
+
 def test_validate_narrative_accepts_turnover_in_wan_yi() -> None:
     report = make_report(
         ReportNarrative(

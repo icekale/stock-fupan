@@ -55,6 +55,12 @@ def _to_decimal(value: int | float) -> Decimal:
     return Decimal(str(value))
 
 
+def _add_decimal_with_display_rounding(values: set[Decimal], value: int | float) -> None:
+    decimal_value = _to_decimal(value)
+    values.add(decimal_value)
+    values.add(decimal_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+
 def _parse_number(number: str) -> Decimal | None:
     try:
         return Decimal(number.replace(",", ""))
@@ -74,6 +80,7 @@ def _number_for_error(number: str) -> str:
 def _add_money_values(values: set[Decimal], wan_yi_values: set[Decimal], value: float) -> None:
     yi_value = _to_decimal(value)
     values.add(yi_value)
+    values.add(yi_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
     wan_yi_value = yi_value / Decimal("10000")
     wan_yi_values.add(wan_yi_value)
     wan_yi_values.add(wan_yi_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
@@ -93,12 +100,12 @@ def _allowed_numbers_by_unit(report: ReportDTO) -> dict[str, set[Decimal]]:
 
     _add_money_values(money_yi_values, money_wan_yi_values, report.turnover_cny)
     for index in report.indices:
-        point_values.add(_to_decimal(index.close))
-        percent_values.add(_to_decimal(index.pct_change))
+        _add_decimal_with_display_rounding(point_values, index.close)
+        _add_decimal_with_display_rounding(percent_values, index.pct_change)
     for sector in report.sectors:
-        percent_values.add(_to_decimal(sector.pct_change))
+        _add_decimal_with_display_rounding(percent_values, sector.pct_change)
         for stock in sector.top_stocks:
-            percent_values.add(_to_decimal(stock.pct_change))
+            _add_decimal_with_display_rounding(percent_values, stock.pct_change)
             if stock.turnover_cny is not None:
                 _add_money_values(money_yi_values, money_wan_yi_values, stock.turnover_cny)
 
