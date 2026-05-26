@@ -54,3 +54,53 @@ def test_report_dto_serializes_core_fields() -> None:
     assert dumped["kind"] == "close"
     assert dumped["sectors"][0]["top_stocks"][0]["name"] == "示例股份"
     assert dumped["narrative"]["risks"] == ["高位分歧加大。"]
+
+
+from app.rules.scoring import RawSectorInput, score_sectors
+
+
+def test_score_sectors_ranks_by_short_term_strength() -> None:
+    sectors = [
+        RawSectorInput(
+            name="低位防御",
+            pct_change=2.0,
+            limit_up_count=1,
+            stock_up_ratio=0.55,
+            turnover_change=0.1,
+            news_weight=0.1,
+        ),
+        RawSectorInput(
+            name="机器人",
+            pct_change=5.88,
+            limit_up_count=8,
+            stock_up_ratio=0.82,
+            turnover_change=0.35,
+            news_weight=0.8,
+        ),
+    ]
+
+    scored = score_sectors(sectors)
+
+    assert [sector.name for sector in scored] == ["机器人", "低位防御"]
+    assert scored[0].rank == 1
+    assert scored[0].algorithm_version == "sector_score_v1"
+    assert scored[0].factor_scores["limit_up"] > scored[1].factor_scores["limit_up"]
+
+
+def test_score_sectors_caps_to_top_n() -> None:
+    sectors = [
+        RawSectorInput(
+            name=f"板块{i}",
+            pct_change=float(i),
+            limit_up_count=i,
+            stock_up_ratio=0.5,
+            turnover_change=0.1,
+            news_weight=0.0,
+        )
+        for i in range(8)
+    ]
+
+    scored = score_sectors(sectors, top_n=5)
+
+    assert len(scored) == 5
+    assert scored[0].name == "板块7"
