@@ -1,5 +1,6 @@
 from dataclasses import asdict, dataclass
 from datetime import date
+import math
 from types import ModuleType
 from typing import Literal, Protocol
 
@@ -32,11 +33,16 @@ def _to_float(value: object, default: float | None = None) -> float:
     try:
         if value is None:
             raise TypeError
-        return float(value)
+        number = float(value)
     except (TypeError, ValueError):
         if default is None:
             raise ProviderFallbackError("AkShare 返回了非数字字段")
         return default
+    if not math.isfinite(number):
+        if default is None:
+            raise ProviderFallbackError("AkShare 返回了非数字字段")
+        return default
+    return number
 
 
 def _pick(row: object, *names: str) -> object:
@@ -140,11 +146,11 @@ class AkShareMarketDataProvider:
             raise ProviderFallbackError("AkShare 返回空数据")
 
         indices = self._build_indices(index_df)
-        pct_changes = [_to_float(row["涨跌幅"], 0.0) for _idx, row in stock_df.iterrows()]
+        pct_changes = [_to_float(_pick(row, "涨跌幅")) for _idx, row in stock_df.iterrows()]
         up_count = sum(1 for value in pct_changes if value > 0)
         down_count = sum(1 for value in pct_changes if value < 0)
         turnover_cny = round(
-            sum(_to_float(row["成交额"], 0.0) for _idx, row in stock_df.iterrows()) / 100_000_000,
+            sum(_to_float(_pick(row, "成交额")) for _idx, row in stock_df.iterrows()) / 100_000_000,
             2,
         )
         raw_sectors = self._build_sectors(sector_df)
@@ -185,11 +191,11 @@ class AkShareMarketDataProvider:
     def _build_sectors(self, sector_df: object) -> list[RawSectorInput]:
         sectors: list[RawSectorInput] = []
         for _idx, row in sector_df.head(10).iterrows():
-            up_count = _to_float(_pick(row, "上涨家数"), 0.0)
-            down_count = _to_float(_pick(row, "下跌家数"), 0.0)
+            up_count = _to_float(_pick(row, "上涨家数"))
+            down_count = _to_float(_pick(row, "下跌家数"))
             total_count = up_count + down_count
             stock_up_ratio = round(up_count / total_count, 2) if total_count > 0 else 0.0
-            pct_change = _to_float(_pick(row, "涨跌幅"), 0.0)
+            pct_change = _to_float(_pick(row, "涨跌幅"))
             sectors.append(
                 RawSectorInput(
                     name=str(_pick(row, "板块名称", "名称")),

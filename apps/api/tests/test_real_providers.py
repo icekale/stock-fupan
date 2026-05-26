@@ -167,3 +167,124 @@ def test_akshare_provider_rejects_historical_date() -> None:
 
     with pytest.raises(ProviderFallbackError, match="历史日期"):
         provider.get_close_snapshot("2026-05-25")
+
+
+def _valid_index_df() -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {"名称": "上证指数", "代码": "000001", "最新价": 3100.5, "涨跌幅": 1.2},
+            {"名称": "创业板指", "代码": "399006", "最新价": 1950.2, "涨跌幅": 2.1},
+        ]
+    )
+
+
+def _valid_stock_df() -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {"代码": "000001", "名称": "平安银行", "涨跌幅": 1.0, "成交额": 100000000},
+            {"代码": "000002", "名称": "万科A", "涨跌幅": -1.0, "成交额": 200000000},
+        ]
+    )
+
+
+def _valid_sector_df() -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {"板块名称": "机器人", "涨跌幅": 5.88, "上涨家数": 41, "下跌家数": 9},
+        ]
+    )
+
+
+class ConfigurableFakeAkshare:
+    index_df = _valid_index_df()
+    stock_df = _valid_stock_df()
+    sector_df = _valid_sector_df()
+
+    @classmethod
+    def stock_zh_index_spot_em(cls) -> pd.DataFrame:
+        return cls.index_df
+
+    @classmethod
+    def stock_zh_a_spot_em(cls) -> pd.DataFrame:
+        return cls.stock_df
+
+    @classmethod
+    def stock_board_industry_name_em(cls) -> pd.DataFrame:
+        return cls.sector_df
+
+
+@pytest.mark.parametrize(
+    ("index_df", "stock_df", "sector_df"),
+    [
+        (pd.DataFrame(), _valid_stock_df(), _valid_sector_df()),
+        (_valid_index_df(), pd.DataFrame(), _valid_sector_df()),
+        (_valid_index_df(), _valid_stock_df(), pd.DataFrame()),
+    ],
+)
+def test_akshare_provider_raises_for_empty_dataframes(index_df, stock_df, sector_df) -> None:
+    class FakeAkshare(ConfigurableFakeAkshare):
+        pass
+
+    FakeAkshare.index_df = index_df
+    FakeAkshare.stock_df = stock_df
+    FakeAkshare.sector_df = sector_df
+    provider = AkShareMarketDataProvider(akshare_module=FakeAkshare, today=date(2026, 5, 26))
+
+    with pytest.raises(ProviderFallbackError, match="空数据"):
+        provider.get_close_snapshot("2026-05-26")
+
+
+@pytest.mark.parametrize(
+    ("stock_df", "sector_df"),
+    [
+        (_valid_stock_df().drop(columns=["涨跌幅"]), _valid_sector_df()),
+        (_valid_stock_df().drop(columns=["成交额"]), _valid_sector_df()),
+        (_valid_stock_df(), _valid_sector_df().drop(columns=["上涨家数"])),
+        (_valid_stock_df(), _valid_sector_df().drop(columns=["下跌家数"])),
+        (_valid_stock_df(), _valid_sector_df().drop(columns=["涨跌幅"])),
+    ],
+)
+def test_akshare_provider_raises_for_missing_required_columns(stock_df, sector_df) -> None:
+    class FakeAkshare(ConfigurableFakeAkshare):
+        pass
+
+    FakeAkshare.index_df = _valid_index_df()
+    FakeAkshare.stock_df = stock_df
+    FakeAkshare.sector_df = sector_df
+    provider = AkShareMarketDataProvider(akshare_module=FakeAkshare, today=date(2026, 5, 26))
+
+    with pytest.raises(ProviderFallbackError, match="缺少字段"):
+        provider.get_close_snapshot("2026-05-26")
+
+
+@pytest.mark.parametrize("bad_value", ["not-a-number", float("nan"), float("inf")])
+@pytest.mark.parametrize(
+    ("frame_name", "column_name"),
+    [
+        ("stock", "涨跌幅"),
+        ("stock", "成交额"),
+        ("sector", "上涨家数"),
+        ("sector", "下跌家数"),
+        ("sector", "涨跌幅"),
+    ],
+)
+def test_akshare_provider_raises_for_invalid_required_numbers(bad_value, frame_name, column_name) -> None:
+    stock_df = _valid_stock_df()
+    sector_df = _valid_sector_df()
+    if frame_name == "stock":
+        stock_df[column_name] = stock_df[column_name].astype(object)
+        stock_df.loc[0, column_name] = bad_value
+    else:
+        sector_df[column_name] = sector_df[column_name].astype(object)
+        sector_df.loc[0, column_name] = bad_value
+
+    class FakeAkshare(ConfigurableFakeAkshare):
+        pass
+
+    FakeAkshare.index_df = _valid_index_df()
+    FakeAkshare.stock_df = stock_df
+    FakeAkshare.sector_df = sector_df
+    provider = AkShareMarketDataProvider(akshare_module=FakeAkshare, today=date(2026, 5, 26))
+
+    with pytest.raises(ProviderFallbackError, match="非数字字段"):
+        provider.get_close_snapshot("2026-05-26")
