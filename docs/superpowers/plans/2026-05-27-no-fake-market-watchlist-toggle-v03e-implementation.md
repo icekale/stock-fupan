@@ -1,10 +1,10 @@
-# No-Fake Market Data and Watchlist Toggle v0.3e Implementation Plan
+# TickFlow-First No-Fake Market Data and Watchlist Toggle v0.3e Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Prevent production reports from using fake data and make the `自选股观察` module disabled by default behind an explicit switch.
+**Goal:** Prefer TickFlow for real market data, prevent production reports from using fake data, and make the `自选股观察` module disabled by default behind an explicit switch.
 
-**Architecture:** Add settings that distinguish explicit local fake mode from production-grade generation. Thread `report_watchlist_enabled` into report generation so disabled watchlists do not call the watchlist service or TickFlow and do not render in HTML. Keep existing fake providers for tests and local demos, but reject fake provider/fake fallback in production unless explicitly allowed.
+**Architecture:** Add a TickFlow-backed market provider plus settings that distinguish explicit local fake mode from production-grade generation. Thread `report_watchlist_enabled` into report generation so disabled watchlists do not call the watchlist service or TickFlow and do not render in HTML. Keep existing fake providers for tests and local demos, but reject fake provider/fake fallback in production unless explicitly allowed.
 
 **Tech Stack:** FastAPI backend, Pydantic settings, provider factory, pytest, Jinja2 report template, Ruff.
 
@@ -13,14 +13,14 @@
 ## File Structure
 
 - Modify `apps/api/app/config.py`: add `report_watchlist_enabled` and `production_allow_fake_providers` settings.
-- Modify `apps/api/app/providers/factory.py`: reject fake providers and fake fallback chains in production by default.
-- Modify `apps/api/app/services/report_generator.py`: add `watchlist_enabled` constructor argument and skip watchlist/TickFlow work when disabled.
+- Modify `apps/api/app/providers/factory.py`: make TickFlow the preferred market provider and reject fake providers/fake fallback chains in production by default.
+- Modify `apps/api/app/services/report_generator.py`: add `watchlist_enabled` constructor argument and skip watchlist/TickFlow watchlist enrichment when disabled.
 - Modify `apps/api/app/main.py`: pass `settings.report_watchlist_enabled` into `ReportGenerator`.
 - Modify `apps/api/app/renderers/templates/mobile_report.html.j2`: hide `自选股观察` when no observation exists and keep section numbering coherent.
 - Modify `.env.example` and `README.md`: document defaults and production no-fake behavior.
 - Modify tests in `apps/api/tests/test_real_providers.py` and `apps/api/tests/test_report_api.py`.
 
-## Task 1: Add settings and production provider guard
+## Task 1: Add TickFlow market provider, settings, and production provider guard
 
 - [ ] Write failing tests in `apps/api/tests/test_real_providers.py`:
   - `test_settings_defaults_disable_watchlist_and_production_fake_allowance`

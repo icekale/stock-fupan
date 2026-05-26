@@ -1,4 +1,4 @@
-# No-Fake Market Data and Watchlist Toggle v0.3e Design
+# TickFlow-First No-Fake Market Data and Watchlist Toggle v0.3e Design
 
 ## Context
 
@@ -20,7 +20,6 @@ The project's primary artifact is the generated `report.html`. Recent real-provi
 
 ## Non-Goals
 
-- Do not add a paid行情 API integration in this pass.
 - Do not build a UI settings panel in this pass.
 - Do not remove fake providers from the codebase; they remain explicit local/test providers.
 - Do not change the 12-section HTML order except omitting the watchlist section when disabled.
@@ -40,11 +39,11 @@ Provider behavior:
 
 ## Market Data Approach
 
-v0.3e focuses on correctness over hiding failure:
+v0.3e prioritizes TickFlow for market data and correctness over hiding failure:
 
-- Keep `AkShareMarketDataProvider` as the primary real market source.
-- In production mode, if AkShare fails and no real backup provider is configured, report generation fails rather than emitting fake market data.
-- Future work can add a real backup source behind the same provider interface.
+- Use TickFlow as the primary real market source when `MARKET_PROVIDER=tickflow`.
+- In production mode, the preferred chain is TickFlow market data first, then AkShare as a real fallback if explicitly configured by the provider chain; if all real providers fail, report generation fails rather than emitting fake market data.
+- Future work can improve sector classification quality, but v0.3e should already use TickFlow for indices, market breadth, turnover, and ranked equity-derived sectors when available.
 
 This avoids shipping plausible-looking but fake market data in the final HTML.
 
