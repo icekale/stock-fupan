@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { ReportPreview } from "../components/ReportPreview";
 import { Stepper } from "../components/Stepper";
 import { TaskProgress } from "../components/TaskProgress";
+import { WatchlistImportPanel } from "../components/WatchlistImportPanel";
 import { createCloseReport } from "../lib/api";
 import type { CreateReportResponse } from "../lib/types";
 
@@ -12,6 +13,7 @@ export default function HomePage() {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<CreateReportResponse | null>(null);
+  const [watchlistImported, setWatchlistImported] = useState(false);
 
   const activeStep = useMemo(() => {
     if (result) {
@@ -78,6 +80,12 @@ export default function HomePage() {
             </section>
 
             <TaskProgress running={running} completed={Boolean(result)} />
+            <WatchlistImportPanel onImported={() => setWatchlistImported(true)} />
+            {watchlistImported && (
+              <p className="rounded-2xl bg-emerald-50 p-3 text-sm text-emerald-700">
+                自选股已导入，下一次生成报告会带入观察模块。
+              </p>
+            )}
           </aside>
 
           <section aria-label="报告预览">

@@ -2,7 +2,8 @@ import type { ProviderStatusSummary, SectorProviderStatus } from "../lib/types";
 
 export function ProviderStatusPanel({ status }: { status: ProviderStatusSummary }) {
   const newsFallbacks = status.news.filter((item) => item.fallback_used);
-  const allReal = !status.market.fallback_used && newsFallbacks.length === 0;
+  const tickflowFallback = status.tickflow?.fallback_used ?? false;
+  const allReal = !status.market.fallback_used && newsFallbacks.length === 0 && !tickflowFallback;
 
   return (
     <section
@@ -17,6 +18,7 @@ export function ProviderStatusPanel({ status }: { status: ProviderStatusSummary 
         <div className="font-bold">{allReal ? "真实数据源已启用" : "数据源回退提示"}</div>
         <div className="text-xs font-semibold uppercase tracking-[0.18em] opacity-70">
           Market {status.market.provider} · News {summarizeNewsProviders(status.news)}
+          {status.tickflow ? ` · TickFlow ${status.tickflow.provider}` : ""}
         </div>
       </div>
 
@@ -37,6 +39,9 @@ export function ProviderStatusPanel({ status }: { status: ProviderStatusSummary 
             </li>
           ))}
           {newsFallbacks.length > 5 && <li>还有 {newsFallbacks.length - 5} 条新闻源回退。</li>}
+          {status.tickflow?.fallback_used && (
+            <li>TickFlow 已回退 fake：{status.tickflow.reason ?? "未知原因"}</li>
+          )}
         </ul>
       )}
     </section>

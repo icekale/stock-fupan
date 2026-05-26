@@ -41,6 +41,25 @@ export function ReportPreview({ result }: { result: CreateReportResponse }) {
         <Metric label="成交额" value={`${report.turnover_cny.toFixed(2)} 亿`} tone="slate" />
       </section>
 
+      {report.watchlist_observation && (
+        <section className="mt-5 rounded-2xl border border-amber-100 bg-amber-50/60 p-4">
+          <h3 className="text-sm font-black text-slate-950">自选股观察</h3>
+          <p className="mt-1 text-xs text-slate-500">
+            导入 {report.watchlist_observation.total_count} 只，行情匹配 {report.watchlist_observation.quote_count} 只
+          </p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            {report.watchlist_observation.strongest.slice(0, 3).map((item) => (
+              <div key={`strong-${item.symbol}`} className="rounded-xl bg-white px-3 py-2 text-sm">
+                <div className="font-bold text-slate-900">{item.name ?? item.symbol}</div>
+                <div className="mt-1 text-red-600">
+                  {item.pct_change?.toFixed(2) ?? "--"}% · {item.symbol}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
       {report.indices.length > 0 && (
         <section className="mt-5 rounded-2xl bg-slate-50 p-4">
           <h3 className="text-sm font-bold text-slate-900">指数表现</h3>

@@ -1,4 +1,4 @@
-import type { CreateReportResponse } from "./types";
+import type { CreateReportResponse, WatchlistImportResult } from "./types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
@@ -31,4 +31,32 @@ export async function createCloseReport(tradeDate: string): Promise<CreateReport
   }
 
   return response.json() as Promise<CreateReportResponse>;
+}
+
+export async function importWatchlistText(
+  content: string,
+  sourceName = "manual.txt",
+): Promise<WatchlistImportResult> {
+  const response = await fetch(`${API_BASE_URL}/api/watchlists/import-text`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content, source_name: sourceName }),
+  });
+  if (!response.ok) {
+    throw new Error(`导入失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<WatchlistImportResult>;
+}
+
+export async function importWatchlistFile(file: File): Promise<WatchlistImportResult> {
+  const formData = new FormData();
+  formData.append("file", file);
+  const response = await fetch(`${API_BASE_URL}/api/watchlists/import-file`, {
+    method: "POST",
+    body: formData,
+  });
+  if (!response.ok) {
+    throw new Error(`导入失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<WatchlistImportResult>;
 }
