@@ -10,6 +10,7 @@ from app.rules.scoring import score_sectors
 from app.rules.validation import ValidationResult, validate_narrative_facts
 from app.schemas.report import ReportDTO, ReportKind, SectorCandidate
 from app.services.assets import AssetPaths, create_report_asset_dir, write_json
+from app.services.structured_review_builder import build_structured_review
 
 
 DEFAULT_LLM_METADATA_VALUE = "unknown"
@@ -112,6 +113,7 @@ class ReportGenerator:
             narrative=narrative,
             news=news_items,
         )
+        report.structured_review = build_structured_review(report)
         validation = validate_narrative_facts(report)
         provider_status = {
             "market": market_status.model_dump(mode="json"),

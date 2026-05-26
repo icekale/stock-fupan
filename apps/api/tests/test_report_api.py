@@ -212,6 +212,26 @@ def test_report_generator_writes_snapshot_files(tmp_path: Path) -> None:
     assert result.assets.report_html.exists()
 
 
+def test_report_generator_writes_structured_review_to_report_and_snapshot(tmp_path: Path) -> None:
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=FakeMarketDataProvider(),
+        news_provider=FakeNewsProvider(),
+        llm_provider=FakeLLMProvider(),
+    )
+
+    result = generator.generate_close_report("2026-05-26")
+
+    assert result.report.structured_review is not None
+    assert result.report.structured_review.topic == "放量分化 · 机器人领涨 · PCB轮动"
+    assert result.report.structured_review.prediction_review.source == "manual_placeholder"
+
+    report_dto = json.loads(result.assets.report_dto.read_text(encoding="utf-8"))
+    snapshot = json.loads(result.assets.snapshot.read_text(encoding="utf-8"))
+    assert report_dto["structured_review"]["tomorrow_judgement"]["most_likely_to_continue"] == "机器人"
+    assert snapshot["report"]["structured_review"] == report_dto["structured_review"]
+
+
 def test_report_generator_exports_png(tmp_path: Path) -> None:
     generator = ReportGenerator(
         reports_root=tmp_path,
