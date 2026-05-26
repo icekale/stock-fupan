@@ -24,4 +24,7 @@ def test_report_model_persists_asset_path(tmp_path: Path) -> None:
 
     assert loaded.trade_date == "2026-05-26"
     assert loaded.kind == ReportKindModel.CLOSE
+    assert loaded.version == "v001"
+    assert loaded.status == ReportStatusModel.READY_FOR_REVIEW
+    assert loaded.asset_dir == "/tmp/reports/2026-05-26/close/v001"
     assert loaded.algorithm_versions["sector_score"] == "sector_score_v1"
