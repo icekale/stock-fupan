@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 from app.config import Settings
-from app.providers.llm import FakeLLMProvider, LLMProvider
+from app.providers.llm import FakeLLMProvider, LLMProvider, OpenAILLMProvider
 from app.providers.market import (
     AkShareMarketDataProvider,
     FakeMarketDataProvider,
@@ -33,7 +33,7 @@ def create_provider_bundle(settings: Settings) -> ProviderBundle:
     return ProviderBundle(
         market_provider=_create_market_provider(settings),
         news_provider=_create_news_provider(settings),
-        llm_provider=FakeLLMProvider(),
+        llm_provider=_create_llm_provider(settings),
     )
 
 
@@ -65,6 +65,18 @@ def _create_news_provider(settings: Settings) -> NewsProvider:
             fallback_enabled=settings.provider_fallback_enabled,
         )
     raise ValueError(f"Unsupported NEWS_PROVIDER: {settings.news_provider}")
+
+
+def _create_llm_provider(settings: Settings) -> LLMProvider:
+    if settings.llm_provider == "fake":
+        return FakeLLMProvider()
+    if settings.llm_provider == "openai":
+        return OpenAILLMProvider(
+            api_key=settings.openai_api_key,
+            base_url=settings.openai_base_url,
+            model_name=settings.llm_model,
+        )
+    raise ValueError(f"Unsupported LLM_PROVIDER: {settings.llm_provider}")
 
 
 def _close_provider(provider: object) -> None:

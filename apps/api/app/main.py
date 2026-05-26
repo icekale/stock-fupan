@@ -49,6 +49,8 @@ def create_close_report(request: CreateCloseReportRequest) -> dict[str, object]:
             market_provider=providers.market_provider,
             news_provider=providers.news_provider,
             llm_provider=providers.llm_provider,
+            structured_review_provider=settings.structured_review_provider,
+            structured_review_fallback_enabled=settings.structured_review_fallback_enabled,
         )
         result = generator.generate_close_report(request.trade_date)
     status = (

@@ -1,10 +1,25 @@
+import json
 from typing import Protocol
 
+from openai import OpenAI
+from pydantic import ValidationError
+
 from app.schemas.report import ReportNarrative
+from app.schemas.structured_review import StructuredReviewDTO
+
+
+STRUCTURED_REVIEW_SYSTEM_PROMPT = """你是A股盘后复盘助手。只基于用户提供的结构化事实生成 JSON。
+不得编造未提供的数字、板块、个股、新闻来源。
+没有前一日报告时 prediction_review.source 必须为 manual_placeholder。
+所有买卖建议必须改写为观察条件、风险分层、回避清单。
+输出必须是合法 JSON，且字段匹配 StructuredReviewDTO。"""
 
 
 class LLMProvider(Protocol):
     def generate_narrative(self, seed: dict[str, object]) -> ReportNarrative:
+        raise NotImplementedError
+
+    def generate_structured_review(self, seed: dict[str, object]) -> StructuredReviewDTO:
         raise NotImplementedError
 
 
@@ -18,3 +33,65 @@ class FakeLLMProvider:
             tomorrow="明日观察机器人方向分歧后的承接。",
             risks=["涨停86只后高位分歧可能加大。"],
         )
+
+    def generate_structured_review(self, seed: dict[str, object]) -> StructuredReviewDTO:
+        from app.services.structured_review_builder import build_structured_review_from_seed
+
+        return build_structured_review_from_seed(seed)
+
+
+class LLMFallbackError(RuntimeError):
+    pass
+
+
+def _safe_error(prefix: str, exc: Exception) -> str:
+    return f"{prefix}: {exc.__class__.__name__}"
+
+
+class OpenAILLMProvider:
+    provider_name = "openai"
+
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str,
+        model_name: str,
+        client: object | None = None,
+    ) -> None:
+        self.api_key = api_key
+        self.base_url = base_url
+        self.model_name = model_name
+        self.client = client
+
+    def generate_narrative(self, seed: dict[str, object]) -> ReportNarrative:
+        return FakeLLMProvider().generate_narrative(seed)
+
+    def generate_structured_review(self, seed: dict[str, object]) -> StructuredReviewDTO:
+        if not self.api_key:
+            raise LLMFallbackError("OPENAI_API_KEY 未配置")
+
+        client = self.client or OpenAI(api_key=self.api_key, base_url=self.base_url)
+        try:
+            completion = client.chat.completions.create(
+                model=self.model_name,
+                messages=[
+                    {"role": "system", "content": STRUCTURED_REVIEW_SYSTEM_PROMPT},
+                    {"role": "user", "content": json.dumps(seed, ensure_ascii=False)},
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.2,
+            )
+            content = completion.choices[0].message.content
+        except Exception as exc:
+            raise LLMFallbackError(_safe_error("OpenAI 请求失败", exc)) from exc
+
+        if not content:
+            raise LLMFallbackError("OpenAI 返回空内容")
+        try:
+            payload = json.loads(content)
+        except json.JSONDecodeError as exc:
+            raise LLMFallbackError("OpenAI JSON 解析失败") from exc
+        try:
+            return StructuredReviewDTO.model_validate(payload)
+        except ValidationError as exc:
+            raise LLMFallbackError("OpenAI 结构化复盘字段校验失败") from exc

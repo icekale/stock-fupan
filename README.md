@@ -31,6 +31,26 @@ Behavior:
 - Anspire requires `ANSPIRE_API_KEY`; missing key, API errors, timeouts, and empty results fall back to fake news.
 - Provider diagnostics are returned in `provider_status` and saved in `snapshot.json`.
 
+## LLM Structured Review
+
+v0.3a can use an OpenAI-compatible LLM to generate `structured_review` content for the long-form HTML report:
+
+```dotenv
+LLM_PROVIDER=openai
+STRUCTURED_REVIEW_PROVIDER=llm
+STRUCTURED_REVIEW_FALLBACK_ENABLED=true
+OPENAI_API_KEY=
+OPENAI_BASE_URL=https://api.openai.com/v1
+LLM_MODEL=gpt-4.1-mini
+```
+
+Behavior:
+
+- Default local mode remains `LLM_PROVIDER=fake` and `STRUCTURED_REVIEW_PROVIDER=rule`.
+- LLM output is parsed into `StructuredReviewDTO`; invalid JSON or schema failures fall back to the deterministic rule builder when fallback is enabled.
+- `snapshot.json` includes `structured_review_status` so the frontend and generated assets can explain whether the review came from rules, LLM, or fallback.
+- API keys must be supplied through local environment variables only and are never written to generated assets.
+
 ## Frontend Dev Startup
 
 From the repository root:

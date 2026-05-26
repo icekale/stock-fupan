@@ -1,4 +1,4 @@
-from app.schemas.report import ReportDTO, SectorCandidate
+from app.schemas.report import IndexSnapshot, MarketBreadth, ReportDTO, ReportKind, ReportNarrative, SectorCandidate
 from app.schemas.structured_review import (
     ActionDiscipline,
     MarketOverviewTable,
@@ -135,3 +135,49 @@ def _sustainability_reason(sector: SectorCandidate) -> str:
     if sector.news_summaries:
         return f"评分{sector.score:.1f}，且具备消息催化。"
     return f"评分{sector.score:.1f}，消息确认度仍需观察。"
+
+
+def build_structured_review_seed(report: ReportDTO) -> dict[str, object]:
+    return {
+        "trade_date": report.trade_date,
+        "indices": [index.model_dump(mode="json") for index in report.indices],
+        "breadth": report.breadth.model_dump(mode="json"),
+        "turnover_cny": report.turnover_cny,
+        "market_state_tags": report.market_state_tags,
+        "sectors": [
+            {
+                "name": sector.name,
+                "rank": sector.rank,
+                "score": sector.score,
+                "pct_change": sector.pct_change,
+                "factor_scores": sector.factor_scores,
+                "news_summaries": sector.news_summaries,
+            }
+            for sector in report.sectors
+        ],
+        "news": [item.model_dump(mode="json") for item in report.news],
+        "narrative": report.narrative.model_dump(mode="json"),
+    }
+
+
+def build_structured_review_from_seed(seed: dict[str, object]) -> StructuredReviewDTO:
+    report = ReportDTO(
+        trade_date=str(seed.get("trade_date") or "unknown"),
+        kind=ReportKind.CLOSE,
+        title=f"{seed.get('trade_date') or 'unknown'} A股复盘",
+        indices=[IndexSnapshot.model_validate(item) for item in seed.get("indices", [])],
+        breadth=MarketBreadth.model_validate(seed.get("breadth", {})),
+        turnover_cny=float(seed.get("turnover_cny") or 0),
+        market_state_tags=[str(item) for item in seed.get("market_state_tags", [])],
+        sectors=[],
+        narrative=ReportNarrative(
+            conclusion="",
+            overview="",
+            sector_commentary=[],
+            watchlist=[],
+            tomorrow="",
+            risks=[],
+        ),
+        news=[],
+    )
+    return build_structured_review(report)

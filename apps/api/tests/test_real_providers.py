@@ -5,6 +5,7 @@ import pytest
 
 from app.config import Settings
 from app.providers.factory import create_provider_bundle
+from app.providers.llm import OpenAILLMProvider
 from app.providers.market import (
     AkShareMarketDataProvider,
     FakeMarketDataProvider,
@@ -471,3 +472,25 @@ def test_provider_bundle_close_closes_nested_anspire_owned_client(monkeypatch) -
     bundle.close()
 
     assert owned_client.closed is True
+
+
+def test_settings_default_to_rule_structured_review() -> None:
+    settings = Settings()
+
+    assert settings.llm_provider == "fake"
+    assert settings.structured_review_provider == "rule"
+    assert settings.structured_review_fallback_enabled is True
+
+
+def test_provider_factory_can_create_openai_llm_provider() -> None:
+    settings = Settings(
+        llm_provider="openai",
+        openai_api_key="sk-test-local",
+        openai_base_url="https://api.openai.com/v1",
+        llm_model="gpt-4.1-mini",
+    )
+
+    bundle = create_provider_bundle(settings)
+
+    assert isinstance(bundle.llm_provider, OpenAILLMProvider)
+    assert bundle.llm_provider.model_name == "gpt-4.1-mini"
