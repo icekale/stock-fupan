@@ -92,6 +92,20 @@ Behavior:
 - Confirmed OCR imports reuse the normal watchlist import path and appear in generated HTML reports through `自选股观察`.
 - API keys are read only from local environment variables and are not written to snapshots or generated report assets.
 
+## Reference HTML Alignment
+
+v0.3d expands the structured review schema and generated `report.html` toward the supplied long-form reference HTML.
+
+Added report modules:
+
+- `盘后 / 隔夜消息梳理`
+- `资金轮动路径分析`
+- `明日可介入标的与仓位建议`
+- `最实战的结论`
+- `上证指数中期走势研判`
+
+The HTML remains the primary artifact. Provider data, watchlists, TickFlow enrichment, and OCR imports all feed the same structured report pipeline; the renderer turns that pipeline into the final mobile-friendly HTML/PNG.
+
 ## Frontend Dev Startup
 
 From the repository root:
@@ -134,8 +148,7 @@ Then open `http://localhost:3000`.
 ## Future v0.3 Items
 
 - Scheduled report generation.
-- OCR and image-based evidence ingestion.
-- Watchlist import.
-- Reference HTML aligned structured long-report template.
+- Real OCR quality tuning against more broker/watchlist screenshots.
+- Watchlist sector/tag grouping.
 - Markdown/PDF export.
 - Authentication and multi-user workflows.
