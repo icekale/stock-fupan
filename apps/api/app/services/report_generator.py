@@ -12,6 +12,7 @@ from app.rules.scoring import score_sectors
 from app.rules.validation import ValidationResult, validate_narrative_facts
 from app.schemas.report import ReportDTO, ReportKind, SectorCandidate, StockCandidate
 from app.services.assets import AssetPaths, create_report_asset_dir, write_json
+from app.services.next_day_prediction import build_next_day_predictions
 from app.services.structured_review_generator import generate_structured_review
 from app.services.watchlist_observation import build_watchlist_observation
 
@@ -135,6 +136,10 @@ class ReportGenerator:
             sectors=sector_candidates,
             narrative=narrative,
             news=news_items,
+        )
+        report.next_day_predictions = build_next_day_predictions(
+            report=report,
+            review_source_results=review_source_results,
         )
         structured_review, structured_review_status = generate_structured_review(
             report=report,

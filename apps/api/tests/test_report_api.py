@@ -53,6 +53,8 @@ def test_create_close_report_api_returns_generated_report(
     payload = response.json()
     assert payload["report"]["trade_date"] == "2026-05-26"
     assert payload["report"]["sectors"][0]["name"] == "机器人"
+    assert "next_day_predictions" in payload["report"]
+    assert payload["report"]["algorithm_versions"]["next_day_prediction"] == "next_day_prediction_v0_5"
     assert payload["validation"]["is_valid"] is True
     assert payload["assets"]["version"] == "v001"
 
@@ -233,6 +235,8 @@ def test_report_generator_writes_structured_review_to_report_and_snapshot(tmp_pa
     assert result.report.structured_review is not None
     assert result.report.structured_review.topic == "放量分化 · 机器人领涨 · PCB轮动"
     assert result.report.structured_review.prediction_review.source == "manual_placeholder"
+    assert result.report.next_day_predictions
+    assert result.report.algorithm_versions["next_day_prediction"] == "next_day_prediction_v0_5"
 
     report_dto = json.loads(result.assets.report_dto.read_text(encoding="utf-8"))
     snapshot = json.loads(result.assets.snapshot.read_text(encoding="utf-8"))
@@ -241,6 +245,8 @@ def test_report_generator_writes_structured_review_to_report_and_snapshot(tmp_pa
     assert report_dto["structured_review"]["tomorrow_judgement"]["most_likely_to_continue"] == "机器人"
     assert report_dto["structured_review"]["practical_conclusion"]["headline"].startswith("明日最实战")
     assert snapshot["report"]["structured_review"] == report_dto["structured_review"]
+    assert report_dto["next_day_predictions"] == snapshot["report"]["next_day_predictions"]
+    assert snapshot["report"]["algorithm_versions"]["next_day_prediction"] == "next_day_prediction_v0_5"
     assert snapshot["report"]["structured_review"]["index_mid_term_outlook"]["scenario_table"][0][
         "scenario"
     ] == "强势延续"
