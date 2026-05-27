@@ -109,6 +109,37 @@ def test_parse_eastmoney_ztfp_api_payload_extracts_current_limit_up_article() ->
     ]
 
 
+def test_parse_eastmoney_ztfp_api_payload_extracts_board_efficiency_and_filters_midday_noise() -> None:
+    payload = {
+        "data": {
+            "list": [
+                {
+                    "title": "5月27日涨停复盘：61只股涨停 海星股份8天4板",
+                    "summary": "【5月27日涨停复盘：61只股涨停 海星股份8天4板】涨停个股数量方面，今日共计61股涨停，另有34只个股盘中一度触及涨停，封板率64.21%。",
+                    "showTime": "2026-05-27 17:12:31",
+                },
+                {
+                    "title": "5月27日午间涨停复盘：45股涨停 海星股份8天4板",
+                    "summary": "今日午盘沪指跌1.11%，涨停个股数量方面，今日午盘共计45股涨停，封板率60.81%。",
+                    "showTime": "2026-05-27 12:30:38",
+                },
+            ]
+        }
+    }
+
+    result = parse_eastmoney_ztfp_api_payload(
+        payload,
+        source_url="https://stock.eastmoney.com/a/cztfp.html",
+        trade_date="2026-05-27",
+    )
+
+    assert result.status == "success"
+    assert result.board_efficiency == "64.21%"
+    assert any(stock.name == "海星股份" and "8天4板" in stock.note for stock in result.hot_stocks)
+    assert not any(stock.name == "日午间" for stock in result.hot_stocks)
+    assert all("午间涨停复盘" not in note for note in result.market_notes)
+
+
 def test_review_source_aggregator_returns_status_for_failed_source() -> None:
     aggregator = ReviewSourceAggregator(
         providers=[

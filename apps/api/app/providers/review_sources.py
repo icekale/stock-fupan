@@ -192,6 +192,7 @@ def parse_eastmoney_ztfp_api_payload(
             )
         )
     notes = _dedupe_texts(article_texts)
+    board_efficiency = _extract_board_efficiency(combined_text)
     has_content = bool(themes or hot_stocks or notes)
     return ReviewSourceResult(
         source="东方财富涨停复盘",
@@ -202,6 +203,7 @@ def parse_eastmoney_ztfp_api_payload(
         themes=_dedupe_themes(themes),
         hot_stocks=_dedupe_stocks(hot_stocks),
         market_notes=notes,
+        board_efficiency=board_efficiency,
     )
 
 
@@ -343,6 +345,8 @@ def _eastmoney_articles_for_trade_date(
             continue
         title = str(item.get("title") or "")
         summary = str(item.get("summary") or "")
+        if "午间涨停复盘" in title:
+            continue
         if "涨停复盘" not in title and "涨停复盘" not in summary:
             continue
         articles.append(item)
@@ -466,8 +470,18 @@ def _looks_like_stock_mention(name: str) -> bool:
 def _extract_height_stocks(text: str) -> list[tuple[str, str]]:
     matches: list[tuple[str, str]] = []
     for name, height in re.findall(r"([\u4e00-\u9fa5A-Za-z]{2,8})(\d+天\d+板)", text):
+        if "日" in name:
+            name = name.rsplit("日", 1)[-1]
+        name = name.strip(" ：:，,。【】")
+        if not _looks_like_stock_mention(name):
+            continue
         matches.append((name, f"{name}{height}"))
     return matches
+
+
+def _extract_board_efficiency(text: str) -> str | None:
+    match = re.search(r"封板率\s*([0-9]+(?:\.[0-9]+)?%)", text)
+    return match.group(1) if match else None
 
 
 def _dedupe_themes(themes: list[ReviewThemeEvidence]) -> list[ReviewThemeEvidence]:

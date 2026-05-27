@@ -223,15 +223,27 @@ def _evidence_notes(sector: SectorCandidate) -> list[str]:
 
 
 def _board_efficiency(results: list[ReviewSourceResult]) -> str | None:
+    fallback: str | None = None
     for result in results:
-        if result.board_efficiency:
+        if not result.board_efficiency:
+            continue
+        if fallback is None:
+            fallback = result.board_efficiency
+        if _board_quality_points(result.board_efficiency) != 0:
             return result.board_efficiency
-    return None
+    return fallback
 
 
 def _board_quality_points(board_efficiency: str | None) -> int:
     if not board_efficiency:
         return 0
+    rate_match = re.search(r"([0-9]+(?:\.[0-9]+)?)%", board_efficiency)
+    if rate_match:
+        rate = float(rate_match.group(1))
+        if rate >= 60:
+            return 5
+        if rate < 50:
+            return -5
     if any(word in board_efficiency for word in POSITIVE_BOARD_WORDS):
         return 5
     if any(word in board_efficiency for word in WEAK_BOARD_WORDS):

@@ -1,3 +1,4 @@
+from app.providers.review_sources import ReviewSourceResult
 from app.schemas.report import (
     IndexSnapshot,
     MarketBreadth,
@@ -188,3 +189,74 @@ def test_empty_report_generates_no_prediction_content() -> None:
     report = _prediction_report([])
 
     assert build_next_day_predictions(report) == []
+
+
+def test_board_efficiency_from_review_sources_adjusts_probability() -> None:
+    sector = _sector(
+        review_sources=["同花顺复盘"],
+        review_notes=["PCB 前排活跃。"],
+        news_summaries=["PCB 产业链催化延续。"],
+        top_stocks=[StockCandidate(code="300476.SZ", name="胜宏科技", pct_change=20.0, tags=["同花顺复盘"])],
+    )
+    report = _prediction_report([sector])
+
+    strong = build_next_day_predictions(
+        report,
+        review_source_results=[
+            ReviewSourceResult(
+                source="东方财富涨停复盘",
+                source_url="https://stock.eastmoney.com/a/cztfp.html",
+                status="success",
+                board_efficiency="64.21%",
+            )
+        ],
+    )[0]
+    weak = build_next_day_predictions(
+        report,
+        review_source_results=[
+            ReviewSourceResult(
+                source="东方财富涨停复盘",
+                source_url="https://stock.eastmoney.com/a/cztfp.html",
+                status="success",
+                board_efficiency="45.00%",
+            )
+        ],
+    )[0]
+
+    assert strong.score_breakdown is not None
+    assert weak.score_breakdown is not None
+    assert strong.score_breakdown.board_quality == 5
+    assert weak.score_breakdown.board_quality == -5
+    assert strong.continuation_probability == weak.continuation_probability + 10
+
+
+def test_board_efficiency_prefers_actionable_review_source_value() -> None:
+    sector = _sector(
+        review_sources=["同花顺复盘"],
+        review_notes=["PCB 前排活跃。"],
+        news_summaries=["PCB 产业链催化延续。"],
+        top_stocks=[StockCandidate(code="300476.SZ", name="胜宏科技", pct_change=20.0, tags=["同花顺复盘"])],
+    )
+    report = _prediction_report([sector])
+
+    prediction = build_next_day_predictions(
+        report,
+        review_source_results=[
+            ReviewSourceResult(
+                source="同花顺复盘",
+                source_url="https://stock.10jqka.com.cn/fupan/",
+                status="success",
+                board_efficiency="一般",
+            ),
+            ReviewSourceResult(
+                source="东方财富涨停复盘",
+                source_url="https://stock.eastmoney.com/a/cztfp.html",
+                status="success",
+                board_efficiency="64.21%",
+            ),
+        ],
+    )[0]
+
+    assert prediction.score_breakdown is not None
+    assert prediction.score_breakdown.board_quality == 5
+
