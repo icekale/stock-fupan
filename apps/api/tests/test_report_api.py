@@ -13,6 +13,7 @@ from app.providers.llm import FakeLLMProvider, LLMFallbackError
 from app.providers.market import FakeMarketDataProvider, MarketBreadth, MarketCloseSnapshot
 from app.rules.scoring import RawSectorInput
 from app.providers.news import FakeNewsProvider
+from app.providers.review_sources import ReviewSourceResult, ReviewStockEvidence, ReviewThemeEvidence
 from app.providers.tickflow import FakeTickFlowProvider
 from app.renderers.html_renderer import render_mobile_report_html
 from app.rules.scoring import score_sectors
@@ -27,6 +28,9 @@ from app.watchlist.service import WatchlistImportResult
 @pytest.fixture(autouse=True)
 def isolate_settings_and_png_export(monkeypatch: pytest.MonkeyPatch):
     get_settings.cache_clear()
+    monkeypatch.setenv("MARKET_PROVIDER", "fake")
+    monkeypatch.setenv("NEWS_PROVIDER", "fake")
+    monkeypatch.setenv("REVIEW_SOURCES_ENABLED", "false")
 
     def fake_export_png(html_path: Path, output_path: Path) -> None:
         assert html_path.exists()
@@ -515,3 +519,86 @@ def test_mobile_report_renderer_contains_watchlist_section(tmp_path: Path) -> No
 
     assert "自选股观察" in html
     assert "600000.SH" in html
+
+class FakeReviewSourceProvider:
+    def collect(self, trade_date: str) -> list[ReviewSourceResult]:
+        return [
+            ReviewSourceResult(
+                source="同花顺复盘",
+                source_url="https://stock.10jqka.com.cn/fupan/",
+                status="success",
+                mainstream_views=["贵金属", "PCB"],
+                themes=[
+                    ReviewThemeEvidence(name="PCB", pct_change=4.2, reason="前排加速", source="同花顺复盘"),
+                    ReviewThemeEvidence(name="贵金属", pct_change=4.1, reason="低开高走", source="同花顺复盘"),
+                ],
+                hot_stocks=[
+                    ReviewStockEvidence(name="招金黄金", code="1818HK", pct_change=10.0, source="同花顺复盘"),
+                    ReviewStockEvidence(name="生益电子", code="688183", pct_change=20.0, source="同花顺复盘"),
+                    ReviewStockEvidence(name="宝鼎科技", code="002552", pct_change=10.0, source="同花顺复盘"),
+                ],
+                market_notes=[
+                    "贵金属、有色金属板块低开高走，招金黄金早盘涨停。",
+                    "PCB概念股午后多数上扬，生益电子20cm涨停，宝鼎科技涨停。",
+                ],
+            ),
+            ReviewSourceResult(
+                source="东方财富涨停复盘",
+                source_url="https://stock.eastmoney.com/a/cztfp.html",
+                status="success",
+                themes=[ReviewThemeEvidence(name="PCB", source="东方财富涨停复盘")],
+                hot_stocks=[ReviewStockEvidence(name="生益电子", pct_change=20.0, source="东方财富涨停复盘")],
+                market_notes=["涨停复盘：PCB概念股集体爆发 生益电子20CM涨停"],
+            ),
+        ]
+
+
+def test_report_generator_merges_curated_review_sources_into_strong_theme(tmp_path: Path) -> None:
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=FakeMarketDataProvider(),
+        news_provider=FakeNewsProvider(),
+        llm_provider=FakeLLMProvider(),
+        review_source_provider=FakeReviewSourceProvider(),
+    )
+
+    result = generator.generate_close_report("2026-05-26")
+
+    pcb = next(sector for sector in result.report.sectors if sector.name == "PCB")
+    assert "同花顺复盘" in pcb.review_sources
+    assert "东方财富涨停复盘" in pcb.review_sources
+    assert any(stock.name == "生益电子" for stock in pcb.top_stocks)
+    assert not any(stock.name == "招金黄金" for stock in pcb.top_stocks)
+    assert any("PCB概念股午后多数上扬" in note for note in pcb.review_notes)
+    assert result.provider_status["review_sources"][0]["source"] == "同花顺复盘"
+
+
+class WeakThemeReviewSourceProvider:
+    def collect(self, trade_date: str) -> list[ReviewSourceResult]:
+        return [
+            ReviewSourceResult(
+                source="同花顺复盘",
+                source_url="https://stock.10jqka.com.cn/fupan/",
+                status="success",
+                themes=[ReviewThemeEvidence(name="电力", pct_change=-0.45, source="同花顺复盘")],
+                hot_stocks=[],
+                market_notes=[],
+            )
+        ]
+
+
+def test_report_generator_does_not_confirm_strong_theme_from_weak_review_source_theme(
+    tmp_path: Path,
+) -> None:
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=ConflictingRawAndScoredMarketProvider(),
+        news_provider=FakeNewsProvider(),
+        llm_provider=FakeLLMProvider(),
+        review_source_provider=WeakThemeReviewSourceProvider(),
+    )
+
+    result = generator.generate_close_report("2026-05-26")
+
+    electric = next(sector for sector in result.report.sectors if sector.name == "电力")
+    assert electric.review_sources == []

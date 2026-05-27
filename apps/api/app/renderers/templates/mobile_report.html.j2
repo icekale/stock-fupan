@@ -151,6 +151,22 @@
               <article class="sector-card">
                 <div class="sector-head"><strong>{{ loop.index }}. {{ sector.headline }}</strong><span class="rating">{{ sector.sustainability|upper }}</span></div>
                 <p><strong>当前阶段：</strong>{{ sector.stage }}</p>
+                {% set candidate = report.sectors[loop.index0] %}
+                {% if candidate.review_sources %}
+                  <p class="muted">复盘源：{{ candidate.review_sources|join("、") }}</p>
+                {% endif %}
+                {% if candidate.top_stocks %}
+                  <table aria-label="前排强势个股">
+                    <tr><th>前排个股</th><th>涨跌幅</th><th>来源</th></tr>
+                    {% for stock in candidate.top_stocks %}
+                      <tr>
+                        <td>{{ stock.name }} {% if stock.code %}{{ stock.code }}{% endif %}</td>
+                        <td>{{ "%+.2f"|format(stock.pct_change) }}%</td>
+                        <td>{{ stock.tags|join("、") }}</td>
+                      </tr>
+                    {% endfor %}
+                  </table>
+                {% endif %}
                 <div class="grid-2">
                   <div><div class="mini-title">强势证据</div><ul>{% for item in sector.strengths %}<li>{{ item }}</li>{% endfor %}</ul></div>
                   <div><div class="mini-title">弱势 / 分歧</div><ul>{% for item in sector.weaknesses %}<li>{{ item }}</li>{% endfor %}</ul></div>

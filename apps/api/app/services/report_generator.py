@@ -4,12 +4,13 @@ from pathlib import Path
 from app.providers.llm import LLMProvider
 from app.providers.market import MarketDataProvider, ProviderStatus
 from app.providers.news import NewsProvider, SectorNewsResult
+from app.providers.review_sources import ReviewSourceResult
 from app.providers.tickflow import TickFlowQuoteProvider
 from app.renderers.html_renderer import render_mobile_report_html
 from app.renderers.png_exporter import export_png
 from app.rules.scoring import score_sectors
 from app.rules.validation import ValidationResult, validate_narrative_facts
-from app.schemas.report import ReportDTO, ReportKind, SectorCandidate
+from app.schemas.report import ReportDTO, ReportKind, SectorCandidate, StockCandidate
 from app.services.assets import AssetPaths, create_report_asset_dir, write_json
 from app.services.structured_review_generator import generate_structured_review
 from app.services.watchlist_observation import build_watchlist_observation
@@ -46,6 +47,7 @@ class ReportGenerator:
         watchlist_service: object | None = None,
         tickflow_provider: TickFlowQuoteProvider | None = None,
         watchlist_enabled: bool = False,
+        review_source_provider: object | None = None,
     ) -> None:
         self.reports_root = reports_root
         self.market_provider = market_provider
@@ -56,6 +58,7 @@ class ReportGenerator:
         self.watchlist_service = watchlist_service
         self.tickflow_provider = tickflow_provider
         self.watchlist_enabled = watchlist_enabled
+        self.review_source_provider = review_source_provider
 
     def generate_close_report(self, trade_date: str) -> GeneratedReport:
         assets = create_report_asset_dir(self.reports_root, trade_date, ReportKind.CLOSE.value)
@@ -70,6 +73,9 @@ class ReportGenerator:
                 reason=None,
             )
         scored_sectors = score_sectors(market_snapshot.raw_sectors, top_n=5)
+        review_source_results: list[ReviewSourceResult] = []
+        if self.review_source_provider is not None:
+            review_source_results = self.review_source_provider.collect(trade_date)
 
         news_items = []
         news_statuses = []
@@ -110,18 +116,7 @@ class ReportGenerator:
         narrative = self.llm_provider.generate_narrative(seed)
 
         sector_candidates = [
-            SectorCandidate(
-                name=scored.name,
-                score=scored.score,
-                rank=scored.rank,
-                pct_change=scored.pct_change,
-                reason="综合评分靠前",
-                top_stocks=[],
-                news_summaries=[
-                    item.summary for item in news_items if item.matched_sector == scored.name
-                ],
-                factor_scores=scored.factor_scores,
-            )
+            self._build_sector_candidate(scored, news_items, review_source_results)
             for scored in scored_sectors
         ]
 
@@ -176,6 +171,7 @@ class ReportGenerator:
             "market": market_status.model_dump(mode="json"),
             "news": news_statuses,
             "tickflow": tickflow_status.model_dump(mode="json"),
+            "review_sources": [_review_source_status(result) for result in review_source_results],
         }
         structured_review_status_payload = structured_review_status.model_dump(mode="json")
 
@@ -223,3 +219,123 @@ class ReportGenerator:
             provider_status=provider_status,
             structured_review_status=structured_review_status_payload,
         )
+
+    def _build_sector_candidate(
+        self,
+        scored: object,
+        news_items: list[object],
+        review_source_results: list[ReviewSourceResult],
+    ) -> SectorCandidate:
+        review_sources: list[str] = []
+        review_notes: list[str] = []
+        top_stocks: list[StockCandidate] = []
+        sector_name = getattr(scored, "name")
+        for result in review_source_results:
+            if result.status != "success":
+                continue
+            result_matches_sector = any(
+                _theme_matches(sector_name, theme.name) for theme in result.themes
+            )
+            matching_notes = [
+                note for note in result.market_notes if _note_matches_sector(sector_name, note, result)
+            ]
+            for theme in result.themes:
+                if not _theme_matches(sector_name, theme.name):
+                    continue
+                if _theme_is_positive(theme) or matching_notes:
+                    review_sources.append(result.source)
+                    if theme.reason:
+                        review_notes.append(theme.reason)
+                    for stock in theme.stocks:
+                        top_stocks.append(_review_stock_to_candidate(stock, result.source))
+            for note in matching_notes:
+                review_notes.append(note)
+                review_sources.append(result.source)
+            if result_matches_sector or matching_notes:
+                for stock in result.hot_stocks:
+                    if _stock_matches_sector_note(stock.name, matching_notes):
+                        top_stocks.append(_review_stock_to_candidate(stock, result.source))
+        return SectorCandidate(
+            name=sector_name,
+            score=getattr(scored, "score"),
+            rank=getattr(scored, "rank"),
+            pct_change=getattr(scored, "pct_change"),
+            reason="强度与复盘源共同确认" if review_sources else "综合评分靠前",
+            top_stocks=_dedupe_stock_candidates(top_stocks),
+            news_summaries=[item.summary for item in news_items if item.matched_sector == sector_name],
+            factor_scores=getattr(scored, "factor_scores"),
+            review_sources=_dedupe_strings(review_sources),
+            review_notes=_dedupe_strings(review_notes),
+        )
+
+
+def _theme_matches(sector_name: str, theme_name: str) -> bool:
+    sector_key = sector_name.lower()
+    theme_key = theme_name.lower()
+    aliases = {
+        "pcb": ["pcb"],
+        "有色金属": ["有色", "贵金属", "工业金属", "小金属", "黄金", "金属"],
+        "半导体": ["半导体", "芯片", "先进封装", "封测"],
+        "新材料": ["新材料", "材料", "培育钻石"],
+    }
+    candidates = aliases.get(sector_key, [sector_key])
+    return any(candidate in theme_key or theme_key in candidate for candidate in candidates)
+
+
+def _note_matches_sector(sector_name: str, note: str, result: ReviewSourceResult) -> bool:
+    if sector_name in note:
+        return True
+    return any(_theme_matches(sector_name, theme.name) and theme.name in note for theme in result.themes)
+
+
+def _theme_is_positive(theme: object) -> bool:
+    pct_change = getattr(theme, "pct_change", None)
+    return pct_change is not None and pct_change > 0
+
+
+def _stock_matches_sector_note(stock_name: str, notes: list[str]) -> bool:
+    return any(stock_name and stock_name in note for note in notes)
+
+
+def _review_stock_to_candidate(stock: object, source: str) -> StockCandidate:
+    return StockCandidate(
+        code=getattr(stock, "code") or "",
+        name=getattr(stock, "name"),
+        pct_change=getattr(stock, "pct_change") or 0.0,
+        tags=[getattr(stock, "source") or source],
+    )
+
+
+def _dedupe_strings(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    output: list[str] = []
+    for value in values:
+        normalized = value.strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        output.append(normalized)
+    return output
+
+
+def _dedupe_stock_candidates(stocks: list[StockCandidate]) -> list[StockCandidate]:
+    seen: set[tuple[str, str]] = set()
+    output: list[StockCandidate] = []
+    for stock in stocks:
+        key = (stock.code, stock.name)
+        if key in seen:
+            continue
+        seen.add(key)
+        output.append(stock)
+    return output[:8]
+
+
+def _review_source_status(result: ReviewSourceResult) -> dict[str, object]:
+    return {
+        "source": result.source,
+        "source_url": result.source_url,
+        "status": result.status,
+        "reason": result.reason,
+        "theme_count": len(result.themes),
+        "hot_stock_count": len(result.hot_stocks),
+    }

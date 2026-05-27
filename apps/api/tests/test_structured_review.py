@@ -4,7 +4,7 @@ from app.providers.llm import FakeLLMProvider, LLMFallbackError
 from app.providers.market import FakeMarketDataProvider
 from app.providers.news import FakeNewsProvider
 from app.rules.scoring import score_sectors
-from app.schemas.report import ReportDTO, ReportKind, SectorCandidate
+from app.schemas.report import ReportDTO, ReportKind, SectorCandidate, StockCandidate
 from app.schemas.structured_review import (
     ActionDiscipline,
     AfterHoursNewsSummary,
@@ -283,3 +283,21 @@ def test_structured_review_generator_can_raise_when_fallback_disabled() -> None:
             provider_mode="llm",
             fallback_enabled=False,
         )
+
+def test_structured_review_uses_front_row_stocks_and_review_sources_in_sector_analysis() -> None:
+    report = _fake_report()
+    report.sectors[0].name = "PCB"
+    report.sectors[0].top_stocks = [
+        StockCandidate(code="688183", name="生益电子", pct_change=20.0, tags=["同花顺复盘"]),
+        StockCandidate(code="002552", name="宝鼎科技", pct_change=10.0, tags=["东方财富涨停复盘"]),
+    ]
+    report.sectors[0].review_sources = ["同花顺复盘", "东方财富涨停复盘"]
+    report.sectors[0].review_notes = ["PCB概念股午后多数上扬，生益电子20cm涨停。"]
+
+    review = build_structured_review(report)
+
+    sector = review.sector_reviews[0]
+    assert "生益电子" in "\n".join(sector.strengths)
+    assert "同花顺复盘" in "\n".join(sector.logic_points)
+    assert "前排" in sector.next_day_view
+    assert review.practical_conclusion.headline.startswith("明日最实战")
