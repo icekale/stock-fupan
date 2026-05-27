@@ -11,7 +11,7 @@ from app.renderers.png_exporter import export_png
 from app.rules.scoring import score_sectors
 from app.rules.validation import ValidationResult, validate_narrative_facts
 from app.schemas.report import ReportDTO, ReportKind, SectorCandidate, StockCandidate
-from app.services.assets import AssetPaths, create_report_asset_dir, write_json
+from app.services.assets import AssetPaths, create_named_report_copies, create_report_asset_dir, report_kind_label, write_json
 from app.services.next_day_prediction import build_next_day_predictions
 from app.services.structured_review_generator import generate_structured_review
 from app.services.theme_history import load_previous_strong_themes
@@ -65,7 +65,13 @@ class ReportGenerator:
         self.previous_review_html_path = previous_review_html_path
 
     def generate_close_report(self, trade_date: str) -> GeneratedReport:
-        assets = create_report_asset_dir(self.reports_root, trade_date, ReportKind.CLOSE.value)
+        return self._generate_report(trade_date, ReportKind.CLOSE)
+
+    def generate_midday_report(self, trade_date: str) -> GeneratedReport:
+        return self._generate_report(trade_date, ReportKind.MIDDAY)
+
+    def _generate_report(self, trade_date: str, kind: ReportKind) -> GeneratedReport:
+        assets = create_report_asset_dir(self.reports_root, trade_date, kind.value)
         if hasattr(self.market_provider, "get_close_snapshot_with_status"):
             market_snapshot, market_status = self.market_provider.get_close_snapshot_with_status(trade_date)
         else:
@@ -88,17 +94,29 @@ class ReportGenerator:
         news_items = []
         news_statuses = []
         for sector in scored_sectors:
-            if hasattr(self.news_provider, "search_sector_news_with_status"):
-                sector_news = self.news_provider.search_sector_news_with_status(sector.name, trade_date)
-            else:
+            try:
+                if hasattr(self.news_provider, "search_sector_news_with_status"):
+                    sector_news = self.news_provider.search_sector_news_with_status(sector.name, trade_date)
+                else:
+                    sector_news = SectorNewsResult(
+                        sector=sector.name,
+                        items=self.news_provider.search_sector_news(sector.name, trade_date),
+                        status=ProviderStatus(
+                            provider=getattr(self.news_provider, "provider_name", "fake"),
+                            status="success",
+                            fallback_used=False,
+                            reason=None,
+                        ),
+                    )
+            except Exception as exc:
                 sector_news = SectorNewsResult(
                     sector=sector.name,
-                    items=self.news_provider.search_sector_news(sector.name, trade_date),
+                    items=[],
                     status=ProviderStatus(
-                        provider=getattr(self.news_provider, "provider_name", "fake"),
-                        status="success",
+                        provider=getattr(self.news_provider, "provider_name", "news"),
+                        status="failed",
                         fallback_used=False,
-                        reason=None,
+                        reason=str(exc) or exc.__class__.__name__,
                     ),
                 )
             news_items.extend(sector_news.items)
@@ -110,6 +128,8 @@ class ReportGenerator:
             )
 
         seed = market_snapshot.to_report_seed(news_items)
+        seed["report_kind"] = kind.value
+        seed["review_window"] = "下午" if kind == ReportKind.MIDDAY else "明日"
         seed["raw_sectors"] = [
             {
                 "name": scored.name,
@@ -135,8 +155,8 @@ class ReportGenerator:
 
         report = ReportDTO(
             trade_date=trade_date,
-            kind=ReportKind.CLOSE,
-            title=f"{trade_date} A股复盘",
+            kind=kind,
+            title=f"{trade_date}-{report_kind_label(kind.value)}",
             indices=market_snapshot.indices,
             breadth=market_snapshot.breadth,
             turnover_cny=market_snapshot.turnover_cny,
@@ -236,6 +256,7 @@ class ReportGenerator:
         )
         assets.report_html.write_text(render_mobile_report_html(report), encoding="utf-8")
         export_png(assets.report_html, assets.report_png)
+        create_named_report_copies(assets, trade_date=trade_date, kind=kind.value)
         write_json(assets.notes, {"overrides": []})
 
         return GeneratedReport(

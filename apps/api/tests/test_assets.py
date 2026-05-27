@@ -4,7 +4,13 @@ from pathlib import Path
 
 import pytest
 
-from app.services.assets import AssetPaths, create_report_asset_dir, write_json
+from app.services.assets import (
+    AssetPaths,
+    create_named_report_copies,
+    create_report_asset_dir,
+    report_kind_label,
+    write_json,
+)
 
 
 def test_create_report_asset_dir_uses_next_version(tmp_path: Path) -> None:
@@ -115,3 +121,21 @@ def test_write_json_outputs_pretty_utf8(tmp_path: Path) -> None:
 
     assert loaded == {"name": "机器人", "score": 86.5}
     assert "机器人" in paths.snapshot.read_text(encoding="utf-8")
+
+
+def test_report_kind_label_maps_close_and_midday() -> None:
+    assert report_kind_label("close") == "全日盘后复盘"
+    assert report_kind_label("midday") == "午间复盘"
+
+
+def test_create_named_report_copies_uses_chinese_report_names(tmp_path: Path) -> None:
+    paths = AssetPaths(root=tmp_path, version="v001")
+    paths.report_html.write_text("<html>report</html>", encoding="utf-8")
+    paths.report_png.write_bytes(b"png")
+
+    copies = create_named_report_copies(paths, trade_date="2026-05-27", kind="midday")
+
+    assert copies["html"].name == "2026-05-27-午间复盘.html"
+    assert copies["png"].name == "2026-05-27-午间复盘.png"
+    assert copies["html"].read_text(encoding="utf-8") == "<html>report</html>"
+    assert copies["png"].read_bytes() == b"png"

@@ -12,6 +12,7 @@ class Base(DeclarativeBase):
 
 class ReportKindModel(StrEnum):
     CLOSE = "close"
+    MIDDAY = "midday"
 
 
 class ReportStatusModel(StrEnum):

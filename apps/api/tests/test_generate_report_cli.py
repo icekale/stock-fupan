@@ -71,6 +71,27 @@ def test_generate_report_cli_writes_report_and_prints_paths(
     assert "tk_" not in captured.out
 
 
+def test_generate_report_cli_can_write_midday_report(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.cli import generate_report
+
+    monkeypatch.setattr(generate_report, "create_provider_bundle", lambda settings: _fake_bundle())
+
+    exit_code = generate_report.main([
+        "--date",
+        "2026-05-26",
+        "--kind",
+        "midday",
+        "--reports-root",
+        str(tmp_path),
+    ])
+
+    assert exit_code == 0
+    assert (tmp_path / "2026-05-26" / "midday" / "v001" / "2026-05-26-午间复盘.html").exists()
+
+
 def test_generate_report_cli_returns_nonzero_for_invalid_report(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

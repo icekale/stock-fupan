@@ -32,6 +32,8 @@ def build_structured_review(report: ReportDTO) -> StructuredReviewDTO:
     top_prediction = _top_numeric_prediction(report)
     leader_name = top_prediction.sector if top_prediction is not None else leader.name if leader else "暂无主线"
     runner_up_name = runner_up.name if runner_up else "暂无轮动方向"
+    next_session = _next_session(report)
+    post_session = _post_session(report)
     previous_theme_names = [item.theme for item in report.previous_strong_themes if item.judgement != "延续确认"]
     diverge_name = "、".join(previous_theme_names[:3]) if previous_theme_names else runner_up_name
 
@@ -44,9 +46,9 @@ def build_structured_review(report: ReportDTO) -> StructuredReviewDTO:
             missed_items=_missed_items(report),
             bias_reasons=[
                 _history_bias_reason(report),
-                f"{runner_up_name}的轮动强度需要结合次日竞价与量能继续确认。",
+                f"{runner_up_name}的轮动强度需要结合{post_session}量能继续确认。",
             ],
-            revision=f"后续预判重点观察{leader_name}与{runner_up_name}之间的资金切换。",
+            revision=f"{next_session}预判重点观察{leader_name}与{runner_up_name}之间的资金切换。",
             source="previous_report" if report.previous_strong_themes else "manual_placeholder",
         ),
         tomorrow_judgement=TomorrowJudgement(
@@ -54,7 +56,7 @@ def build_structured_review(report: ReportDTO) -> StructuredReviewDTO:
             most_likely_to_diverge=diverge_name,
             rotation_candidates=[sector.name for sector in report.sectors[1:4]],
             defensive_candidates=["高股息", "低位防御"],
-            core_view=f"明日重点不是追高扩散，而是观察{leader_name}分歧后的承接与{runner_up_name}轮动强度。",
+            core_view=f"{next_session}重点不是追高扩散，而是观察{leader_name}分歧后的承接与{runner_up_name}轮动强度。",
             operating_focus=[
                 f"先看{leader_name}是否温和分歧后继续承接。",
                 f"再看{runner_up_name}能否从轮动转为持续。",
@@ -62,8 +64,8 @@ def build_structured_review(report: ReportDTO) -> StructuredReviewDTO:
             ],
         ),
         market_overview=_build_market_overview(report),
-        after_hours_news=_build_after_hours_news(report),
-        sector_reviews=[_build_sector_review(sector) for sector in report.sectors],
+        after_hours_news=_build_after_hours_news(report, next_session),
+        sector_reviews=[_build_sector_review(sector, next_session) for sector in report.sectors],
         sustainability_ranking=[
             SustainabilityRank(
                 rank=index + 1,
@@ -73,17 +75,25 @@ def build_structured_review(report: ReportDTO) -> StructuredReviewDTO:
             )
             for index, sector in enumerate(report.sectors)
         ],
-        capital_rotation=_build_capital_rotation(report, leader, runner_up),
+        capital_rotation=_build_capital_rotation(report, leader, runner_up, next_session),
         historical_theme_reviews=report.previous_strong_themes,
-        next_day_opportunity=_build_next_day_opportunity(report, leader),
-        practical_conclusion=_build_practical_conclusion(leader_name, runner_up_name),
-        index_mid_term_outlook=_build_index_mid_term_outlook(report),
+        next_day_opportunity=_build_next_day_opportunity(report, leader, next_session),
+        practical_conclusion=_build_practical_conclusion(leader_name, runner_up_name, next_session),
+        index_mid_term_outlook=_build_index_mid_term_outlook(report, next_session),
         action_discipline=ActionDiscipline(
             focus=[f"优先观察{leader_name}核心标的承接"] if leader else ["等待新主线确认"],
             avoid=["回避无新闻催化的跟风补涨", "回避缩量冲高后回落的弱转强失败"],
             final_view=f"最实战的动作是围绕{leader_name}去弱留强，同时警惕高位一致后的分歧。",
         ),
     )
+
+
+def _next_session(report: ReportDTO) -> str:
+    return "下午" if report.kind == ReportKind.MIDDAY else "明日"
+
+
+def _post_session(report: ReportDTO) -> str:
+    return "下午盘中" if report.kind == ReportKind.MIDDAY else "次日竞价与盘中"
 
 
 def _previous_prediction_text(report: ReportDTO) -> str:
@@ -149,10 +159,10 @@ def _build_market_overview(report: ReportDTO) -> MarketOverviewTable:
     )
 
 
-def _build_after_hours_news(report: ReportDTO) -> AfterHoursNewsSummary:
+def _build_after_hours_news(report: ReportDTO, next_session: str = "明日") -> AfterHoursNewsSummary:
     domestic = [item.title for item in report.news[:4] if item.title]
     if not domestic:
-        domestic = [f"{sector.name}方向消息确认度仍需结合次日竞价观察" for sector in report.sectors[:2]]
+        domestic = [f"{sector.name}方向消息确认度仍需结合{next_session}盘面观察" for sector in report.sectors[:2]]
     us_mapping = (
         [f"海外映射重点观察{report.sectors[0].name}产业链反馈"]
         if report.sectors
@@ -166,7 +176,7 @@ def _build_after_hours_news(report: ReportDTO) -> AfterHoursNewsSummary:
             else "海外映射暂未形成明确方向。"
         ),
         domestic_catalysts=domestic[:4],
-        risk_notes=["盘后消息只作为次日观察线索，不作为单独决策依据。"],
+        risk_notes=[f"消息与催化只作为{next_session}观察线索，不作为单独决策依据。"],
     )
 
 
@@ -174,6 +184,7 @@ def _build_capital_rotation(
     report: ReportDTO,
     leader: SectorCandidate | None,
     runner_up: SectorCandidate | None,
+    next_session: str = "明日",
 ) -> CapitalRotationPath:
     sector_names = [sector.name for sector in report.sectors[:4]]
     actual_path = [
@@ -186,7 +197,7 @@ def _build_capital_rotation(
     return CapitalRotationPath(
         actual_path=actual_path,
         path_summary=" → ".join(actual_path),
-        key_finding=f"资金仍围绕{leader_name}展开，但{runner_up_name}的轮动强度决定次日扩散质量。",
+        key_finding=f"资金仍围绕{leader_name}展开，但{runner_up_name}的轮动强度决定{next_session}扩散质量。",
         next_path_watch=[
             f"观察{leader_name}分歧后的回流强度",
             f"观察{runner_up_name}是否从轮动转为持续",
@@ -196,7 +207,7 @@ def _build_capital_rotation(
 
 
 def _build_next_day_opportunity(
-    report: ReportDTO, leader: SectorCandidate | None
+    report: ReportDTO, leader: SectorCandidate | None, next_session: str = "明日"
 ) -> NextDayOpportunityPlan:
     prediction_focus = _prediction_focus_candidates(report)
     if prediction_focus:
@@ -212,7 +223,7 @@ def _build_next_day_opportunity(
             "单一方向底仓不超过2成；主线确认扩散后，总仓位上限控制在3成以内。",
             "弱分支只看修复，不做主线预设；缩量冲高不加仓。",
         ],
-        trigger_conditions=["指数不出现明显放量下杀", "主线前排分歧温和", "成交额维持活跃区间"],
+        trigger_conditions=[f"{next_session}指数不出现明显放量下杀", "主线前排分歧温和", "成交额维持活跃区间"],
         avoid_conditions=["缩量冲高回落", "无催化后排补涨", "高位一致加速后的被动追高"],
     )
 
@@ -270,9 +281,9 @@ def _stock_candidate_text(stocks: list[object]) -> str:
     return "、".join(parts)
 
 
-def _build_practical_conclusion(leader_name: str, runner_up_name: str) -> PracticalConclusion:
+def _build_practical_conclusion(leader_name: str, runner_up_name: str, next_session: str = "明日") -> PracticalConclusion:
     return PracticalConclusion(
-        headline=f"明日最实战的观察，是围绕{leader_name}去弱留强，同时确认{runner_up_name}是否具备持续性。",
+        headline=f"{next_session}最实战的观察，是围绕{leader_name}去弱留强，同时确认{runner_up_name}是否具备持续性。",
         bullet_points=[
             f"先看{leader_name}核心股承接，而不是后排补涨。",
             f"再看{runner_up_name}能否从轮动变成持续。",
@@ -281,7 +292,7 @@ def _build_practical_conclusion(leader_name: str, runner_up_name: str) -> Practi
     )
 
 
-def _build_index_mid_term_outlook(report: ReportDTO) -> IndexMidTermOutlook:
+def _build_index_mid_term_outlook(report: ReportDTO, next_session: str = "明日") -> IndexMidTermOutlook:
     index_name = report.indices[0].name if report.indices else "上证指数"
     index_change = report.indices[0].pct_change if report.indices else 0
     position = "偏强修复" if index_change >= 0 else "震荡承压"
@@ -291,8 +302,8 @@ def _build_index_mid_term_outlook(report: ReportDTO) -> IndexMidTermOutlook:
             "年度级别判断暂不预设单边趋势，优先跟踪量能与赚钱效应。",
         ],
         current_position=(
-            f"{report.trade_date}收盘后，指数处于{position}状态，"
-            "短线重点看强势板块是否带动赚钱效应扩散。"
+            f"{report.trade_date}{'午间' if report.kind == ReportKind.MIDDAY else '收盘后'}，指数处于{position}状态，"
+            f"短线重点看{next_session}强势板块是否带动赚钱效应扩散。"
         ),
         scenario_table=[
             {"scenario": "强势延续", "condition": "指数放量上行且主线扩散", "response": "观察核心方向承接与轮动扩散"},
@@ -302,7 +313,7 @@ def _build_index_mid_term_outlook(report: ReportDTO) -> IndexMidTermOutlook:
     )
 
 
-def _build_sector_review(sector: SectorCandidate) -> StructuredSectorReview:
+def _build_sector_review(sector: SectorCandidate, next_session: str = "明日") -> StructuredSectorReview:
     rating = _rating_for_sector(sector)
     news_evidence = _compact_news_evidence(sector.news_summaries)
     review_evidence = _compact_news_evidence(sector.review_notes, max_length=96)
@@ -329,7 +340,7 @@ def _build_sector_review(sector: SectorCandidate) -> StructuredSectorReview:
         sustainability_analysis=_sustainability_analysis(sector, rating),
         sustainability=rating,
         next_day_view=f"观察{sector.name}前排股分歧后的承接，优先看{front_row_text or '核心股'}，不追后排补涨。",
-        watch_items=[f"{sector.name}前排股竞价和开盘承接", "板块内强弱切换是否温和"],
+        watch_items=[f"{next_session}{sector.name}前排股承接", "板块内强弱切换是否温和"],
         avoid_items=["缩量冲高回落", "无复盘源确认的低位跟风"],
     )
 
@@ -395,6 +406,8 @@ def _sustainability_reason(sector: SectorCandidate) -> str:
 def build_structured_review_seed(report: ReportDTO) -> dict[str, object]:
     return {
         "trade_date": report.trade_date,
+        "report_kind": report.kind.value,
+        "review_window": _next_session(report),
         "indices": [index.model_dump(mode="json") for index in report.indices],
         "breadth": report.breadth.model_dump(mode="json"),
         "turnover_cny": report.turnover_cny,

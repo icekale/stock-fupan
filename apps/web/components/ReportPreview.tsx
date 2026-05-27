@@ -1,8 +1,10 @@
 import type { CreateReportResponse } from "../lib/types";
+import { reportAssetUrl } from "../lib/api";
 import { ProviderStatusPanel } from "./ProviderStatusPanel";
 
 export function ReportPreview({ result }: { result: CreateReportResponse }) {
   const { report, validation, assets } = result;
+  const sessionLabel = report.kind === "midday" ? "下午关注" : "明日关注";
 
   return (
     <article className="rounded-3xl border border-slate-200 bg-white p-6 shadow-card">
@@ -19,6 +21,26 @@ export function ReportPreview({ result }: { result: CreateReportResponse }) {
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {assets.html_url && (
+            <a
+              className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-200"
+              href={reportAssetUrl(assets.html_url)}
+              rel="noreferrer"
+              target="_blank"
+            >
+              查看完整 HTML
+            </a>
+          )}
+          {assets.png_url && (
+            <a
+              className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-200"
+              href={reportAssetUrl(assets.png_url)}
+              rel="noreferrer"
+              target="_blank"
+            >
+              打开 PNG
+            </a>
+          )}
           <span className="rounded-full bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white">{assets.version}</span>
           <span
             className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
@@ -107,7 +129,7 @@ export function ReportPreview({ result }: { result: CreateReportResponse }) {
       </section>
 
       <section className="mt-6 grid gap-3 lg:grid-cols-2">
-        <NarrativeBlock title="明日关注" items={report.narrative.watchlist} fallback={report.narrative.tomorrow} />
+        <NarrativeBlock title={sessionLabel} items={report.narrative.watchlist} fallback={report.narrative.tomorrow} />
         <NarrativeBlock title="风险提示" items={report.narrative.risks} fallback="暂无额外风险提示" />
       </section>
 

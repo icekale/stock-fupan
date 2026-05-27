@@ -1,5 +1,6 @@
 import json
 import re
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -90,6 +91,23 @@ def create_report_asset_dir(reports_root: Path, trade_date: str, kind: str) -> A
 
         _ensure_under_root(reports_root, root)
         return AssetPaths(root=root, version=version)
+
+
+def report_kind_label(kind: str) -> str:
+    labels = {
+        "close": "全日盘后复盘",
+        "midday": "午间复盘",
+    }
+    return labels.get(kind, kind)
+
+
+def create_named_report_copies(paths: AssetPaths, trade_date: str, kind: str) -> dict[str, Path]:
+    label = report_kind_label(kind)
+    html_path = paths.root / f"{trade_date}-{label}.html"
+    png_path = paths.root / f"{trade_date}-{label}.png"
+    shutil.copyfile(paths.report_html, html_path)
+    shutil.copyfile(paths.report_png, png_path)
+    return {"html": html_path, "png": png_path}
 
 
 def write_json(path: Path, payload: Any) -> None:

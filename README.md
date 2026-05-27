@@ -12,7 +12,8 @@
 - **复盘源校验**：同花顺复盘和东方财富涨停复盘作为辅助源，用于校验题材、封板质量和市场情绪。
 - **前期主线跟踪**：对昨日或历史强势方向做延续、分化、退潮判断，例如半导体、先进封装、存储芯片等。
 - **次日观察模块**：把强度、前排股、封板质量、持续性和催化转成次日观察条件。
-- **HTML/PNG 输出**：生成结构化 `report.html`，并导出适合分享的 `report.png`。
+- **全日 / 午间复盘**：支持盘后全日复盘和午间复盘，午间报告重点给出下午交易计划。
+- **HTML/PNG 输出**：生成结构化 `report.html` / `report.png`，并同步输出中文命名分享文件。
 - **自选股导入**：支持同花顺 `.blk`、CSV、纯文本代码和 OCR 图片导入；报告里的自选股模块默认关闭。
 
 ## 数据源优先级
@@ -73,12 +74,18 @@ docker compose up --build
 - Web 前端：`http://localhost:3000`
 - API 服务：`http://localhost:8000`
 
-### 4. 生成每日复盘报告
+### 4. 生成复盘报告
 
 可以在本机仓库根目录运行：
 
 ```bash
 make report DATE=2026-05-27
+```
+
+午间复盘：
+
+```bash
+make report DATE=2026-05-27 KIND=midday
 ```
 
 生成后会在终端打印：
@@ -87,18 +94,28 @@ make report DATE=2026-05-27
 - `snapshot.json`
 - provider 状态，例如 TickFlow、Anspire、同花顺、东方财富是否成功
 
-报告文件默认写入：
+全日盘后复盘默认写入：
 
 ```text
 reports/YYYY-MM-DD/close/vXXX/
 ```
 
+午间复盘写入：
+
+```text
+reports/YYYY-MM-DD/midday/vXXX/
+```
+
 其中常用产物：
 
 ```text
-report.html   # 核心 HTML 复盘报告
-report.png    # 可分享长图
-snapshot.json # 本次报告的结构化快照
+report.html                  # 核心 HTML 复盘报告
+report.png                   # 可分享长图
+YYYY-MM-DD-全日盘后复盘.html # 全日盘后中文命名版本
+YYYY-MM-DD-全日盘后复盘.png  # 全日盘后中文命名长图
+YYYY-MM-DD-午间复盘.html    # 午间中文命名版本
+YYYY-MM-DD-午间复盘.png     # 午间中文命名长图
+snapshot.json                # 本次报告的结构化快照
 ```
 
 ### 5. 本地预览报告

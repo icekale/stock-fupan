@@ -1,9 +1,19 @@
-import type { CreateReportResponse, WatchlistImportResult, WatchlistOcrPreviewResult } from "./types";
+import type {
+  CreateReportResponse,
+  ReportKind,
+  ReportListResponse,
+  WatchlistImportResult,
+  WatchlistOcrPreviewResult,
+} from "./types";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 export async function createCloseReport(tradeDate: string): Promise<CreateReportResponse> {
-  const response = await fetch(`${API_BASE_URL}/api/reports/close`, {
+  return createReport(tradeDate, "close");
+}
+
+export async function createReport(tradeDate: string, kind: ReportKind): Promise<CreateReportResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/reports/${kind}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ trade_date: tradeDate }),
@@ -31,6 +41,21 @@ export async function createCloseReport(tradeDate: string): Promise<CreateReport
   }
 
   return response.json() as Promise<CreateReportResponse>;
+}
+
+export async function listReports(): Promise<ReportListResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/reports`);
+  if (!response.ok) {
+    throw new Error(`读取报告列表失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<ReportListResponse>;
+}
+
+export function reportAssetUrl(path: string): string {
+  if (path.startsWith("http://") || path.startsWith("https://")) {
+    return path;
+  }
+  return `${API_BASE_URL}${path}`;
 }
 
 export async function importWatchlistText(

@@ -15,6 +15,7 @@ from app.providers.market import (
     FallbackMarketDataProvider,
     MarketBreadth,
     MarketCloseSnapshot,
+    ProviderFallbackError,
 )
 from app.rules.scoring import RawSectorInput
 from app.providers.news import FakeNewsProvider
@@ -69,6 +70,38 @@ def test_create_close_report_api_returns_generated_report(
     assert payload["report"]["sectors"][0]["name"] == "机器人"
     assert payload["validation"]["is_valid"] is True
     assert payload["assets"]["version"] == "v001"
+
+
+def test_create_midday_report_api_returns_generated_report(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("REPORTS_ROOT", str(tmp_path))
+
+    with TestClient(app) as client:
+        response = client.post("/api/reports/midday", json={"trade_date": "2026-05-26"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["report"]["kind"] == "midday"
+    assert payload["report"]["title"] == "2026-05-26-午间复盘"
+    assert payload["assets"]["root"].endswith("/2026-05-26/midday/v001")
+
+
+def test_report_api_lists_reports_and_serves_assets(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("REPORTS_ROOT", str(tmp_path))
+
+    with TestClient(app) as client:
+        create_response = client.post("/api/reports/midday", json={"trade_date": "2026-05-26"})
+        list_response = client.get("/api/reports")
+
+        assert create_response.status_code == 200
+        assert list_response.status_code == 200
+        item = list_response.json()["items"][0]
+        assert item["kind"] == "midday"
+        assert item["kind_label"] == "午间复盘"
+        assert item["html_url"].startswith("/api/reports/asset?path=")
+
+        asset_response = client.get(item["html_url"])
+        assert asset_response.status_code == 200
+        assert "2026-05-26-午间复盘" in asset_response.text
 
 
 def test_create_close_report_api_returns_provider_status(tmp_path: Path, monkeypatch) -> None:
@@ -234,6 +267,89 @@ def test_report_generator_writes_snapshot_files(tmp_path: Path) -> None:
     assert result.assets.report_html.exists()
 
 
+def test_report_generator_writes_named_close_report_files(tmp_path: Path) -> None:
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=FakeMarketDataProvider(),
+        news_provider=FakeNewsProvider(),
+        llm_provider=FakeLLMProvider(),
+    )
+
+    result = generator.generate_close_report("2026-05-26")
+
+    assert result.report.title == "2026-05-26-全日盘后复盘"
+    assert (result.assets.root / "2026-05-26-全日盘后复盘.html").exists()
+    assert (result.assets.root / "2026-05-26-全日盘后复盘.png").exists()
+
+
+def test_report_generator_can_generate_midday_report(tmp_path: Path) -> None:
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=FakeMarketDataProvider(),
+        news_provider=FakeNewsProvider(),
+        llm_provider=FakeLLMProvider(),
+    )
+
+    result = generator.generate_midday_report("2026-05-26")
+
+    assert result.report.kind == ReportKind.MIDDAY
+    assert result.report.title == "2026-05-26-午间复盘"
+    assert result.assets.root == tmp_path / "2026-05-26" / "midday" / "v001"
+    assert (result.assets.root / "2026-05-26-午间复盘.html").exists()
+    assert (result.assets.root / "2026-05-26-午间复盘.png").exists()
+    assert result.report.structured_review is not None
+    assert "下午" in result.report.structured_review.practical_conclusion.headline
+
+
+def test_midday_report_html_uses_afternoon_review_language(tmp_path: Path) -> None:
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=FakeMarketDataProvider(),
+        news_provider=FakeNewsProvider(),
+        llm_provider=FakeLLMProvider(),
+    )
+
+    result = generator.generate_midday_report("2026-05-26")
+    html = render_mobile_report_html(result.report)
+
+    assert "2026-05-26-午间复盘" in html
+    assert "午间参考" in html
+    assert "对下午的核心判断" in html
+    assert "下午强势概率与观察条件" in html
+    assert "下午至下一交易日可观察标的与仓位建议" in html
+    assert "下午最优策略（一句话）" in html
+    assert "明日可介入标的与仓位建议" not in html
+    assert "盘后 / 隔夜消息梳理" not in html
+
+
+class BrokenNewsStatusProvider:
+    provider_name = "anspire"
+
+    def search_sector_news_with_status(self, sector_name: str, trade_date: str):
+        raise ProviderFallbackError("Anspire HTTP 500")
+
+
+def test_report_generator_records_news_failures_without_fake_fallback(tmp_path: Path) -> None:
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=FakeMarketDataProvider(),
+        news_provider=BrokenNewsStatusProvider(),
+        llm_provider=FakeLLMProvider(),
+    )
+
+    result = generator.generate_midday_report("2026-05-26")
+
+    assert result.report.news == []
+    assert result.provider_status["news"][0] == {
+        "sector": "机器人",
+        "provider": "anspire",
+        "status": "failed",
+        "fallback_used": False,
+        "reason": "Anspire HTTP 500",
+    }
+    assert result.assets.report_html.exists()
+
+
 def test_report_generator_writes_structured_review_to_report_and_snapshot(tmp_path: Path) -> None:
     generator = ReportGenerator(
         reports_root=tmp_path,
@@ -316,19 +432,19 @@ def test_mobile_report_renderer_contains_core_sections(tmp_path: Path) -> None:
         "各板块详细分析",
         "板块逻辑分析",
         "持续性分析",
-        "下个交易日看法",
+        "明日看法",
         "盘后 / 隔夜消息梳理",
         "板块持续性排序",
         "资金轮动路径分析",
         "实际轮动路径",
         "关键发现",
-        "明日可介入标的与仓位建议",
+        "明日可观察标的与仓位建议",
         "去弱留强排序",
         "最实战的结论",
         "上证指数中期走势研判",
     ]
 
-    assert "2026-05-26 A股复盘" in html
+    assert "2026-05-26-全日盘后复盘" in html
     for title in expected_titles:
         assert title in html
     assert "自选股观察" not in html

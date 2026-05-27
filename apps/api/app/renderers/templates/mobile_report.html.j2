@@ -525,6 +525,13 @@
 </head>
 <body>
 {% set structured = report.structured_review %}
+{% set report_kind = report.kind.value if report.kind.value is defined else report.kind %}
+{% set is_midday = report_kind == "midday" %}
+{% set session_label = "下午" if is_midday else "明日" %}
+{% set prediction_window = "下午" if is_midday else "次日" %}
+{% set opportunity_window = "下午至下一交易日" if is_midday else "明日" %}
+{% set news_reference_label = "午间参考" if is_midday else "盘后 / 隔夜参考" %}
+{% set news_section_title = "午间消息 / 盘中催化梳理" if is_midday else "盘后 / 隔夜消息梳理" %}
 <div class="article-wrap">
 <div class="article-card">
 
@@ -534,11 +541,11 @@
 
   {% if structured %}
     <div class="preamble">
-      <strong>盘后 / 隔夜参考</strong> &nbsp;
+      <strong>{{ news_reference_label }}</strong> &nbsp;
       {% if structured.after_hours_news.us_market_conclusion %}
         {{ structured.after_hours_news.us_market_conclusion }}
       {% else %}
-        盘后消息只作为次日观察线索，不作为单独决策依据。
+        消息与催化只作为{{ session_label }}观察线索，不作为单独决策依据。
       {% endif %}
       {% if structured.after_hours_news.us_market_mapping %}
         —— {{ structured.after_hours_news.us_market_mapping|join("；") }}
@@ -591,9 +598,9 @@
       <div class="summary-main">
         <div class="summary-eyebrow">今日结论</div>
         <p class="summary-headline">{{ structured.tomorrow_judgement.core_view }}</p>
-        <h3 class="section-subtitle">对明日的核心判断 · 明日观察</h3>
+        <h3 class="section-subtitle">对{{ session_label }}的核心判断 · {{ session_label }}观察</h3>
         <div class="table-wrap">
-          <table aria-label="明日核心判断">
+          <table aria-label="{{ session_label }}核心判断">
             <thead><tr><th style="width:22%;">观察项</th><th>方向</th></tr></thead>
             <tbody>
               <tr><td><span class="bullish">最容易继续</span></td><td style="text-align:left;">{{ structured.tomorrow_judgement.most_likely_to_continue }}</td></tr>
@@ -623,7 +630,7 @@
     <hr class="divider">
 
     <span class="section-num">PREDICT</span>
-    <h2 class="section-title">次日强势概率与观察条件</h2>
+    <h2 class="section-title">{{ prediction_window }}强势概率与观察条件</h2>
 
     {% if report.next_day_predictions %}
       {% for prediction in report.next_day_predictions %}
@@ -660,7 +667,7 @@
               <p>{{ prediction.headline }}</p>
               {% if prediction.front_row_stocks %}
                 <div class="table-wrap prediction-stock-table" style="margin-top:12px;">
-                  <table aria-label="次日前排观察股">
+                  <table aria-label="{{ prediction_window }}前排观察股">
                     <thead><tr><th style="width:28%;">前排个股</th><th>观察条件</th></tr></thead>
                     <tbody>
                       {% for stock in prediction.front_row_stocks %}
@@ -700,7 +707,7 @@
         </article>
       {% endfor %}
     {% else %}
-      <div class="preamble">同花顺/东方财富复盘证据不足，今日不生成强势概率。</div>
+      <div class="preamble">同花顺/东方财富复盘证据不足，今日不生成{{ prediction_window }}强势概率。</div>
     {% endif %}
 
     <hr class="divider">
@@ -708,7 +715,7 @@
     {% if structured.historical_theme_reviews %}
       <span class="section-num">TRACK</span>
       <h2 class="section-title">前期强势主线跟踪</h2>
-      <div class="preamble">不只看今日涨幅前排，也回看前一报告的强势主线，判断其今日是延续、分化、退潮还是修复。</div>
+      <div class="preamble">不只看当前涨幅前排，也回看前一报告的强势主线，判断其今日是延续、分化、退潮还是修复。</div>
       {% for theme in structured.historical_theme_reviews %}
         <article class="sector-block">
           <h3 class="section-subtitle">{{ loop.index }}. {{ theme.theme }}</h3>
@@ -883,7 +890,7 @@
             </div>
 
             <div class="insight-card action-card">
-              <div class="insight-label">03 次日动作 · 下个交易日看法</div>
+              <div class="insight-label">03 {{ prediction_window }}动作 · {{ opportunity_window }}看法</div>
               <p><strong>观察：</strong>{{ sector.next_day_view }}</p>
               <ul class="point-list" style="margin-top:10px;">
                 {% for item in sector.watch_items %}
@@ -907,7 +914,7 @@
     <hr class="divider">
 
     <span class="section-num">FOUR</span>
-    <h2 class="section-title">盘后 / 隔夜消息梳理</h2>
+    <h2 class="section-title">{{ news_section_title }}</h2>
 
     <h3 class="section-subtitle">美股映射</h3>
     {% if structured.after_hours_news.us_market_conclusion %}
@@ -986,7 +993,7 @@
     {% endif %}
 
     <h3 class="section-subtitle">关键发现</h3>
-    <h4 class="section-sub-subtitle">次日路径观察</h4>
+    <h4 class="section-sub-subtitle">{{ prediction_window }}路径观察</h4>
     <ul class="point-list">
       {% for item in structured.capital_rotation.next_path_watch %}
         <li>{{ item }}</li>
@@ -996,7 +1003,7 @@
     <hr class="divider">
 
     <span class="section-num">SEVEN</span>
-    <h2 class="section-title">明日可介入标的与仓位建议</h2>
+    <h2 class="section-title">{{ opportunity_window }}可观察标的与仓位建议</h2>
 
     <div class="preamble">
       以下内容统一表达为观察条件与仓位纪律，不构成确定性交易指令。
@@ -1103,7 +1110,7 @@
     <h2 class="section-title">最实战的结论</h2>
 
     <div class="conclusion-box" style="border: 2px solid var(--gold);">
-      <div class="label">明日最优策略（一句话）</div>
+      <div class="label">{{ session_label }}最优策略（一句话）</div>
       <p style="font-size:16px; font-weight:700; color:var(--navy);">{{ structured.practical_conclusion.headline }}</p>
     </div>
     <h4 class="section-sub-subtitle">最值得做的事</h4>

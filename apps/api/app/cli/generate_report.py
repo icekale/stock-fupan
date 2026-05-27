@@ -19,8 +19,9 @@ def validate_generated_report(result: GeneratedReport) -> tuple[bool, list[str]]
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Generate a local A-share close review report.")
+    parser = argparse.ArgumentParser(description="Generate a local A-share review report.")
     parser.add_argument("--date", required=True, help="Trade date in YYYY-MM-DD format.")
+    parser.add_argument("--kind", choices=("close", "midday"), default="close", help="Report kind.")
     parser.add_argument("--reports-root", help="Override REPORTS_ROOT for this run.")
     args = parser.parse_args(argv)
 
@@ -44,7 +45,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             review_source_provider=providers.review_source_provider,
             previous_review_html_path=settings.previous_review_html_path,
         )
-        result = generator.generate_close_report(args.date)
+        result = (
+            generator.generate_midday_report(args.date)
+            if args.kind == "midday"
+            else generator.generate_close_report(args.date)
+        )
 
     is_valid, errors = validate_generated_report(result)
     _persist_report_metadata(settings, result, is_valid)
@@ -71,7 +76,7 @@ def _persist_report_metadata(settings: object, result: GeneratedReport, is_valid
         session.add(
             Report(
                 trade_date=result.report.trade_date,
-                kind=ReportKindModel.CLOSE,
+                kind=ReportKindModel(result.report.kind.value),
                 version=result.assets.version,
                 status=status,
                 asset_dir=str(result.assets.root),

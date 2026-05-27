@@ -1,9 +1,11 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from app.config import get_settings
@@ -11,6 +13,7 @@ from app.db.models import Report, ReportKindModel, ReportStatusModel
 from app.db.session import get_engine, init_db, session_scope
 from app.providers.factory import create_provider_bundle
 from app.providers.ocr import OcrExtractError
+from app.services.assets import report_kind_label
 from app.services.report_generator import ReportGenerator
 from app.watchlist.ocr_service import (
     OcrPreviewNotFoundError,
@@ -122,8 +125,48 @@ def get_latest_watchlist() -> dict[str, object]:
     return _watchlist_service().get_latest().model_dump(mode="json")
 
 
+@app.get("/api/reports")
+def list_reports() -> dict[str, object]:
+    with session_scope(app.state.engine) as session:
+        rows = session.query(Report).order_by(Report.created_at.desc(), Report.id.desc()).limit(50).all()
+        return {
+            "items": [
+                {
+                    "id": row.id,
+                    "trade_date": row.trade_date,
+                    "kind": row.kind.value,
+                    "kind_label": report_kind_label(row.kind.value),
+                    "version": row.version,
+                    "status": row.status.value,
+                    "asset_dir": row.asset_dir,
+                    "html": str(Path(row.asset_dir) / "report.html"),
+                    "png": str(Path(row.asset_dir) / "report.png"),
+                    "html_url": _asset_url(Path(row.asset_dir) / "report.html"),
+                    "png_url": _asset_url(Path(row.asset_dir) / "report.png"),
+                    "created_at": row.created_at.isoformat() if row.created_at else None,
+                }
+                for row in rows
+            ]
+        }
+
+
+@app.get("/api/reports/asset")
+def get_report_asset(path: str) -> FileResponse:
+    asset_path = _validated_report_asset_path(path)
+    return FileResponse(asset_path)
+
+
 @app.post("/api/reports/close")
 def create_close_report(request: CreateCloseReportRequest) -> dict[str, object]:
+    return _create_report_response(request, report_kind="close")
+
+
+@app.post("/api/reports/midday")
+def create_midday_report(request: CreateCloseReportRequest) -> dict[str, object]:
+    return _create_report_response(request, report_kind="midday")
+
+
+def _create_report_response(request: CreateCloseReportRequest, report_kind: str) -> dict[str, object]:
     settings = get_settings()
     with create_provider_bundle(settings) as providers:
         generator = ReportGenerator(
@@ -139,7 +182,10 @@ def create_close_report(request: CreateCloseReportRequest) -> dict[str, object]:
             review_source_provider=providers.review_source_provider,
             previous_review_html_path=settings.previous_review_html_path,
         )
-        result = generator.generate_close_report(request.trade_date)
+        if report_kind == "midday":
+            result = generator.generate_midday_report(request.trade_date)
+        else:
+            result = generator.generate_close_report(request.trade_date)
     status = (
         ReportStatusModel.READY_FOR_REVIEW
         if result.validation.is_valid
@@ -150,7 +196,7 @@ def create_close_report(request: CreateCloseReportRequest) -> dict[str, object]:
         session.add(
             Report(
                 trade_date=result.report.trade_date,
-                kind=ReportKindModel.CLOSE,
+                kind=ReportKindModel(result.report.kind.value),
                 version=result.assets.version,
                 status=status,
                 asset_dir=str(result.assets.root),
@@ -169,6 +215,27 @@ def create_close_report(request: CreateCloseReportRequest) -> dict[str, object]:
             "version": result.assets.version,
             "html": str(result.assets.report_html),
             "png": str(result.assets.report_png),
+            "named_html": str(result.assets.root / f"{result.report.trade_date}-{report_kind_label(result.report.kind.value)}.html"),
+            "named_png": str(result.assets.root / f"{result.report.trade_date}-{report_kind_label(result.report.kind.value)}.png"),
+            "html_url": _asset_url(result.assets.report_html),
+            "png_url": _asset_url(result.assets.report_png),
         },
         "provider_status": result.provider_status,
     }
+
+
+def _asset_url(path: Path) -> str:
+    return f"/api/reports/asset?path={quote(str(path), safe='')}"
+
+
+def _validated_report_asset_path(path: str) -> Path:
+    settings = get_settings()
+    reports_root = Path(settings.reports_root).resolve(strict=False)
+    asset_path = Path(path).resolve(strict=False)
+    try:
+        asset_path.relative_to(reports_root)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="asset path must stay under REPORTS_ROOT") from exc
+    if not asset_path.exists() or asset_path.suffix not in {".html", ".png"}:
+        raise HTTPException(status_code=404, detail="report asset not found")
+    return asset_path

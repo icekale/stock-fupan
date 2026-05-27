@@ -201,7 +201,7 @@ def test_build_structured_review_derives_core_modules_from_report() -> None:
     assert review.sustainability_ranking[0].sector == "机器人"
     assert "机器人" in review.action_discipline.final_view
     assert review.after_hours_news.domestic_catalysts
-    assert review.after_hours_news.risk_notes == ["盘后消息只作为次日观察线索，不作为单独决策依据。"]
+    assert review.after_hours_news.risk_notes == ["消息与催化只作为明日观察线索，不作为单独决策依据。"]
     assert review.capital_rotation.actual_path[0] == "机器人承接"
     assert review.capital_rotation.path_summary == "机器人承接 → PCB轮动"
     assert "机器人" in review.capital_rotation.key_finding

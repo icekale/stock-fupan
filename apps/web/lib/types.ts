@@ -157,9 +157,11 @@ export type WatchlistObservation = {
   notes: string[];
 };
 
+export type ReportKind = "close" | "midday";
+
 export type ReportDTO = {
   trade_date: string;
-  kind: "close";
+  kind: ReportKind;
   title: string;
   indices: IndexSnapshot[];
   breadth: {
@@ -191,8 +193,11 @@ export type SectorProviderStatus = ProviderStatus & {
 
 export type ProviderStatusSummary = {
   market: ProviderStatus;
+  market_tickflow?: ProviderStatus;
   news: SectorProviderStatus[];
   tickflow?: ProviderStatus;
+  watchlist_tickflow?: ProviderStatus;
+  review_sources?: Array<ProviderStatus & { source?: string }>;
 };
 
 export type CreateReportResponse = {
@@ -206,6 +211,29 @@ export type CreateReportResponse = {
     version: string;
     html: string;
     png: string;
+    named_html?: string;
+    named_png?: string;
+    html_url?: string;
+    png_url?: string;
   };
   provider_status: ProviderStatusSummary;
+};
+
+export type ReportListItem = {
+  id: number;
+  trade_date: string;
+  kind: ReportKind;
+  kind_label: string;
+  version: string;
+  status: string;
+  asset_dir: string;
+  html: string;
+  png: string;
+  html_url: string;
+  png_url: string;
+  created_at: string | null;
+};
+
+export type ReportListResponse = {
+  items: ReportListItem[];
 };

@@ -32,6 +32,7 @@ class FakeLLMProvider:
         sectors = _list_of_dicts(seed.get("raw_sectors"))
         tags = [str(tag) for tag in seed.get("market_state_tags", []) if str(tag)]
         turnover = _to_float(seed.get("turnover_cny"), 0.0)
+        review_window = str(seed.get("review_window") or "明日")
 
         leading_sector = sectors[0] if sectors else {}
         leading_sector_name = str(leading_sector.get("name") or "暂无明确主线")
@@ -69,7 +70,7 @@ class FakeLLMProvider:
                 f"观察{leading_sector_name}方向在涨幅{leading_sector_change:+.2f}%后的承接强度。"
             ],
             tomorrow=(
-                f"明日优先观察{leading_sector_name}是否继续获得资金承接，"
+                f"{review_window}优先观察{leading_sector_name}是否继续获得资金承接，"
                 "同时留意高位分歧后的轮动方向。"
             ),
             risks=[
