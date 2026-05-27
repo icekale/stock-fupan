@@ -1,9 +1,17 @@
 from app.schemas.report import (
+    IndexSnapshot,
+    MarketBreadth,
     NextDayPrediction,
     PredictionConfidence,
     PredictionScoreBreakdown,
     PredictionStockFocus,
+    ReportDTO,
+    ReportKind,
+    ReportNarrative,
+    SectorCandidate,
+    StockCandidate,
 )
+from app.services.next_day_prediction import build_next_day_predictions
 
 
 def test_next_day_prediction_schema_serializes_core_fields() -> None:
@@ -45,17 +53,6 @@ def test_next_day_prediction_schema_serializes_core_fields() -> None:
     assert payload["confidence"] == "high"
     assert payload["front_row_stocks"][0]["name"] == "胜宏科技"
     assert payload["score_breakdown"]["total"] == 76
-
-from app.schemas.report import (
-    IndexSnapshot,
-    MarketBreadth,
-    ReportDTO,
-    ReportKind,
-    ReportNarrative,
-    SectorCandidate,
-    StockCandidate,
-)
-from app.services.next_day_prediction import build_next_day_predictions
 
 
 def _prediction_report(sectors: list[SectorCandidate]) -> ReportDTO:
