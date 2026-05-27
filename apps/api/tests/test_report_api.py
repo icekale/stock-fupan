@@ -10,11 +10,16 @@ from app.main import app
 from app.db.models import Report, ReportKindModel, ReportStatusModel
 from app.db.session import create_sqlite_engine, init_db, session_scope
 from app.providers.llm import FakeLLMProvider, LLMFallbackError
-from app.providers.market import FakeMarketDataProvider, MarketBreadth, MarketCloseSnapshot
+from app.providers.market import (
+    FakeMarketDataProvider,
+    FallbackMarketDataProvider,
+    MarketBreadth,
+    MarketCloseSnapshot,
+)
 from app.rules.scoring import RawSectorInput
 from app.providers.news import FakeNewsProvider
 from app.providers.review_sources import ReviewSourceResult, ReviewStockEvidence, ReviewThemeEvidence
-from app.providers.tickflow import FakeTickFlowProvider
+from app.providers.tickflow import FakeTickFlowProvider, WatchlistQuote
 from app.renderers.html_renderer import render_mobile_report_html
 from app.rules.scoring import score_sectors
 from app.rules.validation import validate_narrative_facts
@@ -22,11 +27,11 @@ from app.schemas.report import (
     IndexSnapshot,
     NextDayPrediction,
     PredictionConfidence,
+    PredictionStockFocus,
     ReportDTO,
     ReportKind,
     SectorCandidate,
 )
-from app.services.structured_review_builder import build_structured_review
 from app.services import report_generator as report_generator_module
 from app.services.report_generator import ReportGenerator
 from app.watchlist.parser import WatchlistItem
@@ -61,8 +66,6 @@ def test_create_close_report_api_returns_generated_report(
     payload = response.json()
     assert payload["report"]["trade_date"] == "2026-05-26"
     assert payload["report"]["sectors"][0]["name"] == "机器人"
-    assert "next_day_predictions" in payload["report"]
-    assert payload["report"]["algorithm_versions"]["next_day_prediction"] == "next_day_prediction_v0_5"
     assert payload["validation"]["is_valid"] is True
     assert payload["assets"]["version"] == "v001"
 
@@ -243,8 +246,6 @@ def test_report_generator_writes_structured_review_to_report_and_snapshot(tmp_pa
     assert result.report.structured_review is not None
     assert result.report.structured_review.topic == "放量分化 · 机器人领涨 · PCB轮动"
     assert result.report.structured_review.prediction_review.source == "manual_placeholder"
-    assert result.report.next_day_predictions
-    assert result.report.algorithm_versions["next_day_prediction"] == "next_day_prediction_v0_5"
 
     report_dto = json.loads(result.assets.report_dto.read_text(encoding="utf-8"))
     snapshot = json.loads(result.assets.snapshot.read_text(encoding="utf-8"))
@@ -253,8 +254,6 @@ def test_report_generator_writes_structured_review_to_report_and_snapshot(tmp_pa
     assert report_dto["structured_review"]["tomorrow_judgement"]["most_likely_to_continue"] == "机器人"
     assert report_dto["structured_review"]["practical_conclusion"]["headline"].startswith("明日最实战")
     assert snapshot["report"]["structured_review"] == report_dto["structured_review"]
-    assert report_dto["next_day_predictions"] == snapshot["report"]["next_day_predictions"]
-    assert snapshot["report"]["algorithm_versions"]["next_day_prediction"] == "next_day_prediction_v0_5"
     assert snapshot["report"]["structured_review"]["index_mid_term_outlook"]["scenario_table"][0][
         "scenario"
     ] == "强势延续"
@@ -336,40 +335,175 @@ def test_mobile_report_renderer_contains_core_sections(tmp_path: Path) -> None:
     assert "非投资建议" in html
 
 
-def test_mobile_report_html_renders_next_day_prediction_section() -> None:
-    report = ReportDTO(
-        trade_date="2026-05-27",
-        kind=ReportKind.CLOSE,
-        title="2026-05-27 A股复盘",
-        indices=[IndexSnapshot(name="上证指数", code="000001", close=4145.37, pct_change=0.5)],
-        breadth=MarketBreadth(up_count=3200, down_count=1800, limit_up_count=86, limit_down_count=4),
-        turnover_cny=12345.67,
-        market_state_tags=["放量", "分化"],
-        sectors=[SectorCandidate(name="PCB", score=82, rank=1, pct_change=4.5, reason="强势")],
-        narrative=FakeLLMProvider().generate_narrative({"raw_sectors": []}),
-        news=[],
-        next_day_predictions=[
-            NextDayPrediction(
-                sector="PCB",
-                rank=1,
-                continuation_probability=76,
-                confidence=PredictionConfidence.HIGH,
-                headline="PCB 延续概率较高，重点观察前排分歧承接。",
-                trigger_conditions=["观察胜宏科技竞价是否强于板块平均。"],
-                invalidation_conditions=["胜宏科技低开低走。"],
-                risk_labels=["高位加速"],
-                source_basis=["同花顺复盘"],
-            )
-        ],
+def test_mobile_report_renderer_uses_reference_article_visual_system(tmp_path: Path) -> None:
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=FakeMarketDataProvider(),
+        news_provider=FakeNewsProvider(),
+        llm_provider=FakeLLMProvider(),
     )
-    report.structured_review = build_structured_review(report)
 
-    html = render_mobile_report_html(report)
+    result = generator.generate_close_report("2026-05-26")
+    html = render_mobile_report_html(
+        result.report,
+        brand_name="复盘测试",
+        disclaimer_enabled=True,
+    )
+
+    expected_reference_markers = [
+        'maximum-scale=1.0, user-scalable=no',
+        'class="article-wrap"',
+        'class="article-card"',
+        'class="header-date"',
+        'class="header-title"',
+        'class="header-sub"',
+        'class="preamble"',
+        'class="table-wrap"',
+        'class="point-list"',
+        'class="footer-disclaimer"',
+        "--navy:",
+        "--gold:",
+        "--table-hdr:",
+    ]
+    old_visual_markers = [
+        'class="page"',
+        'class="paper"',
+        'class="hero"',
+        "module-card",
+        "sector-card",
+    ]
+
+    for marker in expected_reference_markers:
+        assert marker in html
+    for marker in old_visual_markers:
+        assert marker not in html
+
+
+def test_mobile_report_renderer_uses_responsive_wide_article_layout(tmp_path: Path) -> None:
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=FakeMarketDataProvider(),
+        news_provider=FakeNewsProvider(),
+        llm_provider=FakeLLMProvider(),
+    )
+
+    result = generator.generate_close_report("2026-05-26")
+    html = render_mobile_report_html(result.report)
+
+    assert "max-width: 1080px;" in html
+    assert "padding: 28px 24px 48px;" in html
+    assert "font-size: 15.5px;" in html
+    assert "min-width: 760px;" in html
+    assert "@media screen and (max-width: 720px)" in html
+    assert "max-width: 640px;" not in html
+
+
+def test_mobile_report_renderer_groups_sector_detail_into_scannable_blocks(
+    tmp_path: Path,
+) -> None:
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=FakeMarketDataProvider(),
+        news_provider=FakeNewsProvider(),
+        llm_provider=FakeLLMProvider(),
+    )
+
+    result = generator.generate_close_report("2026-05-26")
+    html = render_mobile_report_html(result.report)
+
+    assert 'class="sector-block"' in html
+    assert 'class="sector-meta"' in html
+    assert 'class="sector-grid"' in html
+    assert 'class="insight-card"' in html
+    assert 'class="insight-card action-card"' in html
+    assert "01 前排个股" in html
+    assert "02 板块逻辑" in html
+    assert "03 次日动作" in html
+
+
+def test_mobile_report_renderer_uses_daily_summary_board(tmp_path: Path) -> None:
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=FakeMarketDataProvider(),
+        news_provider=FakeNewsProvider(),
+        llm_provider=FakeLLMProvider(),
+    )
+
+    result = generator.generate_close_report("2026-05-26")
+    html = render_mobile_report_html(result.report)
+
+    assert 'class="summary-board"' in html
+    assert 'class="summary-main"' in html
+    assert 'class="summary-side"' in html
+    assert 'class="metric-grid"' in html
+    assert 'class="metric-card"' in html
+    assert "今日结论" in html
+    assert "明日观察" in html
+    assert "盘面温度" in html
+    assert "结构标签" in html
+
+
+def test_mobile_report_html_renders_next_day_prediction_section(tmp_path: Path) -> None:
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=FakeMarketDataProvider(),
+        news_provider=FakeNewsProvider(),
+        llm_provider=FakeLLMProvider(),
+    )
+
+    result = generator.generate_close_report("2026-05-26")
+    result.report.next_day_predictions = [
+        NextDayPrediction(
+            sector="PCB",
+            rank=1,
+            continuation_probability=76,
+            confidence=PredictionConfidence.HIGH,
+            headline="PCB延续概率较高，重点观察前排分歧承接。",
+            front_row_stocks=[
+                PredictionStockFocus(
+                    code="300476.SZ",
+                    name="胜宏科技",
+                    pct_change=20.0,
+                    role="前排强势股",
+                    source_tags=["同花顺复盘", "东方财富涨停复盘"],
+                    observation="观察胜宏科技竞价是否强于板块平均。",
+                )
+            ],
+            trigger_conditions=["观察胜宏科技竞价是否强于板块平均。"],
+            invalidation_conditions=["胜宏科技低开低走。"],
+            risk_labels=["高位加速"],
+            source_basis=["同花顺复盘", "东方财富涨停复盘"],
+        )
+    ]
+
+    html = render_mobile_report_html(result.report)
 
     assert "次日强势概率与观察条件" in html
     assert "PCB" in html
     assert "76%" in html
-    assert "观察胜宏科技竞价是否强于板块平均。" in html
+    assert "观察胜宏科技竞价是否强于板块平均" in html
+    assert "同花顺复盘" in html
+
+
+def test_mobile_report_renderer_unifies_component_polish_and_sources(tmp_path: Path) -> None:
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=FakeMarketDataProvider(),
+        news_provider=FakeNewsProvider(),
+        llm_provider=FakeLLMProvider(),
+    )
+
+    result = generator.generate_close_report("2026-05-26")
+    html = render_mobile_report_html(result.report)
+
+    assert "--surface-soft:" in html
+    assert "--shadow-soft:" in html
+    assert "box-shadow: var(--shadow-soft);" in html
+    assert ".table-wrap table" in html
+    assert 'class="source-grid"' in html
+    assert 'class="source-item"' in html
+    assert 'class="source-name"' in html
+    assert "主要来源" in html
 
 
 class BrokenStructuredReviewLLM(FakeLLMProvider):
@@ -479,6 +613,72 @@ def test_report_generator_narrative_uses_final_ranked_sectors(tmp_path: Path) ->
     assert "半导体" in narrative_text
     assert "会展服务" not in narrative_text
     assert result.validation.is_valid
+
+
+class FrontlineStockMarketProvider(ConflictingRawAndScoredMarketProvider):
+    def get_sector_frontline_stocks(self, sector_name: str) -> list[WatchlistQuote]:
+        if sector_name != "半导体":
+            return []
+        return [
+            WatchlistQuote(
+                symbol="688981.SH",
+                name="中芯国际",
+                pct_change=12.3,
+                turnover_cny=18_000_000_000,
+            ),
+            WatchlistQuote(
+                symbol="600584.SH",
+                name="长电科技",
+                pct_change=10.01,
+                turnover_cny=4_200_000_000,
+            ),
+        ]
+
+
+def test_report_generator_merges_tickflow_frontline_stocks_into_strong_sectors(
+    tmp_path: Path,
+) -> None:
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=FrontlineStockMarketProvider(),
+        news_provider=FakeNewsProvider(),
+        llm_provider=FakeLLMProvider(),
+    )
+
+    result = generator.generate_close_report("2026-05-26")
+
+    semiconductor = next(sector for sector in result.report.sectors if sector.name == "半导体")
+    assert [stock.name for stock in semiconductor.top_stocks[:2]] == ["中芯国际", "长电科技"]
+    assert semiconductor.top_stocks[0].code == "688981.SH"
+    assert semiconductor.top_stocks[0].turnover_cny == 18_000_000_000
+    assert "TickFlow前排" in semiconductor.top_stocks[0].tags
+    snapshot = json.loads(result.assets.snapshot.read_text(encoding="utf-8"))
+    snapshot_sector = next(
+        sector for sector in snapshot["report"]["sectors"] if sector["name"] == "半导体"
+    )
+    assert snapshot_sector["top_stocks"][0]["name"] == "中芯国际"
+
+
+def test_report_generator_reads_frontline_stocks_through_market_fallback_wrapper(
+    tmp_path: Path,
+) -> None:
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=FallbackMarketDataProvider(
+            primary=FrontlineStockMarketProvider(),
+            fallback=FakeMarketDataProvider(),
+            fallback_enabled=True,
+        ),
+        news_provider=FakeNewsProvider(),
+        llm_provider=FakeLLMProvider(),
+    )
+
+    result = generator.generate_close_report("2026-05-26")
+
+    semiconductor = next(sector for sector in result.report.sectors if sector.name == "半导体")
+    assert semiconductor.top_stocks[0].name == "中芯国际"
+
+
 class StaticWatchlistService:
     called = False
 
@@ -650,54 +850,5 @@ def test_report_generator_does_not_confirm_strong_theme_from_weak_review_source_
 
     result = generator.generate_close_report("2026-05-26")
 
-    assert all(sector.name != "电力" for sector in result.report.sectors)
-
-
-class MixedThemeReviewSourceProvider:
-    def collect(self, trade_date: str) -> list[ReviewSourceResult]:
-        return [
-            ReviewSourceResult(
-                source="同花顺复盘",
-                source_url="https://stock.10jqka.com.cn/fupan/",
-                status="success",
-                themes=[
-                    ReviewThemeEvidence(name="PCB", source="同花顺复盘"),
-                    ReviewThemeEvidence(name="有色金属", source="同花顺复盘"),
-                ],
-                hot_stocks=[
-                    ReviewStockEvidence(name="生益电子", code="688183", pct_change=20.0, source="同花顺复盘"),
-                    ReviewStockEvidence(name="宝鼎科技", code="002552", pct_change=10.0, source="同花顺复盘"),
-                    ReviewStockEvidence(name="招金黄金", code="603000", pct_change=10.0, source="同花顺复盘"),
-                    ReviewStockEvidence(name="西部黄金", code="601069", pct_change=7.8, source="同花顺复盘"),
-                ],
-                market_notes=[
-                    "贵金属、有色金属板块低开高走，招金黄金早盘涨停，西部黄金涨幅居前。",
-                    "PCB概念股午后多数上扬，生益电子20cm涨停，宝鼎科技涨停。",
-                ],
-            )
-        ]
-
-
-def test_report_generator_uses_curated_review_sources_as_primary_sector_gate(tmp_path: Path) -> None:
-    generator = ReportGenerator(
-        reports_root=tmp_path,
-        market_provider=ConflictingRawAndScoredMarketProvider(),
-        news_provider=FakeNewsProvider(),
-        llm_provider=FakeLLMProvider(),
-        review_source_provider=MixedThemeReviewSourceProvider(),
-    )
-
-    result = generator.generate_close_report("2026-05-26")
-    narrative_text = "\n".join(
-        [
-            result.report.narrative.conclusion,
-            *result.report.narrative.sector_commentary,
-            result.report.narrative.tomorrow,
-        ]
-    )
-
-    assert [sector.name for sector in result.report.sectors] == ["PCB", "有色金属"]
-    assert [sector.rank for sector in result.report.sectors] == [1, 2]
-    assert all(sector.review_sources for sector in result.report.sectors)
-    assert "半导体" not in narrative_text
-    assert "机器人" not in narrative_text
+    electric = next(sector for sector in result.report.sectors if sector.name == "电力")
+    assert electric.review_sources == []

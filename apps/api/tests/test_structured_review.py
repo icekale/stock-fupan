@@ -196,36 +196,57 @@ def test_build_structured_review_derives_core_modules_from_report() -> None:
     assert review.index_mid_term_outlook.scenario_table[0]["scenario"] == "强势延续"
 
 
+def test_next_day_opportunity_lists_frontline_stock_codes_and_position_ranges() -> None:
+    report = _fake_report()
+    report.sectors[0].top_stocks = [
+        StockCandidate(code="688690.SH", name="纳微科技", pct_change=12.36),
+        StockCandidate(code="300672.SZ", name="国科微", pct_change=10.25),
+    ]
+    report.sectors[1].top_stocks = [
+        StockCandidate(code="001299.SZ", name="美能能源", pct_change=10.01),
+    ]
+
+    review = build_structured_review(report)
+
+    focus_text = "\n".join(review.next_day_opportunity.focus_candidates)
+    position_text = "\n".join(review.next_day_opportunity.position_discipline)
+    assert "纳微科技 688690.SH" in focus_text
+    assert "国科微 300672.SZ" in focus_text
+    assert "美能能源 001299.SZ" in focus_text
+    assert "底仓" in position_text
+    assert "2成" in position_text
+    assert "3成" in position_text
+
+
 def test_build_structured_review_prefers_highest_prediction_for_tomorrow_view() -> None:
     report = _fake_report()
     report.next_day_predictions = [
         NextDayPrediction(
             sector="PCB",
             rank=2,
-            continuation_probability=78,
+            continuation_probability=76,
             confidence=PredictionConfidence.HIGH,
-            headline="PCB 延续概率较高，重点观察前排分歧承接。",
+            headline="PCB延续概率较高，重点观察前排分歧承接。",
             front_row_stocks=[
                 PredictionStockFocus(
                     code="300476.SZ",
                     name="胜宏科技",
                     pct_change=20.0,
                     role="前排强势股",
-                    source_tags=["同花顺复盘"],
-                    observation="观察胜宏科技竞价与开盘承接是否强于板块平均。",
+                    source_tags=["同花顺复盘", "东方财富涨停复盘"],
+                    observation="观察胜宏科技竞价是否强于板块平均。",
                 )
             ],
-            trigger_conditions=["观察胜宏科技竞价是否强于板块平均。"],
-            invalidation_conditions=["胜宏科技低开低走。"],
-            risk_labels=[],
-            source_basis=["同花顺复盘"],
+            trigger_conditions=["PCB前排分歧温和。"],
+            invalidation_conditions=["PCB前排低开低走。"],
+            risk_labels=["高位加速"],
         )
     ]
 
     review = build_structured_review(report)
 
     assert review.tomorrow_judgement.most_likely_to_continue == "PCB"
-    assert review.next_day_opportunity.focus_candidates[0] == "观察胜宏科技竞价与开盘承接是否强于板块平均。"
+    assert review.next_day_opportunity.focus_candidates[0] == "观察胜宏科技竞价是否强于板块平均。"
 
 
 def test_build_structured_review_keeps_news_evidence_compact() -> None:

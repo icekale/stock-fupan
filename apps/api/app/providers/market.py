@@ -237,6 +237,7 @@ class FallbackMarketDataProvider:
         self.primary = primary
         self.fallback = fallback
         self.fallback_enabled = fallback_enabled
+        self._last_success_provider: MarketDataProvider | None = None
 
     def get_close_snapshot(self, trade_date: str) -> MarketCloseSnapshot:
         snapshot, _status = self.get_close_snapshot_with_status(trade_date)
@@ -250,6 +251,7 @@ class FallbackMarketDataProvider:
             reason = str(exc) or exc.__class__.__name__
             if not self.fallback_enabled:
                 raise
+            self._last_success_provider = self.fallback
             return self.fallback.get_close_snapshot(trade_date), ProviderStatus(
                 provider=provider,
                 status="fallback",
@@ -257,9 +259,19 @@ class FallbackMarketDataProvider:
                 reason=reason,
             )
 
+        self._last_success_provider = self.primary
         return snapshot, ProviderStatus(
             provider=provider,
             status="success",
             fallback_used=False,
             reason=None,
         )
+
+    def get_sector_frontline_stocks(self, sector_name: str) -> list[object]:
+        provider = self._last_success_provider
+        if provider is None:
+            return []
+        get_frontline = getattr(provider, "get_sector_frontline_stocks", None)
+        if not callable(get_frontline):
+            return []
+        return list(get_frontline(sector_name))

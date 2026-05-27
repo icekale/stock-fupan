@@ -1,362 +1,1131 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{{ report.title }}</title>
-  <style>
-    :root {
-      color-scheme: light;
-      --bg: #ece7dc;
-      --paper: #fffdf8;
-      --panel: #ffffff;
-      --navy: #17233b;
-      --navy-soft: #243653;
-      --gold: #c9a34e;
-      --gold-soft: #fff5d8;
-      --green-soft: #edf7ee;
-      --green-line: #8fb99a;
-      --ink: #1d2433;
-      --muted: #6f6a60;
-      --line: #e2d7c3;
-      --red: #b42318;
-    }
-    * { box-sizing: border-box; }
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>{{ report.title }}</title>
+<style>
+  :root {
+    --navy:       #1B3147;
+    --navy-light: #2C4A6B;
+    --slate:      #3D5A73;
+    --gold:       #B8963E;
+    --gold-light: #D4B96A;
+    --bull-red:   #C0392B;
+    --bull-bg:    #FDF2F2;
+    --bear-green: #27865A;
+    --bear-bg:    #F2FAF5;
+    --bg:         #F5F3EF;
+    --card:       #FFFFFF;
+    --border:     #E2DFD8;
+    --text:       #2D2A26;
+    --text-muted: #7A756C;
+    --text-strong: #1A1714;
+    --divider:    #D8D4CB;
+    --table-hdr:  #1B3147;
+    --table-strp: #F9F8F6;
+    --tag-navy:   #E8EDF3;
+    --surface-soft: #FAFAF8;
+    --radius:     10px;
+    --shadow:     0 12px 34px rgba(27,49,71,.08), 0 1px 2px rgba(0,0,0,.04);
+    --shadow-soft: 0 6px 18px rgba(27,49,71,.05);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", sans-serif;
+    background: #EEECE8;
+    color: var(--text);
+    line-height: 1.76;
+    font-size: 15.5px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  .article-wrap {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 28px 24px 48px;
+  }
+  .article-card {
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 44px 54px 52px;
+  }
+
+  .header-date {
+    text-align: center;
+    font-size: 13px;
+    color: var(--text-muted);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .header-title {
+    text-align: center;
+    font-size: 30px;
+    font-weight: 700;
+    color: var(--navy);
+    letter-spacing: .04em;
+    margin-bottom: 6px;
+  }
+  .header-sub {
+    text-align: center;
+    font-size: 14px;
+    color: var(--slate);
+    border-bottom: 1px solid var(--divider);
+    padding-bottom: 22px;
+    margin-bottom: 32px;
+  }
+
+  .preamble {
+    background: linear-gradient(135deg, #F8F7F4 0%, #F0EFEB 100%);
+    border-left: 3px solid var(--gold);
+    border-radius: 0 var(--radius) var(--radius) 0;
+    padding: 18px 22px;
+    margin: 26px 0;
+    font-size: 15px;
+    color: var(--slate);
+  }
+
+  .section-num {
+    display: inline-block;
+    background: var(--navy);
+    color: #FFF;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: .06em;
+    padding: 2px 12px;
+    border-radius: 3px;
+    margin-bottom: 6px;
+  }
+  .section-title {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--navy);
+    margin: 8px 0 18px;
+    padding-bottom: 12px;
+    border-bottom: 2px solid var(--navy);
+    letter-spacing: .03em;
+  }
+  .section-subtitle {
+    font-size: 19px;
+    font-weight: 700;
+    color: var(--navy-light);
+    margin: 30px 0 14px;
+    padding-left: 12px;
+    border-left: 4px solid var(--gold);
+  }
+  .section-sub-subtitle {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--slate);
+    margin: 22px 0 10px;
+  }
+
+  strong {
+    color: var(--text-strong);
+    font-weight: 600;
+  }
+
+  .bullish {
+    color: var(--bull-red);
+    font-weight: 600;
+  }
+  .bearish {
+    color: var(--bear-green);
+    font-weight: 600;
+  }
+
+  .card {
+    background: var(--surface-soft);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px 22px;
+    margin: 18px 0;
+  }
+
+  .summary-board {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(300px, .65fr);
+    gap: 18px;
+    align-items: stretch;
+    margin: 20px 0 8px;
+  }
+  .summary-main,
+  .summary-side,
+  .metric-card {
+    background: var(--surface-soft);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  .summary-main {
+    padding: 24px 26px;
+    border-left: 4px solid var(--gold);
+  }
+  .summary-side {
+    padding: 20px 22px;
+  }
+  .summary-eyebrow {
+    color: var(--gold);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .summary-headline {
+    color: var(--navy);
+    font-size: 20px;
+    font-weight: 700;
+    line-height: 1.55;
+  }
+  .metric-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin: 18px 0;
+  }
+  .metric-card {
+    padding: 14px 16px;
+    box-shadow: var(--shadow-soft);
+  }
+  .metric-label {
+    color: var(--text-muted);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .metric-value {
+    color: var(--navy);
+    font-size: 18px;
+    font-weight: 700;
+    line-height: 1.4;
+  }
+  .summary-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .sector-block {
+    background: #FFFFFF;
+    border: 1px solid var(--border);
+    border-radius: calc(var(--radius) + 2px);
+    padding: 24px 24px 22px;
+    margin: 24px 0;
+    box-shadow: var(--shadow-soft);
+  }
+  .sector-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    background: var(--surface-soft);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    margin: 12px 0 18px;
+    color: var(--slate);
+    font-size: 14px;
+  }
+  .sector-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(280px, .85fr);
+    gap: 16px;
+    align-items: start;
+  }
+  .insight-card {
+    background: var(--surface-soft);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+    min-width: 0;
+  }
+  .insight-card + .insight-card {
+    margin-top: 14px;
+  }
+  .action-card {
+    border-color: #D8C28A;
+    background: #FBF8F0;
+  }
+  .insight-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--navy);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+  .insight-label::before {
+    content: "";
+    display: block;
+    width: 18px;
+    height: 2px;
+    background: var(--gold);
+  }
+
+  .point-list {
+    list-style: none;
+    padding: 0;
+  }
+  .point-list li {
+    position: relative;
+    padding-left: 18px;
+    margin-bottom: 9px;
+    font-size: 15px;
+    color: var(--text);
+  }
+  .point-list li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 8px;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--gold);
+  }
+  .point-list li.bull::before { background: var(--bull-red); }
+  .point-list li.bear::before { background: var(--bear-green); }
+
+  .table-wrap {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    margin: 18px 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: #FFF;
+  }
+  .table-wrap table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+    min-width: 760px;
+  }
+  thead th {
+    background: var(--table-hdr);
+    color: #FFF;
+    font-weight: 600;
+    padding: 11px 12px;
+    text-align: center;
+    white-space: nowrap;
+    font-size: 13px;
+    letter-spacing: .03em;
+  }
+  tbody td {
+    padding: 10px 12px;
+    text-align: center;
+    border-bottom: 1px solid var(--border);
+  }
+  tbody tr:nth-child(even) td {
+    background: var(--table-strp);
+  }
+  tbody td:first-child {
+    text-align: left;
+    font-weight: 500;
+  }
+
+  .divider {
+    border: none;
+    border-top: 1px solid var(--divider);
+    margin: 32px 0;
+  }
+  .divider-dot {
+    border: none;
+    border-top: 1px dashed var(--border);
+    margin: 24px 0;
+  }
+
+  .tag {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 3px 9px;
+    border-radius: 4px;
+    letter-spacing: .04em;
+    margin-right: 4px;
+  }
+  .tag-bull {
+    background: var(--bull-bg);
+    color: var(--bull-red);
+  }
+  .tag-bear {
+    background: var(--bear-bg);
+    color: var(--bear-green);
+  }
+  .tag-navy {
+    background: var(--tag-navy);
+    color: var(--navy);
+  }
+  .tag-gold {
+    background: #FBF8F0;
+    color: #8B722E;
+  }
+
+  .conclusion-box {
+    background: linear-gradient(135deg, #F8F7F3 0%, #F2F0EB 100%);
+    border: 1px solid var(--gold);
+    border-radius: var(--radius);
+    padding: 22px 24px;
+    margin: 22px 0;
+  }
+  .conclusion-box .label {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--gold);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  .avoid-box {
+    background: var(--bear-bg);
+    border: 1px solid #C5E6D4;
+    border-radius: var(--radius);
+    padding: 18px 22px;
+    margin: 18px 0;
+  }
+  .avoid-box .label {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--bear-green);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .path-flow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin: 16px 0;
+  }
+  .path-node {
+    background: var(--navy);
+    color: #FFF;
+    border-radius: 3px;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .path-arrow {
+    color: var(--gold);
+    font-weight: 700;
+  }
+
+  .footer-disclaimer {
+    text-align: center;
+    font-size: 12px;
+    color: var(--text-muted);
+    padding: 28px 0 12px;
+    border-top: 1px solid var(--divider);
+    margin-top: 28px;
+  }
+  .footer-sources {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-top: 16px;
+    padding: 18px 20px;
+    border-top: 1px solid var(--divider);
+    background: var(--surface-soft);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  .footer-sources a {
+    color: var(--slate);
+    text-decoration: none;
+    word-break: break-all;
+  }
+  .source-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-top: 10px;
+  }
+  .source-item {
+    background: #FFF;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    min-width: 0;
+  }
+  .source-name {
+    color: var(--navy);
+    font-weight: 600;
+    line-height: 1.5;
+  }
+  .source-meta {
+    color: var(--text-muted);
+    margin-top: 3px;
+  }
+
+  @media screen and (max-width: 720px) {
     body {
-      margin: 0;
-      background: var(--bg);
-      color: var(--ink);
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
-      line-height: 1.72;
+      font-size: 15px;
     }
-    .page { max-width: 640px; margin: 0 auto; padding: 24px 16px 36px; }
-    .paper { background: var(--paper); border: 1px solid var(--line); box-shadow: 0 20px 50px rgba(23, 35, 59, .14); }
-    .hero { background: linear-gradient(135deg, var(--navy), #0f1a2d); color: white; padding: 28px 24px; text-align: center; border-bottom: 4px solid var(--gold); }
-    .brand { color: var(--gold); font-size: 12px; font-weight: 800; letter-spacing: .22em; text-transform: uppercase; }
-    h1 { margin: 8px 0 0; font-size: 30px; line-height: 1.2; letter-spacing: -.04em; }
-    .topic { margin-top: 10px; color: #f6dd92; font-size: 14px; font-weight: 700; }
-    .body { padding: 18px; }
-    section { padding: 18px 0; border-bottom: 1px dashed var(--line); }
-    section:last-child { border-bottom: 0; }
-    .section-title { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
-    .section-num { background: var(--navy); color: var(--gold); border-radius: 8px; min-width: 34px; padding: 4px 7px; text-align: center; font-weight: 900; font-size: 13px; }
-    h2 { margin: 0; color: var(--navy); font-size: 20px; letter-spacing: -.02em; }
-    h3 { margin: 14px 0 8px; color: var(--navy); font-size: 16px; letter-spacing: -.01em; }
-    h4 { margin: 12px 0 6px; color: var(--navy-soft); font-size: 14px; }
-    p { margin: 0; }
-    p + p { margin-top: 7px; }
-    ul { margin: 0; padding-left: 19px; }
-    li + li { margin-top: 6px; }
-    table { width: 100%; border-collapse: collapse; background: var(--panel); margin-top: 10px; font-size: 13px; }
-    th { background: var(--navy); color: white; font-weight: 800; }
-    th, td { border: 1px solid var(--line); padding: 8px; text-align: left; vertical-align: top; }
-    .conclusion-box { background: var(--gold-soft); border: 1px solid var(--gold); border-left: 5px solid var(--gold); border-radius: 14px; padding: 12px; }
-    .avoid-box { background: var(--green-soft); border: 1px solid var(--green-line); border-radius: 14px; padding: 12px; }
-    .info-card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 12px; }
-    .note-card { background: #f8f4ea; border: 1px solid var(--line); border-radius: 14px; padding: 12px; margin-top: 10px; }
-    .lead { color: var(--navy-soft); font-weight: 700; }
-    .muted { color: var(--muted); }
-    .pill-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-    .pill { border: 1px solid var(--line); background: var(--panel); border-radius: 999px; padding: 4px 10px; color: var(--navy); font-size: 12px; font-weight: 700; }
-    .sector-card { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px; margin-top: 12px; }
-    .sector-head { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; border-bottom: 1px solid var(--line); padding-bottom: 8px; margin-bottom: 10px; }
-    .sector-head strong { color: var(--navy); }
-    .rating { color: var(--red); font-weight: 900; white-space: nowrap; }
-    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .mini-title { color: var(--navy); font-size: 13px; font-weight: 900; margin: 10px 0 4px; }
-    .subsection { margin-top: 12px; }
-    .module-card { background: #fbfaf6; border: 1px solid var(--line); border-radius: 14px; padding: 12px; margin-top: 10px; }
-    .prediction-card { background: linear-gradient(180deg, #fffaf0, var(--panel)); border: 1px solid var(--gold); border-radius: 16px; padding: 14px; margin-top: 12px; }
-    .prediction-head { display: flex; justify-content: space-between; gap: 10px; align-items: center; border-bottom: 1px solid var(--line); padding-bottom: 8px; margin-bottom: 10px; }
-    .probability { color: var(--red); font-size: 24px; font-weight: 950; white-space: nowrap; }
-    .confidence { border-radius: 999px; padding: 3px 9px; background: var(--navy); color: var(--gold); font-size: 11px; font-weight: 900; }
-    .risk-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
-    .risk-label { border: 1px solid var(--line); background: #fff; color: var(--muted); border-radius: 999px; padding: 3px 8px; font-size: 11px; font-weight: 800; }
-    .path-flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
-    .path-node { background: var(--navy); color: white; border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 800; }
-    .path-arrow { color: var(--gold); font-weight: 900; }
-    .footer, .disclaimer { color: var(--muted); text-align: center; font-size: 12px; margin-top: 14px; }
-    @media (max-width: 520px) { .grid-2 { grid-template-columns: 1fr; } h1 { font-size: 25px; } .body { padding: 14px; } }
-  </style>
+    .article-wrap {
+      padding: 12px;
+    }
+    .article-card {
+      padding: 20px 14px 28px;
+    }
+    .header-title {
+      font-size: 20px;
+    }
+    .section-title {
+      font-size: 18px;
+    }
+    .section-subtitle {
+      font-size: 16px;
+    }
+    table {
+      min-width: 520px;
+      font-size: 13.5px;
+    }
+    .summary-board,
+    .metric-grid,
+    .source-grid {
+      grid-template-columns: 1fr;
+    }
+    .sector-block {
+      padding: 18px 14px;
+    }
+    .sector-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
 </head>
 <body>
-  <main class="page">
-    <article class="paper">
-      {% set structured = report.structured_review %}
-      <header class="hero">
-        <div class="brand">{{ brand_name or "A-Share Review" }}</div>
-        <h1>{{ report.title }}</h1>
-        <div class="topic">{{ structured.topic if structured else "结构复盘 · 风险分层 · 非投资建议" }}</div>
-      </header>
+{% set structured = report.structured_review %}
+<div class="article-wrap">
+<div class="article-card">
 
-      <div class="body">
-        {% if structured %}
-          <section>
-            <div class="section-title"><span class="section-num">01</span><h2>昨日预判验证</h2></div>
-            <div class="conclusion-box">
-              <p><strong>昨日预判：</strong>{{ structured.prediction_review.previous_prediction }}</p>
-              <p><strong>今日验证：</strong>{{ structured.prediction_review.actual_result }}</p>
-              <p><strong>修正判断：</strong>{{ structured.prediction_review.revision }}</p>
-            </div>
-            <div class="grid-2">
-              <div>
-                <div class="mini-title">验证正确项</div>
-                <ul>{% for item in structured.prediction_review.correct_items %}<li>{{ item }}</li>{% endfor %}</ul>
-              </div>
-              <div>
-                <div class="mini-title">偏差 / 保守项</div>
-                <ul>{% for item in structured.prediction_review.missed_items %}<li>{{ item }}</li>{% endfor %}</ul>
-              </div>
-            </div>
-            <div class="module-card">
-              <h4>偏差原因</h4>
-              <ul>{% for item in structured.prediction_review.bias_reasons %}<li>{{ item }}</li>{% endfor %}</ul>
-            </div>
-          </section>
+  <div class="header-date">{{ brand_name or "STRUCTURED MARKET REVIEW" }}</div>
+  <h1 class="header-title">{{ report.title }}</h1>
+  <p class="header-sub">{{ structured.topic if structured else "结构复盘 · 风险分层 · 非投资建议" }}</p>
 
-          <section>
-            <div class="section-title"><span class="section-num">02</span><h2>先给结论</h2></div>
-            <h3>对明日的核心判断</h3>
-            <div class="conclusion-box"><p>{{ structured.tomorrow_judgement.core_view }}</p></div>
-            <table aria-label="明日核心判断">
-              <tr><th>最容易继续</th><td>{{ structured.tomorrow_judgement.most_likely_to_continue }}</td></tr>
-              <tr><th>最容易分化</th><td>{{ structured.tomorrow_judgement.most_likely_to_diverge }}</td></tr>
-              <tr><th>轮动方向</th><td>{{ structured.tomorrow_judgement.rotation_candidates|join("、") }}</td></tr>
-              <tr><th>防御方向</th><td>{{ structured.tomorrow_judgement.defensive_candidates|join("、") }}</td></tr>
-            </table>
-            <div class="module-card">
-              <h4>操作重点</h4>
-              <ul>{% for item in structured.tomorrow_judgement.operating_focus %}<li>{{ item }}</li>{% endfor %}</ul>
-            </div>
-          </section>
+  {% if structured %}
+    <div class="preamble">
+      <strong>盘后 / 隔夜参考</strong> &nbsp;
+      {% if structured.after_hours_news.us_market_conclusion %}
+        {{ structured.after_hours_news.us_market_conclusion }}
+      {% else %}
+        盘后消息只作为次日观察线索，不作为单独决策依据。
+      {% endif %}
+      {% if structured.after_hours_news.us_market_mapping %}
+        —— {{ structured.after_hours_news.us_market_mapping|join("；") }}
+      {% endif %}
+    </div>
 
-          {% set predictions = report.next_day_predictions %}
-          <section>
-            <div class="section-title"><span class="section-num">03</span><h2>次日强势概率与观察条件</h2></div>
-            <p class="lead">概率只表示延续观察强度，必须由次日触发条件确认。</p>
-            {% if predictions %}
-              {% for prediction in predictions %}
-                <article class="prediction-card">
-                  <div class="prediction-head">
-                    <div>
-                      <strong>{{ loop.index }}. {{ prediction.sector }}</strong>
-                      <span class="confidence">{{ prediction.confidence|upper }}</span>
-                      <p class="muted">{{ prediction.headline }}</p>
-                    </div>
-                    <div class="probability">{% if prediction.continuation_probability is not none %}{{ prediction.continuation_probability }}%{% else %}证据不足{% endif %}</div>
-                  </div>
-                  {% if prediction.front_row_stocks %}
-                    <table aria-label="次日前排观察">
-                      <tr><th>前排股</th><th>涨跌幅</th><th>观察</th></tr>
+    <hr class="divider">
+
+    <span class="section-num">ZERO</span>
+    <h2 class="section-title">昨日预判验证</h2>
+
+    <div class="preamble">
+      <strong>昨日预判：</strong>{{ structured.prediction_review.previous_prediction }}
+    </div>
+
+    <h3 class="section-subtitle">今日实际验证结果</h3>
+    <div class="card">
+      <p><strong>今日验证：</strong>{{ structured.prediction_review.actual_result }}</p>
+      <p style="margin-top:10px;"><span class="tag tag-gold">修正判断</span>{{ structured.prediction_review.revision }}</p>
+    </div>
+
+    <h3 class="section-subtitle">偏差修正</h3>
+    <h4 class="section-sub-subtitle"><span class="tag tag-bull">预测对的地方</span></h4>
+    <ol class="point-list">
+      {% for item in structured.prediction_review.correct_items %}
+        <li class="bull">{{ item }}</li>
+      {% endfor %}
+    </ol>
+
+    <h4 class="section-sub-subtitle"><span class="tag tag-bear">预测偏保守 / 错误的地方</span></h4>
+    <ol class="point-list">
+      {% for item in structured.prediction_review.missed_items %}
+        <li class="bear">{{ item }}</li>
+      {% endfor %}
+    </ol>
+
+    <h4 class="section-sub-subtitle">偏差原因</h4>
+    <ul class="point-list">
+      {% for item in structured.prediction_review.bias_reasons %}
+        <li>{{ item }}</li>
+      {% endfor %}
+    </ul>
+
+    <hr class="divider">
+
+    <span class="section-num">ONE</span>
+    <h2 class="section-title">先给结论</h2>
+
+    <div class="summary-board">
+      <div class="summary-main">
+        <div class="summary-eyebrow">今日结论</div>
+        <p class="summary-headline">{{ structured.tomorrow_judgement.core_view }}</p>
+        <h3 class="section-subtitle">对明日的核心判断 · 明日观察</h3>
+        <div class="table-wrap">
+          <table aria-label="明日核心判断">
+            <thead><tr><th style="width:22%;">观察项</th><th>方向</th></tr></thead>
+            <tbody>
+              <tr><td><span class="bullish">最容易继续</span></td><td style="text-align:left;">{{ structured.tomorrow_judgement.most_likely_to_continue }}</td></tr>
+              <tr><td><span class="bearish">最容易分化</span></td><td style="text-align:left;">{{ structured.tomorrow_judgement.most_likely_to_diverge }}</td></tr>
+              <tr><td>轮动方向</td><td style="text-align:left;">{{ structured.tomorrow_judgement.rotation_candidates|join("、") }}</td></tr>
+              <tr><td>防御方向</td><td style="text-align:left;">{{ structured.tomorrow_judgement.defensive_candidates|join("、") }}</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <aside class="summary-side">
+        <div class="summary-eyebrow">盘面温度</div>
+        <ul class="point-list">
+          {% for item in structured.tomorrow_judgement.operating_focus %}
+            <li>{{ item }}</li>
+          {% endfor %}
+        </ul>
+        <div class="summary-eyebrow" style="margin-top:16px;">结构标签</div>
+        <div class="summary-tags">
+          {% for feature in structured.market_overview.structure_features %}
+            <span class="tag tag-navy">{{ feature }}</span>
+          {% endfor %}
+        </div>
+      </aside>
+    </div>
+
+    <hr class="divider">
+
+    <span class="section-num">PREDICT</span>
+    <h2 class="section-title">次日强势概率与观察条件</h2>
+
+    {% if report.next_day_predictions %}
+      {% for prediction in report.next_day_predictions %}
+        <article class="sector-block">
+          <h3 class="section-subtitle">{{ loop.index }}. {{ prediction.sector }}</h3>
+          <div class="sector-meta">
+            <span><strong>延续概率：</strong>
+              {% if prediction.continuation_probability is not none %}
+                <span class="tag tag-bull">{{ prediction.continuation_probability }}%</span>
+              {% else %}
+                <span class="tag tag-bear">证据不足</span>
+              {% endif %}
+            </span>
+            <span><strong>置信度：</strong><span class="tag tag-navy">{{ prediction.confidence.value if prediction.confidence.value is defined else prediction.confidence }}</span></span>
+            {% if prediction.source_basis %}
+              <span><strong>复盘源：</strong>{{ prediction.source_basis|join("、") }}</span>
+            {% endif %}
+          </div>
+
+          <div class="sector-grid">
+            <div class="insight-card action-card">
+              <div class="insight-label">概率结论</div>
+              <p>{{ prediction.headline }}</p>
+              {% if prediction.front_row_stocks %}
+                <div class="table-wrap" style="margin-top:12px;">
+                  <table aria-label="次日前排观察股">
+                    <thead><tr><th style="width:28%;">前排个股</th><th>观察条件</th></tr></thead>
+                    <tbody>
                       {% for stock in prediction.front_row_stocks %}
                         <tr>
-                          <td>{{ stock.name }} {% if stock.code %}{{ stock.code }}{% endif %}</td>
-                          <td>{% if stock.pct_change is not none %}{{ "%+.2f"|format(stock.pct_change) }}%{% else %}-{% endif %}</td>
-                          <td>{{ stock.observation }}</td>
+                          <td><strong>{{ stock.name }}</strong>{% if stock.code %}<br>{{ stock.code }}{% endif %}</td>
+                          <td style="text-align:left;">{{ stock.observation }}</td>
                         </tr>
                       {% endfor %}
-                    </table>
-                  {% endif %}
-                  <div class="grid-2">
-                    <div><div class="mini-title">触发条件</div><ul>{% for item in prediction.trigger_conditions %}<li>{{ item }}</li>{% endfor %}</ul></div>
-                    <div><div class="mini-title">失效条件</div><ul>{% for item in prediction.invalidation_conditions %}<li>{{ item }}</li>{% endfor %}</ul></div>
-                  </div>
-                  {% if prediction.risk_labels %}<div class="risk-row">{% for label in prediction.risk_labels %}<span class="risk-label">{{ label }}</span>{% endfor %}</div>{% endif %}
-                  {% if prediction.source_basis %}<p class="muted subsection">依据：{{ prediction.source_basis|join("、") }}</p>{% endif %}
-                </article>
-              {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+              {% endif %}
+            </div>
+
+            <div>
+              <div class="insight-card">
+                <div class="insight-label">触发条件</div>
+                <ul class="point-list">
+                  {% for item in prediction.trigger_conditions %}
+                    <li>{{ item }}</li>
+                  {% endfor %}
+                </ul>
+              </div>
+              <div class="insight-card">
+                <div class="insight-label">失效条件 / 风险</div>
+                <ul class="point-list">
+                  {% for item in prediction.invalidation_conditions %}
+                    <li class="bear">{{ item }}</li>
+                  {% endfor %}
+                  {% for item in prediction.risk_labels %}
+                    <li><span class="tag tag-bear">{{ item }}</span></li>
+                  {% endfor %}
+                </ul>
+              </div>
+            </div>
+          </div>
+        </article>
+      {% endfor %}
+    {% else %}
+      <div class="preamble">同花顺/东方财富复盘证据不足，今日不生成强势概率。</div>
+    {% endif %}
+
+    <hr class="divider">
+
+    <span class="section-num">TWO</span>
+    <h2 class="section-title">盘面总览</h2>
+
+    <div class="metric-grid">
+      {% for row in structured.market_overview.emotion_rows %}
+        <div class="metric-card">
+          <div class="metric-label">{{ row.label }}</div>
+          <div class="metric-value">{{ row.value }}</div>
+        </div>
+      {% endfor %}
+    </div>
+
+    <h3 class="section-subtitle">指数数据</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>指数</th><th>收盘</th><th>涨跌幅</th></tr></thead>
+        <tbody>
+          {% for row in structured.market_overview.index_rows %}
+            <tr>
+              <td>{{ row.name }}</td>
+              <td>{{ row.close }}</td>
+              <td>
+                <span class="{{ 'bearish' if row.change.startswith('-') else 'bullish' }}">{{ row.change }}</span>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <h3 class="section-subtitle">市场情绪</h3>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>指标</th><th>数值</th></tr></thead>
+        <tbody>
+          {% for row in structured.market_overview.emotion_rows %}
+            <tr><td>{{ row.label }}</td><td>{{ row.value }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <h3 class="section-subtitle">市场结构特征</h3>
+    <p>
+      {% for feature in structured.market_overview.structure_features %}
+        <span class="tag tag-navy">{{ feature }}</span>
+      {% endfor %}
+    </p>
+    <div class="card">
+      <ul class="point-list">
+        {% for item in structured.market_overview.structure_notes %}
+          <li>{{ item }}</li>
+        {% endfor %}
+      </ul>
+      <p style="margin-top:10px;"><strong>资金结构：</strong>{{ structured.market_overview.capital_flow_summary }}</p>
+    </div>
+
+    <hr class="divider">
+
+    <span class="section-num">THREE</span>
+    <h2 class="section-title">各板块详细分析</h2>
+
+    {% for sector in structured.sector_reviews %}
+      {% set candidate = report.sectors[loop.index0] if loop.index0 < report.sectors|length else none %}
+      <article class="sector-block">
+        <h3 class="section-subtitle">{{ loop.index }}. {{ sector.headline }}</h3>
+
+        <div class="sector-meta">
+          <span><strong>当前阶段：</strong>{{ sector.stage }}</span>
+          <span><strong>持续性评级：</strong>
+            {% if sector.sustainability == "high" %}
+              <span class="tag tag-bull">高</span>
+            {% elif sector.sustainability == "medium" %}
+              <span class="tag tag-navy">中</span>
             {% else %}
-              <div class="note-card">
-                <p>同花顺/东方财富复盘证据不足，今日不生成强势概率。</p>
-                <p class="muted">可继续查看盘面总览与强势板块，但次日强势判断需等待复盘源恢复。</p>
+              <span class="tag tag-bear">低</span>
+            {% endif %}
+          </span>
+          {% if candidate and candidate.review_sources %}
+            <span><strong>复盘源：</strong>{{ candidate.review_sources|join("、") }}</span>
+          {% endif %}
+        </div>
+
+        <div class="sector-grid">
+          <div>
+            <div class="insight-card">
+              <div class="insight-label">01 前排个股</div>
+              {% if candidate and candidate.top_stocks %}
+                <div class="table-wrap">
+                  <table aria-label="前排强势个股">
+                    <thead><tr><th style="width:24%;">个股</th><th style="width:16%;">涨跌幅</th><th>来源 / 标签</th></tr></thead>
+                    <tbody>
+                      {% for stock in candidate.top_stocks %}
+                        <tr>
+                          <td><strong>{{ stock.name }}</strong>{% if stock.code %}<br>{{ stock.code }}{% endif %}</td>
+                          <td><span class="{{ 'bearish' if stock.pct_change < 0 else 'bullish' }}">{{ "%+.2f"|format(stock.pct_change) }}%</span></td>
+                          <td style="text-align:left;">{{ stock.tags|join("、") }}</td>
+                        </tr>
+                      {% endfor %}
+                    </tbody>
+                  </table>
+                </div>
+              {% else %}
+                <p>前排个股仍待复盘源确认。</p>
+              {% endif %}
+            </div>
+
+            <div class="insight-card">
+              <div class="insight-label">02 板块逻辑分析</div>
+              <p>{{ sector.logic }}</p>
+              <ul class="point-list" style="margin-top:10px;">
+                {% for item in sector.logic_points %}
+                  <li>{{ item }}</li>
+                {% endfor %}
+              </ul>
+            </div>
+          </div>
+
+          <div>
+            <div class="insight-card">
+              <div class="insight-label">强势 / 分歧</div>
+              <ul class="point-list">
+                {% for item in sector.strengths[:3] %}
+                  <li class="bull">{{ item }}</li>
+                {% endfor %}
+                {% for item in sector.weaknesses[:2] %}
+                  <li class="bear">{{ item }}</li>
+                {% endfor %}
+              </ul>
+            </div>
+
+            <div class="insight-card action-card">
+              <div class="insight-label">03 次日动作 · 下个交易日看法</div>
+              <p><strong>观察：</strong>{{ sector.next_day_view }}</p>
+              <ul class="point-list" style="margin-top:10px;">
+                {% for item in sector.watch_items %}
+                  <li>{{ item }}</li>
+                {% endfor %}
+                {% for item in sector.avoid_items %}
+                  <li class="bear"><strong>回避：</strong>{{ item }}</li>
+                {% endfor %}
+              </ul>
+            </div>
+
+            <div class="conclusion-box">
+              <div class="label">持续性分析</div>
+              <p>{{ sector.sustainability_analysis }}</p>
+            </div>
+          </div>
+        </div>
+      </article>
+    {% endfor %}
+
+    <hr class="divider">
+
+    <span class="section-num">FOUR</span>
+    <h2 class="section-title">盘后 / 隔夜消息梳理</h2>
+
+    <h3 class="section-subtitle">美股映射</h3>
+    {% if structured.after_hours_news.us_market_conclusion %}
+      <div class="preamble">{{ structured.after_hours_news.us_market_conclusion }}</div>
+    {% endif %}
+    <ul class="point-list">
+      {% for item in structured.after_hours_news.us_market_mapping %}
+        <li>{{ item }}</li>
+      {% endfor %}
+    </ul>
+
+    <h3 class="section-subtitle">国内重要消息 / 催化</h3>
+    <div class="card">
+      <p><span class="tag tag-gold">重磅增量</span></p>
+      <ul class="point-list" style="margin-top:10px;">
+        {% for item in structured.after_hours_news.domestic_catalysts %}
+          <li>{{ item }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    <div class="avoid-box">
+      <div class="label">风险提示</div>
+      <ul class="point-list">
+        {% for item in structured.after_hours_news.risk_notes %}
+          <li class="bear">{{ item }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+
+    <hr class="divider">
+
+    <span class="section-num">FIVE</span>
+    <h2 class="section-title">板块持续性排序</h2>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>排序</th><th>板块</th><th>持续性</th><th>理由</th></tr></thead>
+        <tbody>
+          {% for item in structured.sustainability_ranking %}
+            <tr>
+              <td>{{ item.rank }}</td>
+              <td>{{ item.sector }}</td>
+              <td>
+                {% if item.rating == "high" %}
+                  <span class="tag tag-bull">高</span>
+                {% elif item.rating == "medium" %}
+                  <span class="tag tag-navy">中</span>
+                {% else %}
+                  <span class="tag tag-bear">低</span>
+                {% endif %}
+              </td>
+              <td style="text-align:left;">{{ item.reason }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <hr class="divider">
+
+    <span class="section-num">SIX</span>
+    <h2 class="section-title">资金轮动路径分析</h2>
+
+    <h3 class="section-subtitle">实际轮动路径</h3>
+    <div class="conclusion-box">
+      <div class="label">关键发现</div>
+      <p>{{ structured.capital_rotation.key_finding }}</p>
+    </div>
+    <div class="path-flow">
+      {% for item in structured.capital_rotation.actual_path %}
+        <span class="path-node">{{ item }}</span>{% if not loop.last %}<span class="path-arrow">→</span>{% endif %}
+      {% endfor %}
+    </div>
+    {% if structured.capital_rotation.path_summary %}
+      <p><strong>路径摘要：</strong>{{ structured.capital_rotation.path_summary }}</p>
+    {% endif %}
+
+    <h3 class="section-subtitle">关键发现</h3>
+    <h4 class="section-sub-subtitle">次日路径观察</h4>
+    <ul class="point-list">
+      {% for item in structured.capital_rotation.next_path_watch %}
+        <li>{{ item }}</li>
+      {% endfor %}
+    </ul>
+
+    <hr class="divider">
+
+    <span class="section-num">SEVEN</span>
+    <h2 class="section-title">明日可介入标的与仓位建议</h2>
+
+    <div class="preamble">
+      以下内容统一表达为观察条件与仓位纪律，不构成确定性交易指令。
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th style="width:12%;">类别</th><th style="width:30%;">观察候选</th><th>触发逻辑</th><th style="width:18%;">仓位纪律</th></tr></thead>
+        <tbody>
+          {% for item in structured.next_day_opportunity.focus_candidates %}
+            <tr>
+              <td>
+                {% if loop.index == 1 %}<span class="tag tag-bull">主攻A</span>
+                {% elif loop.index == 2 %}<span class="tag tag-gold">核心B</span>
+                {% else %}<span class="tag tag-navy">前排C</span>
+                {% endif %}
+              </td>
+              <td style="text-align:left;"><strong>{{ item }}</strong></td>
+              <td style="text-align:left;">{{ structured.next_day_opportunity.trigger_conditions[(loop.index0 if loop.index0 < structured.next_day_opportunity.trigger_conditions|length else 0)] }}</td>
+              <td>{{ structured.next_day_opportunity.position_discipline[(loop.index0 if loop.index0 < structured.next_day_opportunity.position_discipline|length else 0)] }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <h4 class="section-sub-subtitle">仓位纪律</h4>
+    <ul class="point-list">
+      {% for item in structured.next_day_opportunity.position_discipline %}
+        <li>{{ item }}</li>
+      {% endfor %}
+    </ul>
+
+    <div class="avoid-box">
+      <div class="label">回避条件</div>
+      <ul class="point-list">
+        {% for item in structured.next_day_opportunity.avoid_conditions %}
+          <li class="bear">{{ item }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+
+    {% set watch = report.watchlist_observation %}
+    {% if watch %}
+      <hr class="divider">
+      <span class="section-num">WATCHLIST</span>
+      <h2 class="section-title">自选股观察</h2>
+      <p><span class="tag tag-navy">导入 {{ watch.total_count }} 只</span><span class="tag tag-gold">行情匹配 {{ watch.quote_count }} 只</span></p>
+      {% if watch.strongest %}
+        <h3 class="section-subtitle">强势自选</h3>
+        <div class="card">
+          <ul class="point-list">
+            {% for item in watch.strongest %}
+              <li class="bull">{{ item.symbol }} {{ item.name or '' }} {{ "%+.2f"|format(item.pct_change or 0) }}% · {{ item.reason }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+      {% if watch.weakest %}
+        <h3 class="section-subtitle">风险观察</h3>
+        <div class="avoid-box">
+          <ul class="point-list">
+            {% for item in watch.weakest %}
+              <li class="bear">{{ item.symbol }} {{ item.name or '' }} {{ "%+.2f"|format(item.pct_change or 0) }}% · {{ item.reason }}</li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+      {% if watch.notes %}
+        <p>{{ watch.notes|join("；") }}</p>
+      {% endif %}
+    {% endif %}
+
+    <hr class="divider">
+
+    <span class="section-num">EIGHT</span>
+    <h2 class="section-title">去弱留强排序</h2>
+
+    <div class="card" style="border-left: 3px solid var(--bull-red);">
+      <p style="font-weight:700; color:var(--bull-red); margin-bottom:6px;">优先保留 / 加仓观察</p>
+      <ul class="point-list">
+        {% for item in structured.action_discipline.focus %}
+          <li class="bull">{{ item }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+
+    <div class="avoid-box" style="margin-top:12px;">
+      <div class="label">优先减仓 / 换强观察</div>
+      <ul class="point-list">
+        {% for item in structured.action_discipline.avoid %}
+          <li class="bear">{{ item }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    <div class="conclusion-box">
+      <div class="label">最终判断</div>
+      <p>{{ structured.action_discipline.final_view }}</p>
+    </div>
+
+    <hr class="divider">
+
+    <span class="section-num">NINE</span>
+    <h2 class="section-title">最实战的结论</h2>
+
+    <div class="conclusion-box" style="border: 2px solid var(--gold);">
+      <div class="label">明日最优策略（一句话）</div>
+      <p style="font-size:16px; font-weight:700; color:var(--navy);">{{ structured.practical_conclusion.headline }}</p>
+    </div>
+    <h4 class="section-sub-subtitle">最值得做的事</h4>
+    <ol class="point-list">
+      {% for item in structured.practical_conclusion.bullet_points %}
+        <li>{{ item }}</li>
+      {% endfor %}
+    </ol>
+
+    <hr class="divider">
+
+    <span class="section-num">APPENDIX</span>
+    <h2 class="section-title">上证指数中期走势研判</h2>
+
+    <h3 class="section-subtitle">年度走势回顾与规律提取</h3>
+    <div class="card">
+      <ul class="point-list">
+        {% for item in structured.index_mid_term_outlook.year_review %}
+          <li>{{ item }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+
+    <h3 class="section-subtitle">当前位置判断</h3>
+    <p>{{ structured.index_mid_term_outlook.current_position }}</p>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>情景</th><th>条件</th><th>应对</th></tr></thead>
+        <tbody>
+          {% for row in structured.index_mid_term_outlook.scenario_table %}
+            <tr><td>{{ row.scenario }}</td><td>{{ row.condition }}</td><td style="text-align:left;">{{ row.response }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% else %}
+    <div class="preamble">
+      <strong>结构复盘：</strong>{{ report.narrative.conclusion }}
+    </div>
+
+    <hr class="divider">
+
+    <span class="section-num">ONE</span>
+    <h2 class="section-title">先给结论</h2>
+    <div class="conclusion-box"><p>{{ report.narrative.conclusion }}</p></div>
+
+    <span class="section-num">TWO</span>
+    <h2 class="section-title">盘面总览</h2>
+    <div class="card"><p>{{ report.narrative.overview }}</p></div>
+
+    <span class="section-num">THREE</span>
+    <h2 class="section-title">强势板块</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>排名</th><th>板块</th><th>涨跌幅</th><th>原因</th></tr></thead>
+        <tbody>
+          {% for sector in report.sectors %}
+            <tr><td>{{ sector.rank }}</td><td>{{ sector.name }}</td><td><span class="{{ 'bearish' if sector.pct_change < 0 else 'bullish' }}">{{ "%+.2f"|format(sector.pct_change) }}%</span></td><td style="text-align:left;">{{ sector.reason }}</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+
+  {% if disclaimer_enabled %}
+    <div class="footer-disclaimer">
+      非投资建议，仅用于复盘研究与信息整理。
+      {% if brand_footer %}<br>{{ brand_footer }}{% endif %}
+    </div>
+  {% elif brand_footer %}
+    <div class="footer-disclaimer">{{ brand_footer }}</div>
+  {% endif %}
+
+  {% if report.news %}
+    <div class="footer-sources">
+      <p style="font-weight:600; margin-bottom:6px;">主要来源</p>
+      <div class="source-grid">
+        {% for item in report.news[:8] %}
+          <div class="source-item">
+            <div class="source-name">
+              {% if item.url %}<a href="{{ item.url }}">{{ item.title }}</a>{% else %}{{ item.title }}{% endif %}
+            </div>
+            {% if item.source or item.matched_sector %}
+              <div class="source-meta">
+                {% if item.source %}{{ item.source }}{% endif %}
+                {% if item.source and item.matched_sector %} · {% endif %}
+                {% if item.matched_sector %}{{ item.matched_sector }}{% endif %}
               </div>
             {% endif %}
-          </section>
-
-          <section>
-            <div class="section-title"><span class="section-num">04</span><h2>盘面总览</h2></div>
-            <h3>指数数据</h3>
-            <table>
-              <tr><th>指数</th><th>收盘</th><th>涨跌幅</th></tr>
-              {% for row in structured.market_overview.index_rows %}
-                <tr><td>{{ row.name }}</td><td>{{ row.close }}</td><td>{{ row.change }}</td></tr>
-              {% endfor %}
-            </table>
-            <h3>市场情绪</h3>
-            <table>
-              {% for row in structured.market_overview.emotion_rows %}
-                <tr><th>{{ row.label }}</th><td>{{ row.value }}</td></tr>
-              {% endfor %}
-            </table>
-            <h3>市场结构特征</h3>
-            <div class="pill-row">{% for feature in structured.market_overview.structure_features %}<span class="pill">{{ feature }}</span>{% endfor %}</div>
-            <ul class="subsection">{% for item in structured.market_overview.structure_notes %}<li>{{ item }}</li>{% endfor %}</ul>
-            <p class="muted">{{ structured.market_overview.capital_flow_summary }}</p>
-          </section>
-
-          <section>
-            <div class="section-title"><span class="section-num">05</span><h2>各板块详细分析</h2></div>
-            {% for sector in structured.sector_reviews %}
-              <article class="sector-card">
-                <div class="sector-head"><strong>{{ loop.index }}. {{ sector.headline }}</strong><span class="rating">{{ sector.sustainability|upper }}</span></div>
-                <p><strong>当前阶段：</strong>{{ sector.stage }}</p>
-                {% set candidate = report.sectors[loop.index0] %}
-                {% if candidate.review_sources %}
-                  <p class="muted">复盘源：{{ candidate.review_sources|join("、") }}</p>
-                {% endif %}
-                {% if candidate.top_stocks %}
-                  <table aria-label="前排强势个股">
-                    <tr><th>前排个股</th><th>涨跌幅</th><th>来源</th></tr>
-                    {% for stock in candidate.top_stocks %}
-                      <tr>
-                        <td>{{ stock.name }} {% if stock.code %}{{ stock.code }}{% endif %}</td>
-                        <td>{{ "%+.2f"|format(stock.pct_change) }}%</td>
-                        <td>{{ stock.tags|join("、") }}</td>
-                      </tr>
-                    {% endfor %}
-                  </table>
-                {% endif %}
-                <div class="grid-2">
-                  <div><div class="mini-title">强势证据</div><ul>{% for item in sector.strengths %}<li>{{ item }}</li>{% endfor %}</ul></div>
-                  <div><div class="mini-title">弱势 / 分歧</div><ul>{% for item in sector.weaknesses %}<li>{{ item }}</li>{% endfor %}</ul></div>
-                </div>
-                <h4>板块逻辑分析</h4>
-                <p>{{ sector.logic }}</p>
-                <ul>{% for item in sector.logic_points %}<li>{{ item }}</li>{% endfor %}</ul>
-                <h4>持续性分析</h4>
-                <p>{{ sector.sustainability_analysis }}</p>
-                <h4>下个交易日看法</h4>
-                <p><strong>下个交易日看法：</strong>{{ sector.next_day_view }}</p>
-              </article>
-            {% endfor %}
-          </section>
-
-          <section>
-            <div class="section-title"><span class="section-num">06</span><h2>盘后 / 隔夜消息梳理</h2></div>
-            <div class="grid-2">
-              <div class="info-card">
-                <div class="mini-title">美股映射</div>
-                {% if structured.after_hours_news.us_market_conclusion %}<p>{{ structured.after_hours_news.us_market_conclusion }}</p>{% endif %}
-                <ul>{% for item in structured.after_hours_news.us_market_mapping %}<li>{{ item }}</li>{% endfor %}</ul>
-              </div>
-              <div class="info-card">
-                <div class="mini-title">国内催化</div>
-                <ul>{% for item in structured.after_hours_news.domestic_catalysts %}<li>{{ item }}</li>{% endfor %}</ul>
-              </div>
-            </div>
-            <div class="note-card">
-              <ul>{% for item in structured.after_hours_news.risk_notes %}<li>{{ item }}</li>{% endfor %}</ul>
-            </div>
-          </section>
-
-          <section>
-            <div class="section-title"><span class="section-num">07</span><h2>板块持续性排序</h2></div>
-            <table>
-              <tr><th>排序</th><th>板块</th><th>持续性</th><th>理由</th></tr>
-              {% for item in structured.sustainability_ranking %}
-                <tr><td>{{ item.rank }}</td><td>{{ item.sector }}</td><td>{{ item.rating|upper }}</td><td>{{ item.reason }}</td></tr>
-              {% endfor %}
-            </table>
-          </section>
-
-          <section>
-            <div class="section-title"><span class="section-num">08</span><h2>资金轮动路径分析</h2></div>
-            <h3>实际轮动路径</h3>
-            <div class="conclusion-box"><p>{{ structured.capital_rotation.key_finding }}</p></div>
-            <div class="path-flow">
-              {% for item in structured.capital_rotation.actual_path %}
-                <span class="path-node">{{ item }}</span>{% if not loop.last %}<span class="path-arrow">→</span>{% endif %}
-              {% endfor %}
-            </div>
-            {% if structured.capital_rotation.path_summary %}<p class="muted subsection">{{ structured.capital_rotation.path_summary }}</p>{% endif %}
-            <h3>关键发现</h3>
-            <div class="mini-title">次日路径观察</div>
-            <ul>{% for item in structured.capital_rotation.next_path_watch %}<li>{{ item }}</li>{% endfor %}</ul>
-          </section>
-
-          <section>
-            <div class="section-title"><span class="section-num">09</span><h2>明日可介入标的与仓位建议</h2></div>
-            <p class="lead">以下内容统一表达为观察条件与仓位纪律，不构成确定性交易指令。</p>
-            <div class="grid-2">
-              <div class="info-card">
-                <div class="mini-title">观察候选</div>
-                <ul>{% for item in structured.next_day_opportunity.focus_candidates %}<li>{{ item }}</li>{% endfor %}</ul>
-              </div>
-              <div class="info-card">
-                <div class="mini-title">仓位纪律</div>
-                <ul>{% for item in structured.next_day_opportunity.position_discipline %}<li>{{ item }}</li>{% endfor %}</ul>
-              </div>
-            </div>
-            <table>
-              <tr><th>触发条件</th><th>回避条件</th></tr>
-              <tr>
-                <td><ul>{% for item in structured.next_day_opportunity.trigger_conditions %}<li>{{ item }}</li>{% endfor %}</ul></td>
-                <td><ul>{% for item in structured.next_day_opportunity.avoid_conditions %}<li>{{ item }}</li>{% endfor %}</ul></td>
-              </tr>
-            </table>
-          </section>
-
-          {% set watch = report.watchlist_observation %}
-          {% if watch %}
-            <section>
-              <div class="section-title"><span class="section-num">10</span><h2>自选股观察</h2></div>
-              <p class="muted">导入 {{ watch.total_count }} 只，行情匹配 {{ watch.quote_count }} 只。</p>
-              {% if watch.strongest %}
-                <div class="info-card">
-                  <div class="mini-title">强势自选</div>
-                  <ul>{% for item in watch.strongest %}<li>{{ item.symbol }} {{ item.name or '' }} {{ "%+.2f"|format(item.pct_change or 0) }}% · {{ item.reason }}</li>{% endfor %}</ul>
-                </div>
-              {% endif %}
-              {% if watch.weakest %}
-                <div class="info-card">
-                  <div class="mini-title">风险观察</div>
-                  <ul>{% for item in watch.weakest %}<li>{{ item.symbol }} {{ item.name or '' }} {{ "%+.2f"|format(item.pct_change or 0) }}% · {{ item.reason }}</li>{% endfor %}</ul>
-                </div>
-              {% endif %}
-              {% if watch.notes %}<p class="muted">{{ watch.notes|join("；") }}</p>{% endif %}
-            </section>
-          {% endif %}
-
-          <section>
-            <div class="section-title"><span class="section-num">{{ "11" if watch else "10" }}</span><h2>去弱留强排序</h2></div>
-            <div class="avoid-box">
-              <div class="mini-title">去弱留强</div>
-              <ul>{% for item in structured.action_discipline.focus %}<li>{{ item }}</li>{% endfor %}</ul>
-              <div class="mini-title">回避清单</div>
-              <ul>{% for item in structured.action_discipline.avoid %}<li>{{ item }}</li>{% endfor %}</ul>
-              <p><strong>最终判断：</strong>{{ structured.action_discipline.final_view }}</p>
-            </div>
-          </section>
-
-          <section>
-            <div class="section-title"><span class="section-num">{{ "12" if watch else "11" }}</span><h2>最实战的结论</h2></div>
-            <div class="conclusion-box"><p>{{ structured.practical_conclusion.headline }}</p></div>
-            <ul>{% for item in structured.practical_conclusion.bullet_points %}<li>{{ item }}</li>{% endfor %}</ul>
-          </section>
-
-          <section>
-            <div class="section-title"><span class="section-num">{{ "13" if watch else "12" }}</span><h2>上证指数中期走势研判</h2></div>
-            <div class="note-card">
-              <ul>{% for item in structured.index_mid_term_outlook.year_review %}<li>{{ item }}</li>{% endfor %}</ul>
-            </div>
-            <p>{{ structured.index_mid_term_outlook.current_position }}</p>
-            <table>
-              <tr><th>情景</th><th>条件</th><th>应对</th></tr>
-              {% for row in structured.index_mid_term_outlook.scenario_table %}
-                <tr><td>{{ row.scenario }}</td><td>{{ row.condition }}</td><td>{{ row.response }}</td></tr>
-              {% endfor %}
-            </table>
-          </section>
-        {% else %}
-          <section><div class="section-title"><span class="section-num">01</span><h2>先给结论</h2></div><p>{{ report.narrative.conclusion }}</p></section>
-          <section><div class="section-title"><span class="section-num">02</span><h2>盘面总览</h2></div><p>{{ report.narrative.overview }}</p></section>
-          <section><div class="section-title"><span class="section-num">03</span><h2>强势板块</h2></div>{% for sector in report.sectors %}<p>{{ sector.rank }}. {{ sector.name }} {{ "%+.2f"|format(sector.pct_change) }}%</p>{% endfor %}</section>
-        {% endif %}
-
-        {% if brand_footer %}<div class="footer">{{ brand_footer }}</div>{% endif %}
-        {% if disclaimer_enabled %}<div class="disclaimer">非投资建议，仅用于复盘研究与信息整理。</div>{% endif %}
+          </div>
+        {% endfor %}
       </div>
-    </article>
-  </main>
+    </div>
+  {% endif %}
+
+</div>
+</div>
 </body>
 </html>

@@ -141,6 +141,33 @@ def test_validate_narrative_accepts_rounded_display_numbers() -> None:
     assert result.errors == []
 
 
+def test_validate_narrative_accepts_python_float_format_rounding() -> None:
+    report = make_report(
+        ReportNarrative(
+            conclusion="创业板指收于4105.91点，涨跌幅+1.55%。",
+            overview="成交额18493.50亿元。",
+            sector_commentary=[],
+            watchlist=[],
+            tomorrow="观察机器人方向。",
+            risks=[],
+        )
+    )
+    report.indices = [
+        IndexSnapshot(
+            name="创业板指",
+            code="399006",
+            close=4105.915,
+            pct_change=1.5544885985042085,
+        )
+    ]
+    report.turnover_cny = 18493.5
+
+    result = validate_narrative_facts(report)
+
+    assert result.is_valid
+    assert result.errors == []
+
+
 def test_validate_narrative_accepts_turnover_in_wan_yi() -> None:
     report = make_report(
         ReportNarrative(

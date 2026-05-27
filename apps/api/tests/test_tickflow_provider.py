@@ -5,6 +5,7 @@ from app.providers.market import ProviderFallbackError
 from app.providers.tickflow import (
     FallbackTickFlowProvider,
     FakeTickFlowProvider,
+    IndustryUniverse,
     TickFlowMarketDataProvider,
     TickFlowProvider,
     WatchlistQuote,
@@ -63,6 +64,35 @@ class RouteClient:
         key = (url, symbols)
         self.requests.append({"method": "POST", "url": url, **kwargs})
         return self.responses[key]
+
+    def close(self) -> None:
+        pass
+
+
+class TrackingTickFlowProvider(TickFlowProvider):
+    def __init__(
+        self,
+        quotes: list[WatchlistQuote],
+        universes: list[object],
+        universe_details: dict[str, object],
+    ) -> None:
+        self.quotes = quotes
+        self.universes = universes
+        self.universe_details = universe_details
+        self.detail_requests: list[str] = []
+
+    def get_universe_quotes(self, universe_id: str) -> list[WatchlistQuote]:
+        return self.quotes
+
+    def get_quotes(self, symbols: list[str]) -> list[WatchlistQuote]:
+        return [quote for quote in self.quotes if quote.symbol in symbols]
+
+    def get_industry_universes(self) -> list[object]:
+        return self.universes
+
+    def get_universe(self, universe_id: str) -> object:
+        self.detail_requests.append(universe_id)
+        return self.universe_details[universe_id]
 
     def close(self) -> None:
         pass
@@ -291,6 +321,124 @@ def test_tickflow_market_provider_groups_strong_stocks_into_themes() -> None:
     assert sectors[0].limit_up_count == 2
     assert any(sector.name == "环保" for sector in sectors)
     assert all(sector.name != "浦发银行" for sector in sectors)
+
+
+def test_tickflow_market_provider_does_not_classify_jinpan_as_nonferrous_by_single_character() -> None:
+    quotes = [
+        WatchlistQuote(symbol="688676.SH", name="金盘科技", pct_change=10.5, turnover_cny=2_700_000_000),
+        WatchlistQuote(symbol="600489.SH", name="中金黄金", pct_change=10.0, turnover_cny=3_000_000_000),
+        WatchlistQuote(symbol="600547.SH", name="山东黄金", pct_change=9.9, turnover_cny=2_000_000_000),
+    ]
+
+    provider = TickFlowMarketDataProvider(api_key="tk-test-local", base_url="https://api.tickflow.org")
+    sectors = provider._strong_sectors_from_market(quotes)
+    nonferrous = next(sector for sector in sectors if sector.name == "有色金属")
+
+    assert nonferrous.limit_up_count == 2
+    assert [quote.name for quote in provider.get_sector_frontline_stocks("有色金属")] == [
+        "中金黄金",
+        "山东黄金",
+    ]
+
+
+def test_tickflow_market_provider_exposes_frontline_stocks_for_ranked_sectors() -> None:
+    quotes = [
+        WatchlistQuote(symbol="688183.SH", name="生益电子", pct_change=20, turnover_cny=9_700_000_000),
+        WatchlistQuote(symbol="002463.SZ", name="沪电股份", pct_change=10.1, turnover_cny=1_200_000_000),
+        WatchlistQuote(symbol="688335.SH", name="复洁科技", pct_change=19.98, turnover_cny=270_000_000),
+        WatchlistQuote(symbol="300234.SZ", name="开尔新材", pct_change=14.65, turnover_cny=440_000_000),
+        WatchlistQuote(symbol="600000.SH", name="浦发银行", pct_change=2.09, turnover_cny=1_350_000_000),
+    ]
+    provider = TickFlowMarketDataProvider(api_key="tk-test-local", base_url="https://api.tickflow.org")
+
+    sectors = provider._strong_sectors_from_market(quotes)
+    pcb_frontline = provider.get_sector_frontline_stocks("PCB")
+
+    assert sectors[0].name == "PCB"
+    assert [quote.name for quote in pcb_frontline] == ["生益电子", "沪电股份"]
+    assert all((quote.pct_change or 0) >= 9.8 for quote in pcb_frontline)
+
+
+def test_tickflow_market_provider_uses_industry_members_only_to_refine_theme_frontline() -> None:
+    quotes = [
+        WatchlistQuote(symbol="000001.SH", name="上证指数", last_price=4100, pct_change=0.2, turnover_cny=1),
+        WatchlistQuote(symbol="399006.SZ", name="创业板指", last_price=2200, pct_change=0.5, turnover_cny=1),
+        WatchlistQuote(symbol="688676.SH", name="金盘科技", pct_change=11.04, turnover_cny=2_700_000_000),
+        WatchlistQuote(symbol="600489.SH", name="中金黄金", pct_change=10.0, turnover_cny=3_000_000_000),
+        WatchlistQuote(symbol="600547.SH", name="山东黄金", pct_change=9.9, turnover_cny=2_000_000_000),
+        WatchlistQuote(symbol="603663.SH", name="三祥新材", pct_change=10.0, turnover_cny=1_200_000_000),
+    ]
+    universes = [
+        IndustryUniverse("CN_Equity_SW3_230102", "黄金", 2),
+        IndustryUniverse("CN_Equity_SW3_630201", "电网设备", 1),
+        IndustryUniverse("CN_Equity_SW3_220503", "改性塑料", 1),
+    ]
+    provider = TickFlowMarketDataProvider(api_key="tk-test-local", base_url="https://api.tickflow.org")
+    provider.quote_provider = TrackingTickFlowProvider(
+        quotes=quotes,
+        universes=universes,
+        universe_details={
+            "CN_Equity_SW3_230102": IndustryUniverse(
+                "CN_Equity_SW3_230102",
+                "黄金",
+                2,
+                ("600489.SH", "600547.SH"),
+            ),
+            "CN_Equity_SW3_630201": IndustryUniverse(
+                "CN_Equity_SW3_630201",
+                "电网设备",
+                1,
+                ("688676.SH",),
+            ),
+            "CN_Equity_SW3_220503": IndustryUniverse(
+                "CN_Equity_SW3_220503",
+                "改性塑料",
+                1,
+                ("603663.SH",),
+            ),
+        },
+    )
+
+    snapshot = provider.get_close_snapshot("2026-05-26")
+
+    nonferrous = next(sector for sector in snapshot.raw_sectors if sector.name == "有色金属")
+    nonferrous_frontline = provider.get_sector_frontline_stocks("有色金属")
+    assert nonferrous.limit_up_count == 2
+    assert [quote.name for quote in nonferrous_frontline] == ["中金黄金", "山东黄金"]
+    assert all(quote.name != "金盘科技" for quote in nonferrous_frontline)
+
+
+def test_tickflow_market_provider_maps_grid_equipment_to_power_equipment_theme() -> None:
+    quotes = [
+        WatchlistQuote(symbol="000001.SH", name="上证指数", last_price=4100, pct_change=0.2, turnover_cny=1),
+        WatchlistQuote(symbol="399006.SZ", name="创业板指", last_price=2200, pct_change=0.5, turnover_cny=1),
+        WatchlistQuote(symbol="688676.SH", name="金盘科技", pct_change=10.5, turnover_cny=2_700_000_000),
+        WatchlistQuote(symbol="300001.SZ", name="特锐德", pct_change=4.0, turnover_cny=680_000_000),
+    ]
+    provider = TickFlowMarketDataProvider(api_key="tk-test-local", base_url="https://api.tickflow.org")
+    provider.quote_provider = TrackingTickFlowProvider(
+        quotes=quotes,
+        universes=[
+            IndustryUniverse("CN_Equity_SW3_630201", "输变电设备", 2),
+        ],
+        universe_details={
+            "CN_Equity_SW3_630201": IndustryUniverse(
+                "CN_Equity_SW3_630201",
+                "输变电设备",
+                2,
+                ("688676.SH", "300001.SZ"),
+            )
+        },
+    )
+
+    snapshot = provider.get_close_snapshot("2026-05-26")
+
+    assert any(sector.name == "电力设备" for sector in snapshot.raw_sectors)
+    assert all(sector.name != "电力" for sector in snapshot.raw_sectors)
+    assert [quote.name for quote in provider.get_sector_frontline_stocks("电力设备")] == [
+        "金盘科技",
+        "特锐德",
+    ]
 
 
 def test_tickflow_provider_rejects_missing_key() -> None:

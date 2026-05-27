@@ -59,6 +59,7 @@ def _add_decimal_with_display_rounding(values: set[Decimal], value: int | float)
     decimal_value = _to_decimal(value)
     values.add(decimal_value)
     values.add(decimal_value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+    values.add(Decimal(f"{value:.2f}"))
 
 
 def _parse_number(number: str) -> Decimal | None:
