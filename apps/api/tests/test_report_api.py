@@ -10,11 +10,16 @@ from app.main import app
 from app.db.models import Report, ReportKindModel, ReportStatusModel
 from app.db.session import create_sqlite_engine, init_db, session_scope
 from app.providers.llm import FakeLLMProvider, LLMFallbackError
-from app.providers.market import FakeMarketDataProvider, MarketBreadth, MarketCloseSnapshot
+from app.providers.market import (
+    FakeMarketDataProvider,
+    FallbackMarketDataProvider,
+    MarketBreadth,
+    MarketCloseSnapshot,
+)
 from app.rules.scoring import RawSectorInput
 from app.providers.news import FakeNewsProvider
 from app.providers.review_sources import ReviewSourceResult, ReviewStockEvidence, ReviewThemeEvidence
-from app.providers.tickflow import FakeTickFlowProvider
+from app.providers.tickflow import FakeTickFlowProvider, WatchlistQuote
 from app.renderers.html_renderer import render_mobile_report_html
 from app.rules.scoring import score_sectors
 from app.rules.validation import validate_narrative_facts
@@ -322,6 +327,135 @@ def test_mobile_report_renderer_contains_core_sections(tmp_path: Path) -> None:
     assert "非投资建议" in html
 
 
+def test_mobile_report_renderer_uses_reference_article_visual_system(tmp_path: Path) -> None:
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=FakeMarketDataProvider(),
+        news_provider=FakeNewsProvider(),
+        llm_provider=FakeLLMProvider(),
+    )
+
+    result = generator.generate_close_report("2026-05-26")
+    html = render_mobile_report_html(
+        result.report,
+        brand_name="复盘测试",
+        disclaimer_enabled=True,
+    )
+
+    expected_reference_markers = [
+        'maximum-scale=1.0, user-scalable=no',
+        'class="article-wrap"',
+        'class="article-card"',
+        'class="header-date"',
+        'class="header-title"',
+        'class="header-sub"',
+        'class="preamble"',
+        'class="table-wrap"',
+        'class="point-list"',
+        'class="footer-disclaimer"',
+        "--navy:",
+        "--gold:",
+        "--table-hdr:",
+    ]
+    old_visual_markers = [
+        'class="page"',
+        'class="paper"',
+        'class="hero"',
+        "module-card",
+        "sector-card",
+    ]
+
+    for marker in expected_reference_markers:
+        assert marker in html
+    for marker in old_visual_markers:
+        assert marker not in html
+
+
+def test_mobile_report_renderer_uses_responsive_wide_article_layout(tmp_path: Path) -> None:
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=FakeMarketDataProvider(),
+        news_provider=FakeNewsProvider(),
+        llm_provider=FakeLLMProvider(),
+    )
+
+    result = generator.generate_close_report("2026-05-26")
+    html = render_mobile_report_html(result.report)
+
+    assert "max-width: 1080px;" in html
+    assert "padding: 28px 24px 48px;" in html
+    assert "font-size: 15.5px;" in html
+    assert "min-width: 760px;" in html
+    assert "@media screen and (max-width: 720px)" in html
+    assert "max-width: 640px;" not in html
+
+
+def test_mobile_report_renderer_groups_sector_detail_into_scannable_blocks(
+    tmp_path: Path,
+) -> None:
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=FakeMarketDataProvider(),
+        news_provider=FakeNewsProvider(),
+        llm_provider=FakeLLMProvider(),
+    )
+
+    result = generator.generate_close_report("2026-05-26")
+    html = render_mobile_report_html(result.report)
+
+    assert 'class="sector-block"' in html
+    assert 'class="sector-meta"' in html
+    assert 'class="sector-grid"' in html
+    assert 'class="insight-card"' in html
+    assert 'class="insight-card action-card"' in html
+    assert "01 前排个股" in html
+    assert "02 板块逻辑" in html
+    assert "03 次日动作" in html
+
+
+def test_mobile_report_renderer_uses_daily_summary_board(tmp_path: Path) -> None:
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=FakeMarketDataProvider(),
+        news_provider=FakeNewsProvider(),
+        llm_provider=FakeLLMProvider(),
+    )
+
+    result = generator.generate_close_report("2026-05-26")
+    html = render_mobile_report_html(result.report)
+
+    assert 'class="summary-board"' in html
+    assert 'class="summary-main"' in html
+    assert 'class="summary-side"' in html
+    assert 'class="metric-grid"' in html
+    assert 'class="metric-card"' in html
+    assert "今日结论" in html
+    assert "明日观察" in html
+    assert "盘面温度" in html
+    assert "结构标签" in html
+
+
+def test_mobile_report_renderer_unifies_component_polish_and_sources(tmp_path: Path) -> None:
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=FakeMarketDataProvider(),
+        news_provider=FakeNewsProvider(),
+        llm_provider=FakeLLMProvider(),
+    )
+
+    result = generator.generate_close_report("2026-05-26")
+    html = render_mobile_report_html(result.report)
+
+    assert "--surface-soft:" in html
+    assert "--shadow-soft:" in html
+    assert "box-shadow: var(--shadow-soft);" in html
+    assert ".table-wrap table" in html
+    assert 'class="source-grid"' in html
+    assert 'class="source-item"' in html
+    assert 'class="source-name"' in html
+    assert "主要来源" in html
+
+
 class BrokenStructuredReviewLLM(FakeLLMProvider):
     provider_name = "openai"
 
@@ -429,6 +563,72 @@ def test_report_generator_narrative_uses_final_ranked_sectors(tmp_path: Path) ->
     assert "半导体" in narrative_text
     assert "会展服务" not in narrative_text
     assert result.validation.is_valid
+
+
+class FrontlineStockMarketProvider(ConflictingRawAndScoredMarketProvider):
+    def get_sector_frontline_stocks(self, sector_name: str) -> list[WatchlistQuote]:
+        if sector_name != "半导体":
+            return []
+        return [
+            WatchlistQuote(
+                symbol="688981.SH",
+                name="中芯国际",
+                pct_change=12.3,
+                turnover_cny=18_000_000_000,
+            ),
+            WatchlistQuote(
+                symbol="600584.SH",
+                name="长电科技",
+                pct_change=10.01,
+                turnover_cny=4_200_000_000,
+            ),
+        ]
+
+
+def test_report_generator_merges_tickflow_frontline_stocks_into_strong_sectors(
+    tmp_path: Path,
+) -> None:
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=FrontlineStockMarketProvider(),
+        news_provider=FakeNewsProvider(),
+        llm_provider=FakeLLMProvider(),
+    )
+
+    result = generator.generate_close_report("2026-05-26")
+
+    semiconductor = next(sector for sector in result.report.sectors if sector.name == "半导体")
+    assert [stock.name for stock in semiconductor.top_stocks[:2]] == ["中芯国际", "长电科技"]
+    assert semiconductor.top_stocks[0].code == "688981.SH"
+    assert semiconductor.top_stocks[0].turnover_cny == 18_000_000_000
+    assert "TickFlow前排" in semiconductor.top_stocks[0].tags
+    snapshot = json.loads(result.assets.snapshot.read_text(encoding="utf-8"))
+    snapshot_sector = next(
+        sector for sector in snapshot["report"]["sectors"] if sector["name"] == "半导体"
+    )
+    assert snapshot_sector["top_stocks"][0]["name"] == "中芯国际"
+
+
+def test_report_generator_reads_frontline_stocks_through_market_fallback_wrapper(
+    tmp_path: Path,
+) -> None:
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=FallbackMarketDataProvider(
+            primary=FrontlineStockMarketProvider(),
+            fallback=FakeMarketDataProvider(),
+            fallback_enabled=True,
+        ),
+        news_provider=FakeNewsProvider(),
+        llm_provider=FakeLLMProvider(),
+    )
+
+    result = generator.generate_close_report("2026-05-26")
+
+    semiconductor = next(sector for sector in result.report.sectors if sector.name == "半导体")
+    assert semiconductor.top_stocks[0].name == "中芯国际"
+
+
 class StaticWatchlistService:
     called = False
 

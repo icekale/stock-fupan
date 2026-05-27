@@ -163,14 +163,42 @@ def _build_next_day_opportunity(
     report: ReportDTO, leader: SectorCandidate | None
 ) -> NextDayOpportunityPlan:
     leader_name = leader.name if leader else "主线"
-    focus = [f"{leader_name}核心股承接确认"]
-    focus.extend(f"{sector.name}前排分歧转强" for sector in report.sectors[1:3])
+    focus = _next_day_focus_candidates(report, leader_name)
     return NextDayOpportunityPlan(
         focus_candidates=focus,
-        position_discipline=["只观察确认后的承接，不追一致加速。", "弱分支只看修复，不做主线预设。"],
+        position_discipline=[
+            "只观察确认后的承接，不追一致加速；默认空仓/轻仓观察。",
+            "只有前排股分歧后重新转强，才考虑试探底仓。",
+            "单一方向底仓不超过2成；主线确认扩散后，总仓位上限控制在3成以内。",
+            "弱分支只看修复，不做主线预设；缩量冲高不加仓。",
+        ],
         trigger_conditions=["指数不出现明显放量下杀", "主线前排分歧温和", "成交额维持活跃区间"],
         avoid_conditions=["缩量冲高回落", "无催化后排补涨", "高位一致加速后的被动追高"],
     )
+
+
+def _next_day_focus_candidates(report: ReportDTO, leader_name: str) -> list[str]:
+    focus: list[str] = []
+    for sector in report.sectors[:3]:
+        stock_text = _stock_candidate_text(sector.top_stocks[:3])
+        if stock_text:
+            focus.append(f"{sector.name}：观察{stock_text}分歧后的承接确认")
+        elif sector.name == leader_name:
+            focus.append(f"{leader_name}核心股承接确认")
+        else:
+            focus.append(f"{sector.name}前排分歧转强")
+    return focus or [f"{leader_name}核心股承接确认"]
+
+
+def _stock_candidate_text(stocks: list[object]) -> str:
+    parts = []
+    for stock in stocks:
+        name = getattr(stock, "name", "")
+        code = getattr(stock, "code", "")
+        if not name:
+            continue
+        parts.append(f"{name} {code}".strip())
+    return "、".join(parts)
 
 
 def _build_practical_conclusion(leader_name: str, runner_up_name: str) -> PracticalConclusion:

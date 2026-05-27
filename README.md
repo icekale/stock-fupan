@@ -13,6 +13,45 @@ uv run uvicorn app.main:app --reload --port 8000
 
 Backend API runs at `http://localhost:8000`. Playwright Chromium is required for `report.png` export.
 
+## Daily Report Command
+
+Generate a local close-market report from the repository root:
+
+```bash
+make report DATE=2026-05-26
+```
+
+The command reads the same local `.env` provider settings as the API, writes assets under `REPORTS_ROOT`, and prints the generated `report.html` and `snapshot.json` paths. It does not print API keys. If report validation fails, the command exits non-zero and prints the validation errors.
+
+For a production-grade local run, load your private provider keys from your local API `.env` and disable fake fallback:
+
+```bash
+set -a
+source apps/api/.env
+set +a
+MARKET_PROVIDER=tickflow \
+NEWS_PROVIDER=anspire \
+TICKFLOW_PROVIDER=tickflow \
+PROVIDER_FALLBACK_ENABLED=false \
+REVIEW_SOURCES_ENABLED=true \
+make report DATE=2026-05-26
+```
+
+Preview the latest generated HTML by serving the version directory printed by the command:
+
+```bash
+cd reports/2026-05-26/close/<printed-version>
+python3 -m http.server 8884 --bind 127.0.0.1
+```
+
+Then open `http://127.0.0.1:8884/report.html`. The current production HTML renderer uses the supplied reference-report visual system with a wider desktop layout, top summary board, three-part sector blocks, unified tables/cards, and a card-based source area.
+
+Generated report assets live under `reports/` and are git-ignored. During UI iteration, keep the latest version and remove older same-day versions if they are no longer needed:
+
+```bash
+find reports/2026-05-26/close -maxdepth 1 -type d -name 'v*' ! -name '<latest-version>' -exec rm -rf {} +
+```
+
 ## Real Data Providers
 
 v0.3e defaults to TickFlow-first real data:

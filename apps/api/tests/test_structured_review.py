@@ -188,6 +188,28 @@ def test_build_structured_review_derives_core_modules_from_report() -> None:
     assert review.index_mid_term_outlook.scenario_table[0]["scenario"] == "强势延续"
 
 
+def test_next_day_opportunity_lists_frontline_stock_codes_and_position_ranges() -> None:
+    report = _fake_report()
+    report.sectors[0].top_stocks = [
+        StockCandidate(code="688690.SH", name="纳微科技", pct_change=12.36),
+        StockCandidate(code="300672.SZ", name="国科微", pct_change=10.25),
+    ]
+    report.sectors[1].top_stocks = [
+        StockCandidate(code="001299.SZ", name="美能能源", pct_change=10.01),
+    ]
+
+    review = build_structured_review(report)
+
+    focus_text = "\n".join(review.next_day_opportunity.focus_candidates)
+    position_text = "\n".join(review.next_day_opportunity.position_discipline)
+    assert "纳微科技 688690.SH" in focus_text
+    assert "国科微 300672.SZ" in focus_text
+    assert "美能能源 001299.SZ" in focus_text
+    assert "底仓" in position_text
+    assert "2成" in position_text
+    assert "3成" in position_text
+
+
 def test_build_structured_review_keeps_news_evidence_compact() -> None:
     report = _fake_report()
     long_news = (

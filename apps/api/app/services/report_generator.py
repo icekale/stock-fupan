@@ -116,7 +116,12 @@ class ReportGenerator:
         narrative = self.llm_provider.generate_narrative(seed)
 
         sector_candidates = [
-            self._build_sector_candidate(scored, news_items, review_source_results)
+            self._build_sector_candidate(
+                scored,
+                news_items,
+                review_source_results,
+                self._get_sector_frontline_stocks(scored.name),
+            )
             for scored in scored_sectors
         ]
 
@@ -225,10 +230,14 @@ class ReportGenerator:
         scored: object,
         news_items: list[object],
         review_source_results: list[ReviewSourceResult],
+        frontline_stocks: list[object] | None = None,
     ) -> SectorCandidate:
         review_sources: list[str] = []
         review_notes: list[str] = []
-        top_stocks: list[StockCandidate] = []
+        top_stocks: list[StockCandidate] = [
+            _tickflow_quote_to_candidate(stock)
+            for stock in (frontline_stocks or [])
+        ]
         sector_name = getattr(scored, "name")
         for result in review_source_results:
             if result.status != "success":
@@ -268,6 +277,12 @@ class ReportGenerator:
             review_notes=_dedupe_strings(review_notes),
         )
 
+    def _get_sector_frontline_stocks(self, sector_name: str) -> list[object]:
+        get_frontline = getattr(self.market_provider, "get_sector_frontline_stocks", None)
+        if not callable(get_frontline):
+            return []
+        return list(get_frontline(sector_name))
+
 
 def _theme_matches(sector_name: str, theme_name: str) -> bool:
     sector_key = sector_name.lower()
@@ -303,6 +318,16 @@ def _review_stock_to_candidate(stock: object, source: str) -> StockCandidate:
         name=getattr(stock, "name"),
         pct_change=getattr(stock, "pct_change") or 0.0,
         tags=[getattr(stock, "source") or source],
+    )
+
+
+def _tickflow_quote_to_candidate(quote: object) -> StockCandidate:
+    return StockCandidate(
+        code=getattr(quote, "symbol") or "",
+        name=getattr(quote, "name") or getattr(quote, "symbol") or "",
+        pct_change=getattr(quote, "pct_change") or 0.0,
+        turnover_cny=getattr(quote, "turnover_cny") or None,
+        tags=["TickFlow前排"],
     )
 
 
