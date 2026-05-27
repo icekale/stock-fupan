@@ -232,10 +232,18 @@ def _prediction_focus_candidates(report: ReportDTO) -> list[str]:
     prediction = _top_numeric_prediction(report)
     if prediction is None:
         return []
-    focus = [stock.observation for stock in prediction.front_row_stocks[:3] if stock.observation]
+    focus = [_prediction_stock_candidate_text(stock) for stock in prediction.front_row_stocks[:3] if stock.name]
     if focus:
         return focus
     return prediction.trigger_conditions[:2]
+
+
+def _prediction_stock_candidate_text(stock: object) -> str:
+    name = getattr(stock, "name", "")
+    code = getattr(stock, "code", "")
+    observation = getattr(stock, "observation", "")
+    identity = f"{name} {code}".strip()
+    return f"{identity}：{observation}" if observation else identity
 
 
 def _next_day_focus_candidates(report: ReportDTO, leader_name: str) -> list[str]:

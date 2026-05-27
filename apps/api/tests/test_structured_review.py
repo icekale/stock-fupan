@@ -261,7 +261,48 @@ def test_build_structured_review_prefers_highest_prediction_for_tomorrow_view() 
     review = build_structured_review(report)
 
     assert review.tomorrow_judgement.most_likely_to_continue == "PCB"
-    assert review.next_day_opportunity.focus_candidates[0] == "观察胜宏科技竞价是否强于板块平均。"
+    assert review.next_day_opportunity.focus_candidates[0] == "胜宏科技 300476.SZ：观察胜宏科技竞价是否强于板块平均。"
+
+
+def test_prediction_opportunity_candidates_include_stock_names_and_codes() -> None:
+    report = _fake_report()
+    report.next_day_predictions = [
+        NextDayPrediction(
+            sector="电力",
+            rank=1,
+            continuation_probability=82,
+            confidence=PredictionConfidence.HIGH,
+            headline="电力延续概率较高。",
+            front_row_stocks=[
+                PredictionStockFocus(
+                    code="000539.SZ",
+                    name="粤电力Ａ",
+                    pct_change=10.04,
+                    role="前排强势股",
+                    source_tags=["TickFlow前排"],
+                    observation="涨幅约10.04%，位于前排领涨位，观察竞价溢价与开盘承接，确认是否继续维持队形。",
+                ),
+                PredictionStockFocus(
+                    code="001299.SZ",
+                    name="美能能源",
+                    pct_change=10.02,
+                    role="前排强势股",
+                    source_tags=["TickFlow前排"],
+                    observation="涨幅约10.02%，位于前排同梯队，观察竞价溢价与开盘承接，确认是否继续维持队形。",
+                ),
+            ],
+            trigger_conditions=["观察粤电力Ａ、美能能源竞价是否强于板块平均。"],
+            invalidation_conditions=["前排股集体低开低走。"],
+            risk_labels=[],
+        )
+    ]
+
+    review = build_structured_review(report)
+    focus_text = "\n".join(review.next_day_opportunity.focus_candidates)
+
+    assert "粤电力Ａ 000539.SZ" in focus_text
+    assert "美能能源 001299.SZ" in focus_text
+    assert "观察竞价溢价与开盘承接" in focus_text
 
 
 def test_build_structured_review_tracks_previous_strong_themes() -> None:
