@@ -208,6 +208,9 @@ def _build_index_mid_term_outlook(report: ReportDTO) -> IndexMidTermOutlook:
 def _build_sector_review(sector: SectorCandidate) -> StructuredSectorReview:
     rating = _rating_for_sector(sector)
     news_evidence = _compact_news_evidence(sector.news_summaries)
+    review_evidence = _compact_news_evidence(sector.review_notes, max_length=96)
+    front_row_text = _front_row_stock_text(sector)
+    source_text = "、".join(sector.review_sources) if sector.review_sources else "复盘源暂未确认"
     return StructuredSectorReview(
         sector=sector.name,
         headline=f"{sector.name}：{_headline_suffix(rating)}",
@@ -215,20 +218,22 @@ def _build_sector_review(sector: SectorCandidate) -> StructuredSectorReview:
         strengths=[
             f"涨跌幅{sector.pct_change:+.2f}%",
             f"综合评分{sector.score:.1f}",
-            news_evidence or sector.reason,
+            front_row_text or "前排个股仍待复盘源确认",
+            review_evidence or news_evidence or sector.reason,
         ],
-        weaknesses=["短线一致后可能出现分歧", "后排跟风股承接要求更高"],
-        logic="短线强度、板块广度与消息催化共同决定当前排序。",
+        weaknesses=["后排跟风股承接要求更高", "若前排放量开板，板块容易分化"],
+        logic=f"{sector.name}的判断优先看前排股强度，其次看同花顺/东方财富复盘源是否共同确认。",
         logic_points=[
             f"价格强度：板块涨跌幅{sector.pct_change:+.2f}%。",
             f"评分结构：综合评分{sector.score:.1f}，排名第{sector.rank}。",
-            "消息线索：有真实新闻时作为催化观察，没有新闻时只保留技术强度判断。",
+            f"复盘源确认：{source_text}。",
+            f"前排个股：{front_row_text or '暂未解析到明确前排股'}。",
         ],
         sustainability_analysis=_sustainability_analysis(sector, rating),
         sustainability=rating,
-        next_day_view=f"观察{sector.name}方向分歧后的核心股承接，而不是简单追逐后排补涨。",
-        watch_items=[f"{sector.name}核心股回踩承接", "板块内强弱切换是否温和"],
-        avoid_items=["缩量冲高回落", "无催化的低位跟风"],
+        next_day_view=f"观察{sector.name}前排股分歧后的承接，优先看{front_row_text or '核心股'}，不追后排补涨。",
+        watch_items=[f"{sector.name}前排股竞价和开盘承接", "板块内强弱切换是否温和"],
+        avoid_items=["缩量冲高回落", "无复盘源确认的低位跟风"],
     )
 
 
@@ -256,11 +261,16 @@ def _compact_news_evidence(news_summaries: list[str], max_length: int = 72) -> s
 
 
 def _rating_for_sector(sector: SectorCandidate) -> SustainabilityRating:
-    if sector.score >= 70 and sector.news_summaries:
+    if sector.score >= 70 and (sector.news_summaries or sector.review_sources):
         return "high"
     if sector.score >= 45:
         return "medium"
     return "low"
+
+
+def _front_row_stock_text(sector: SectorCandidate) -> str:
+    stocks = [stock for stock in sector.top_stocks if stock.name]
+    return "、".join(f"{stock.name}{stock.pct_change:+.2f}%" for stock in stocks[:4])
 
 
 def _headline_suffix(rating: SustainabilityRating) -> str:

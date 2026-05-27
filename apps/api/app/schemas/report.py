@@ -59,6 +59,8 @@ class SectorCandidate(BaseModel):
     news_summaries: list[str] = Field(default_factory=list)
     factor_scores: dict[str, float] = Field(default_factory=dict)
     confidence: str = "medium"
+    review_sources: list[str] = Field(default_factory=list)
+    review_notes: list[str] = Field(default_factory=list)
 
 
 class ReportNarrative(BaseModel):

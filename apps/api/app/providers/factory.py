@@ -15,6 +15,12 @@ from app.providers.ocr import (
     OcrProvider,
     OpenAIVisionOcrProvider,
 )
+from app.providers.review_sources import (
+    AkShareReviewProvider,
+    EastmoneyZtFpProvider,
+    ReviewSourceAggregator,
+    ThsFupanProvider,
+)
 from app.providers.tickflow import (
     FakeTickFlowProvider,
     FallbackTickFlowProvider,
@@ -31,6 +37,7 @@ class ProviderBundle:
     llm_provider: LLMProvider
     ocr_provider: OcrProvider
     tickflow_provider: TickFlowQuoteProvider
+    review_source_provider: ReviewSourceAggregator | None = None
 
     def close(self) -> None:
         _close_provider(self.market_provider)
@@ -38,6 +45,8 @@ class ProviderBundle:
         _close_provider(self.llm_provider)
         _close_provider(self.ocr_provider)
         _close_provider(self.tickflow_provider)
+        if self.review_source_provider is not None:
+            _close_provider(self.review_source_provider)
 
     def __enter__(self) -> "ProviderBundle":
         return self
@@ -54,6 +63,7 @@ def create_provider_bundle(settings: Settings) -> ProviderBundle:
         llm_provider=_create_llm_provider(settings),
         ocr_provider=_create_ocr_provider(settings),
         tickflow_provider=_create_tickflow_provider(settings),
+        review_source_provider=_create_review_source_provider(settings),
     )
 
 
@@ -140,6 +150,26 @@ def _create_tickflow_provider(settings: Settings) -> TickFlowQuoteProvider:
             fallback_enabled=settings.provider_fallback_enabled,
         )
     raise ValueError(f"Unsupported TICKFLOW_PROVIDER: {settings.tickflow_provider}")
+
+
+def _create_review_source_provider(settings: Settings) -> ReviewSourceAggregator | None:
+    if not settings.review_sources_enabled:
+        return None
+    providers: list[object] = [
+        ThsFupanProvider(
+            source_url=settings.ths_fupan_url,
+            timeout_seconds=settings.provider_timeout_seconds,
+        ),
+        EastmoneyZtFpProvider(
+            source_url=settings.eastmoney_ztfp_url,
+            timeout_seconds=settings.provider_timeout_seconds,
+        ),
+    ]
+    if settings.akshare_review_source_enabled:
+        providers.append(AkShareReviewProvider())
+    return ReviewSourceAggregator(
+        providers=providers
+    )
 
 
 def _close_provider(provider: object) -> None:

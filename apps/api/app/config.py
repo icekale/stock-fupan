@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     report_brand_name: str = ""
     report_brand_footer: str = ""
     report_disclaimer_enabled: bool = True
+    review_sources_enabled: bool = True
+    akshare_review_source_enabled: bool = True
+    ths_fupan_url: str = "https://stock.10jqka.com.cn/fupan/"
+    eastmoney_ztfp_url: str = "https://stock.eastmoney.com/a/cztfp.html"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
