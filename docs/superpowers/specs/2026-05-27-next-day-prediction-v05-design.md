@@ -28,7 +28,7 @@ The prediction module must preserve the existing source boundary:
 | Data role | Allowed source |
 | --- | --- |
 | Curated daily review evidence | 同花顺复盘 `https://stock.10jqka.com.cn/fupan/` and 东方财富涨停复盘 `https://stock.eastmoney.com/a/cztfp.html` only |
-| Market / quote strength | TickFlow first, existing market provider as fallback only where already supported |
+| Market / quote strength | TickFlow first, including official Python SDK / HTTP API quote data; existing market provider as fallback only where already supported |
 | News / catalyst evidence | Anspire news provider |
 | Watchlist observation | User-imported watchlist, disabled by default |
 
@@ -36,7 +36,7 @@ AkShare or other market data adapters must not be described as curated review so
 
 ## Non-Goals
 
-- No intraday real-time trading assistant.
+- No intraday real-time trading assistant in v0.5; TickFlow intraday data is reserved for confirmation signals and a later v0.6 intraday monitor.
 - No order instructions, price targets, position sizing orders, or guaranteed recommendations.
 - No LLM-dependent scoring for v0.5. The MVP scoring model is deterministic and testable.
 - No fake fallback content in production paths.
@@ -62,6 +62,8 @@ For each `SectorCandidate`:
 
 ### Market Inputs
 
+TickFlow should be treated as the preferred market data provider because its official Python SDK / API supports A-shares, ETFs, US stocks, Hong Kong stocks, domestic futures, realtime quotes, universe data, intraday bars, and WebSocket streams. In v0.5, the prediction module should consume TickFlow-derived close or latest quote strength through the existing normalized report pipeline. It should not introduce a live polling loop inside report generation.
+
 From `ReportDTO`:
 
 - `breadth.limit_up_count`
@@ -70,6 +72,7 @@ From `ReportDTO`:
 - `breadth.down_count`
 - `turnover_cny`
 - `market_state_tags`
+- TickFlow-derived all-market quote breadth and strong-stock grouping when `MARKET_PROVIDER=tickflow`.
 
 ### Review Source Inputs
 
@@ -241,6 +244,26 @@ Include 3-5 concrete invalidation rules:
 
 ## Integration Points
 
+### TickFlow Provider Direction
+
+The existing `apps/api/app/providers/tickflow.py` already has an HTTP provider shape for batch quotes, universe quotes, A-share universe strength, industry universes, and watchlist quotes. During implementation, keep the report predictor behind normalized provider methods instead of binding directly to a specific SDK call.
+
+Implementation should support two compatible directions:
+
+1. Preserve the current HTTP adapter as the stable default.
+2. Add a thin SDK-backed adapter later if the official `tickflow` Python package is installed and offers equivalent quote/universe/intraday methods.
+
+The prediction service should not know which adapter supplied the data. It should only consume `ReportDTO`, sector candidates, and optional review-source evidence.
+
+### Future Intraday Confirmation
+
+TickFlow intraday support should become a separate module after v0.5, not a blocker for this implementation. The proposed v0.6 extension is:
+
+- Store prediction candidates after close.
+- During the next trading day, use TickFlow realtime quotes / intraday bars / WebSocket streams to check trigger conditions.
+- Mark each candidate as `confirmed`, `watching`, or `invalidated`.
+- Append an intraday confirmation block to a later report or dashboard without rewriting the original after-close evidence.
+
 ### Service
 
 Create `apps/api/app/services/next_day_prediction.py`.
@@ -392,6 +415,7 @@ Expected final result:
 The feature is complete when:
 
 - Main report generation includes next-day predictions as part of `ReportDTO`.
+- TickFlow remains the preferred normalized market/quote layer, with SDK/intraday support reserved behind provider interfaces rather than embedded inside scoring logic.
 - The HTML report prominently displays next-day probability and observation conditions.
 - Predictions are based on curated review evidence plus market/news strength, not fabricated text.
 - Missing evidence produces clear evidence-insufficient output.
