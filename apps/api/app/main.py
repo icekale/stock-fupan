@@ -36,6 +36,24 @@ class ConfirmOcrPreviewRequest(BaseModel):
     preview_id: str
 
 
+def _status_item(
+    name: str,
+    role: str,
+    configured: bool,
+    enabled: bool,
+    status: str,
+    detail: str,
+) -> dict[str, object]:
+    return {
+        "name": name,
+        "role": role,
+        "configured": configured,
+        "enabled": enabled,
+        "status": status,
+        "detail": detail,
+    }
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     engine = get_engine()
@@ -123,6 +141,76 @@ def confirm_watchlist_ocr(request: ConfirmOcrPreviewRequest) -> dict[str, object
 @app.get("/api/watchlists/latest")
 def get_latest_watchlist() -> dict[str, object]:
     return _watchlist_service().get_latest().model_dump(mode="json")
+
+
+@app.get("/api/config/status")
+def get_config_status() -> dict[str, object]:
+    settings = get_settings()
+    tickflow_enabled = settings.market_provider == "tickflow" or settings.tickflow_provider == "tickflow"
+    anspire_enabled = settings.news_provider == "anspire"
+    review_sources_enabled = settings.review_sources_enabled
+    watchlist_enabled = settings.report_watchlist_enabled
+    ocr_is_fake = settings.ocr_provider == "fake"
+    return {
+        "items": [
+            _status_item(
+                name="TickFlow",
+                role="主源 · 行情",
+                configured=bool(settings.tickflow_api_key),
+                enabled=tickflow_enabled,
+                status=_external_status(tickflow_enabled, bool(settings.tickflow_api_key)),
+                detail=f"MARKET_PROVIDER={settings.market_provider} · TICKFLOW_PROVIDER={settings.tickflow_provider}",
+            ),
+            _status_item(
+                name="Anspire",
+                role="主源 · 新闻",
+                configured=bool(settings.anspire_api_key),
+                enabled=anspire_enabled,
+                status=_external_status(anspire_enabled, bool(settings.anspire_api_key)),
+                detail=f"NEWS_PROVIDER={settings.news_provider}",
+            ),
+            _status_item(
+                name="同花顺复盘",
+                role="辅助源 · 题材复盘",
+                configured=bool(settings.ths_fupan_url),
+                enabled=review_sources_enabled,
+                status="ready" if review_sources_enabled else "disabled",
+                detail="REVIEW_SOURCES_ENABLED=true" if review_sources_enabled else "REVIEW_SOURCES_ENABLED=false",
+            ),
+            _status_item(
+                name="东方财富涨停复盘",
+                role="辅助源 · 涨停质量",
+                configured=bool(settings.eastmoney_ztfp_url),
+                enabled=review_sources_enabled,
+                status="ready" if review_sources_enabled else "disabled",
+                detail="REVIEW_SOURCES_ENABLED=true" if review_sources_enabled else "REVIEW_SOURCES_ENABLED=false",
+            ),
+            _status_item(
+                name="自选股模块",
+                role="本地 · 自选股观察",
+                configured=True,
+                enabled=watchlist_enabled,
+                status="local" if watchlist_enabled else "disabled",
+                detail="REPORT_WATCHLIST_ENABLED=true" if watchlist_enabled else "REPORT_WATCHLIST_ENABLED=false",
+            ),
+            _status_item(
+                name="OCR",
+                role="本地 · 图片识别",
+                configured=ocr_is_fake or bool(settings.openai_api_key),
+                enabled=True,
+                status="local" if ocr_is_fake else _external_status(True, bool(settings.openai_api_key)),
+                detail=f"OCR_PROVIDER={settings.ocr_provider}",
+            ),
+        ]
+    }
+
+
+def _external_status(enabled: bool, configured: bool) -> str:
+    if not enabled:
+        return "disabled"
+    if not configured:
+        return "missing_key"
+    return "ready"
 
 
 @app.get("/api/reports")

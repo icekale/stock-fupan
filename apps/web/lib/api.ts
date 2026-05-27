@@ -1,4 +1,5 @@
 import type {
+  ConfigStatusResponse,
   CreateReportResponse,
   ReportKind,
   ReportListResponse,
@@ -49,6 +50,14 @@ export async function listReports(): Promise<ReportListResponse> {
     throw new Error(`读取报告列表失败：${response.status} ${await response.text()}`);
   }
   return response.json() as Promise<ReportListResponse>;
+}
+
+export async function getConfigStatus(): Promise<ConfigStatusResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/config/status`);
+  if (!response.ok) {
+    throw new Error(`读取数据源状态失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<ConfigStatusResponse>;
 }
 
 export function reportAssetUrl(path: string): string {

@@ -104,6 +104,35 @@ def test_report_api_lists_reports_and_serves_assets(tmp_path: Path, monkeypatch)
         assert "2026-05-26-午间复盘" in asset_response.text
 
 
+def test_config_status_api_returns_sanitized_provider_state(monkeypatch) -> None:
+    monkeypatch.setenv("MARKET_PROVIDER", "tickflow")
+    monkeypatch.setenv("NEWS_PROVIDER", "anspire")
+    monkeypatch.setenv("TICKFLOW_PROVIDER", "tickflow")
+    monkeypatch.setenv("REVIEW_SOURCES_ENABLED", "true")
+    monkeypatch.setenv("REPORT_WATCHLIST_ENABLED", "false")
+    monkeypatch.setenv("OCR_PROVIDER", "fake")
+    monkeypatch.setenv("TICKFLOW_API_KEY", "tk_secret_should_not_leak")
+    monkeypatch.setenv("ANSPIRE_API_KEY", "sk-secret-should-not-leak")
+    get_settings.cache_clear()
+
+    with TestClient(app) as client:
+        response = client.get("/api/config/status")
+
+    assert response.status_code == 200
+    payload = response.json()
+    items = {item["name"]: item for item in payload["items"]}
+    assert items["TickFlow"]["status"] == "ready"
+    assert items["TickFlow"]["configured"] is True
+    assert items["TickFlow"]["enabled"] is True
+    assert items["Anspire"]["status"] == "ready"
+    assert items["同花顺复盘"]["status"] == "ready"
+    assert items["东方财富涨停复盘"]["status"] == "ready"
+    assert items["自选股模块"]["status"] == "disabled"
+    assert items["OCR"]["status"] == "local"
+    assert "tk_secret_should_not_leak" not in response.text
+    assert "sk-secret-should-not-leak" not in response.text
+
+
 def test_create_close_report_api_returns_provider_status(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("REPORTS_ROOT", str(tmp_path))
     monkeypatch.setenv("MARKET_PROVIDER", "fake")

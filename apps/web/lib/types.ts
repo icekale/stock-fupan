@@ -237,3 +237,18 @@ export type ReportListItem = {
 export type ReportListResponse = {
   items: ReportListItem[];
 };
+
+export type ConfigStatusState = "ready" | "missing_key" | "disabled" | "local";
+
+export type ConfigStatusItem = {
+  name: string;
+  role: string;
+  configured: boolean;
+  enabled: boolean;
+  status: ConfigStatusState;
+  detail: string;
+};
+
+export type ConfigStatusResponse = {
+  items: ConfigStatusItem[];
+};
