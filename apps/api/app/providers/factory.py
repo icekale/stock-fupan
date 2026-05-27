@@ -3,9 +3,7 @@ from dataclasses import dataclass
 from app.config import Settings
 from app.providers.llm import FakeLLMProvider, LLMProvider, OpenAILLMProvider
 from app.providers.market import (
-    AkShareMarketDataProvider,
     FakeMarketDataProvider,
-    FallbackMarketDataProvider,
     MarketDataProvider,
 )
 from app.providers.news import AnspireNewsProvider, FakeNewsProvider, FallbackNewsProvider, NewsProvider
@@ -70,20 +68,10 @@ def _create_market_provider(settings: Settings) -> MarketDataProvider:
     if settings.market_provider == "fake":
         return FakeMarketDataProvider()
     if settings.market_provider == "tickflow":
-        return FallbackMarketDataProvider(
-            primary=TickFlowMarketDataProvider(
-                api_key=settings.tickflow_api_key,
-                base_url=settings.tickflow_base_url,
-                timeout_seconds=settings.provider_timeout_seconds,
-            ),
-            fallback=AkShareMarketDataProvider(),
-            fallback_enabled=settings.provider_fallback_enabled,
-        )
-    if settings.market_provider == "akshare":
-        return FallbackMarketDataProvider(
-            primary=AkShareMarketDataProvider(),
-            fallback=FakeMarketDataProvider(),
-            fallback_enabled=settings.provider_fallback_enabled,
+        return TickFlowMarketDataProvider(
+            api_key=settings.tickflow_api_key,
+            base_url=settings.tickflow_base_url,
+            timeout_seconds=settings.provider_timeout_seconds,
         )
     raise ValueError(f"Unsupported MARKET_PROVIDER: {settings.market_provider}")
 

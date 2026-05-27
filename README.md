@@ -65,8 +65,8 @@ ANSPIRE_API_KEY=
 
 Behavior:
 
-- TickFlow is the preferred market data source for generated reports.
-- AkShare remains available as a real provider path, but production reports should fail visibly rather than emit fake market data.
+- TickFlow is the only market data source for generated reports.
+- Market provider failures stop the report run when `PROVIDER_FALLBACK_ENABLED=false`; production reports must fail visibly rather than emit fake market data.
 - Anspire requires `ANSPIRE_API_KEY`; missing key, API errors, timeouts, and empty results are reflected in provider diagnostics.
 - Provider diagnostics are returned in `provider_status` and saved in `snapshot.json`.
 
@@ -187,13 +187,13 @@ docker compose up --build
 
 Then open `http://localhost:3000`.
 
-## v0.2 Scope
+## Current Scope
 
 - Generate a close-market review through `POST /api/reports/close`.
-- Use AkShare market data and Anspire news search by default.
-- Fall back to deterministic fake market/news providers with visible diagnostics.
+- Use TickFlow market data and Anspire news search by default.
+- Keep deterministic fake providers for tests/local demos only; production-grade reports disable fake fallback.
 - Persist report metadata and generated report assets locally.
-- Render a mobile-friendly HTML/PNG report and expose it through the frontend.
+- Render the reference-style HTML/PNG report and expose it through the frontend.
 - Support local browser-to-API calls from `http://localhost:3000`.
 
 ## Future v0.3 Items

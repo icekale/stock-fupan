@@ -1,13 +1,9 @@
-from datetime import date
-
-import pandas as pd
 import pytest
 
 from app.config import Settings
 from app.providers.factory import create_provider_bundle
 from app.providers.llm import OpenAILLMProvider
 from app.providers.market import (
-    AkShareMarketDataProvider,
     FakeMarketDataProvider,
     FallbackMarketDataProvider,
     MarketCloseSnapshot,
@@ -16,22 +12,23 @@ from app.providers.market import (
 from app.providers.market import ProviderStatus
 from app.providers.news import AnspireNewsProvider, FakeNewsProvider, FallbackNewsProvider, SectorNewsResult
 from app.providers.tickflow import FallbackTickFlowProvider
+from app.providers.tickflow import TickFlowMarketDataProvider
 from app.schemas.report import NewsItem
 
 
 def test_provider_status_serializes_for_snapshot() -> None:
     status = ProviderStatus(
-        provider="akshare",
+        provider="tickflow",
         status="fallback",
         fallback_used=True,
-        reason="AkShare v0.2 暂不支持历史日期",
+        reason="TickFlow 行情数据不足",
     )
 
     assert status.model_dump(mode="json") == {
-        "provider": "akshare",
+        "provider": "tickflow",
         "status": "fallback",
         "fallback_used": True,
-        "reason": "AkShare v0.2 暂不支持历史日期",
+        "reason": "TickFlow 行情数据不足",
     }
 
 
@@ -62,10 +59,10 @@ def test_sector_news_result_keeps_sector_status_and_items() -> None:
 
 
 class BrokenMarketProvider:
-    provider_name = "akshare"
+    provider_name = "tickflow"
 
     def get_close_snapshot(self, trade_date: str) -> MarketCloseSnapshot:
-        raise ProviderFallbackError("AkShare v0.2 暂不支持历史日期")
+        raise ProviderFallbackError("TickFlow 行情数据不足")
 
 
 class BrokenNewsProvider:
@@ -85,10 +82,10 @@ def test_market_fallback_returns_fake_snapshot_and_reason() -> None:
     snapshot, status = provider.get_close_snapshot_with_status("2026-05-25")
 
     assert snapshot.raw_sectors[0].name == "机器人"
-    assert status.provider == "akshare"
+    assert status.provider == "tickflow"
     assert status.status == "fallback"
     assert status.fallback_used is True
-    assert status.reason == "AkShare v0.2 暂不支持历史日期"
+    assert status.reason == "TickFlow 行情数据不足"
 
 
 def test_market_fallback_can_raise_when_disabled() -> None:
@@ -117,195 +114,6 @@ def test_news_fallback_returns_fake_items_and_reason() -> None:
     assert result.status.fallback_used is True
     assert result.status.reason == "ANSPIRE_API_KEY 未配置"
 
-
-def test_akshare_provider_builds_current_market_snapshot(monkeypatch) -> None:
-    class FakeAkshare:
-        @staticmethod
-        def stock_zh_index_spot_em() -> pd.DataFrame:
-            return pd.DataFrame(
-                [
-                    {"名称": "上证指数", "代码": "000001", "最新价": 3100.5, "涨跌幅": 1.2},
-                    {"名称": "创业板指", "代码": "399006", "最新价": 1950.2, "涨跌幅": 2.1},
-                ]
-            )
-
-        @staticmethod
-        def stock_zh_a_spot_em() -> pd.DataFrame:
-            return pd.DataFrame(
-                [
-                    {"代码": "000001", "名称": "平安银行", "涨跌幅": 1.0, "成交额": 100000000},
-                    {"代码": "000002", "名称": "万科A", "涨跌幅": -1.0, "成交额": 200000000},
-                    {"代码": "000003", "名称": "涨停股", "涨跌幅": 10.0, "成交额": 300000000},
-                    {"代码": "000004", "名称": "跌停股", "涨跌幅": -10.0, "成交额": 400000000},
-                ]
-            )
-
-        @staticmethod
-        def stock_board_industry_name_em() -> pd.DataFrame:
-            return pd.DataFrame(
-                [
-                    {"板块名称": "机器人", "涨跌幅": 5.88, "上涨家数": 41, "下跌家数": 9, "总成交额": 35000000000},
-                    {"板块名称": "PCB", "涨跌幅": 3.6, "上涨家数": 35, "下跌家数": 15, "总成交额": 22000000000},
-                ]
-            )
-
-    provider = AkShareMarketDataProvider(
-        akshare_module=FakeAkshare,
-        today=date(2026, 5, 26),
-    )
-
-    snapshot = provider.get_close_snapshot("2026-05-26")
-
-    assert snapshot.indices[0].name == "上证指数"
-    assert snapshot.breadth.up_count == 2
-    assert snapshot.breadth.down_count == 2
-    assert snapshot.breadth.limit_up_count == 1
-    assert snapshot.breadth.limit_down_count == 1
-    assert snapshot.turnover_cny == 10.0
-    assert snapshot.raw_sectors[0].name == "机器人"
-    assert snapshot.raw_sectors[0].stock_up_ratio == 0.82
-
-
-def test_akshare_provider_rejects_historical_date() -> None:
-    provider = AkShareMarketDataProvider(today=date(2026, 5, 26))
-
-    with pytest.raises(ProviderFallbackError, match="历史日期"):
-        provider.get_close_snapshot("2026-05-25")
-
-
-def _valid_index_df() -> pd.DataFrame:
-    return pd.DataFrame(
-        [
-            {"名称": "上证指数", "代码": "000001", "最新价": 3100.5, "涨跌幅": 1.2},
-            {"名称": "创业板指", "代码": "399006", "最新价": 1950.2, "涨跌幅": 2.1},
-        ]
-    )
-
-
-def _valid_stock_df() -> pd.DataFrame:
-    return pd.DataFrame(
-        [
-            {"代码": "000001", "名称": "平安银行", "涨跌幅": 1.0, "成交额": 100000000},
-            {"代码": "000002", "名称": "万科A", "涨跌幅": -1.0, "成交额": 200000000},
-        ]
-    )
-
-
-def _valid_sector_df() -> pd.DataFrame:
-    return pd.DataFrame(
-        [
-            {"板块名称": "机器人", "涨跌幅": 5.88, "上涨家数": 41, "下跌家数": 9},
-        ]
-    )
-
-
-class ConfigurableFakeAkshare:
-    index_df = _valid_index_df()
-    stock_df = _valid_stock_df()
-    sector_df = _valid_sector_df()
-
-    @classmethod
-    def stock_zh_index_spot_em(cls) -> pd.DataFrame:
-        return cls.index_df
-
-    @classmethod
-    def stock_zh_a_spot_em(cls) -> pd.DataFrame:
-        return cls.stock_df
-
-    @classmethod
-    def stock_board_industry_name_em(cls) -> pd.DataFrame:
-        return cls.sector_df
-
-
-@pytest.mark.parametrize(
-    ("index_df", "stock_df", "sector_df"),
-    [
-        (pd.DataFrame(), _valid_stock_df(), _valid_sector_df()),
-        (_valid_index_df(), pd.DataFrame(), _valid_sector_df()),
-        (_valid_index_df(), _valid_stock_df(), pd.DataFrame()),
-    ],
-)
-def test_akshare_provider_raises_for_empty_dataframes(index_df, stock_df, sector_df) -> None:
-    class FakeAkshare(ConfigurableFakeAkshare):
-        pass
-
-    FakeAkshare.index_df = index_df
-    FakeAkshare.stock_df = stock_df
-    FakeAkshare.sector_df = sector_df
-    provider = AkShareMarketDataProvider(akshare_module=FakeAkshare, today=date(2026, 5, 26))
-
-    with pytest.raises(ProviderFallbackError, match="空数据"):
-        provider.get_close_snapshot("2026-05-26")
-
-
-@pytest.mark.parametrize(
-    ("stock_df", "sector_df"),
-    [
-        (_valid_stock_df().drop(columns=["涨跌幅"]), _valid_sector_df()),
-        (_valid_stock_df().drop(columns=["成交额"]), _valid_sector_df()),
-        (_valid_stock_df(), _valid_sector_df().drop(columns=["上涨家数"])),
-        (_valid_stock_df(), _valid_sector_df().drop(columns=["下跌家数"])),
-        (_valid_stock_df(), _valid_sector_df().drop(columns=["涨跌幅"])),
-    ],
-)
-def test_akshare_provider_raises_for_missing_required_columns(stock_df, sector_df) -> None:
-    class FakeAkshare(ConfigurableFakeAkshare):
-        pass
-
-    FakeAkshare.index_df = _valid_index_df()
-    FakeAkshare.stock_df = stock_df
-    FakeAkshare.sector_df = sector_df
-    provider = AkShareMarketDataProvider(akshare_module=FakeAkshare, today=date(2026, 5, 26))
-
-    with pytest.raises(ProviderFallbackError, match="缺少字段"):
-        provider.get_close_snapshot("2026-05-26")
-
-
-@pytest.mark.parametrize("bad_value", ["not-a-number", float("nan"), float("inf")])
-@pytest.mark.parametrize(
-    ("frame_name", "column_name"),
-    [
-        ("stock", "涨跌幅"),
-        ("stock", "成交额"),
-        ("sector", "上涨家数"),
-        ("sector", "下跌家数"),
-        ("sector", "涨跌幅"),
-    ],
-)
-def test_akshare_provider_raises_for_invalid_required_numbers(bad_value, frame_name, column_name) -> None:
-    stock_df = _valid_stock_df()
-    sector_df = _valid_sector_df()
-    if frame_name == "stock":
-        stock_df[column_name] = stock_df[column_name].astype(object)
-        stock_df.loc[0, column_name] = bad_value
-    else:
-        sector_df[column_name] = sector_df[column_name].astype(object)
-        sector_df.loc[0, column_name] = bad_value
-
-    class FakeAkshare(ConfigurableFakeAkshare):
-        pass
-
-    FakeAkshare.index_df = _valid_index_df()
-    FakeAkshare.stock_df = stock_df
-    FakeAkshare.sector_df = sector_df
-    provider = AkShareMarketDataProvider(akshare_module=FakeAkshare, today=date(2026, 5, 26))
-
-    with pytest.raises(ProviderFallbackError, match="非数字字段"):
-        provider.get_close_snapshot("2026-05-26")
-
-
-def test_akshare_provider_sanitizes_unexpected_fetch_failures() -> None:
-    class BrokenAkshare:
-        @staticmethod
-        def stock_zh_index_spot_em() -> pd.DataFrame:
-            raise RuntimeError("('Connection aborted.', RemoteDisconnected('Remote end closed connection without response'))")
-
-    provider = AkShareMarketDataProvider(akshare_module=BrokenAkshare, today=date(2026, 5, 26))
-
-    with pytest.raises(ProviderFallbackError) as exc_info:
-        provider.get_close_snapshot("2026-05-26")
-
-    assert str(exc_info.value) == "AkShare 请求失败: RuntimeError"
 
 
 class FakeResponse:
@@ -436,18 +244,18 @@ def test_anspire_provider_sanitizes_request_failures() -> None:
     assert "Authorization" not in message
 
 
-def test_provider_factory_uses_real_providers_by_default() -> None:
+def test_provider_factory_uses_tickflow_market_without_market_fallback() -> None:
     settings = Settings(
-        market_provider="akshare",
+        market_provider="tickflow",
         news_provider="anspire",
-        provider_fallback_enabled=True,
+        provider_fallback_enabled=False,
         anspire_api_key="secret-key",
+        tickflow_api_key="tk-test-local",
     )
 
     bundle = create_provider_bundle(settings)
 
-    assert isinstance(bundle.market_provider, FallbackMarketDataProvider)
-    assert isinstance(bundle.market_provider.primary, AkShareMarketDataProvider)
+    assert isinstance(bundle.market_provider, TickFlowMarketDataProvider)
     assert isinstance(bundle.news_provider, FallbackNewsProvider)
     assert isinstance(bundle.news_provider.primary, AnspireNewsProvider)
 
@@ -465,7 +273,7 @@ def test_provider_bundle_close_closes_nested_anspire_owned_client(monkeypatch) -
     owned_client = FakeHttpClient()
     monkeypatch.setattr("app.providers.news.httpx.Client", lambda: owned_client)
     settings = Settings(
-        market_provider="akshare",
+        market_provider="tickflow",
         news_provider="anspire",
         anspire_api_key="secret-key",
     )
@@ -502,7 +310,7 @@ def test_provider_factory_rejects_fake_market_provider_in_production() -> None:
 def test_provider_factory_rejects_fake_fallback_in_production() -> None:
     settings = Settings(
         app_env="production",
-        market_provider="akshare",
+        market_provider="tickflow",
         news_provider="anspire",
         llm_provider="openai",
         openai_api_key="sk-test-local",
@@ -530,6 +338,8 @@ def test_provider_factory_can_create_openai_llm_provider() -> None:
 
     assert isinstance(bundle.llm_provider, OpenAILLMProvider)
     assert bundle.llm_provider.model_name == "gpt-4.1-mini"
+
+
 def test_provider_factory_includes_tickflow_provider() -> None:
     settings = Settings(
         tickflow_provider="tickflow",
