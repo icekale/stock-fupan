@@ -43,7 +43,7 @@ def build_structured_review(report: ReportDTO) -> StructuredReviewDTO:
             most_likely_to_diverge=runner_up_name,
             rotation_candidates=[sector.name for sector in report.sectors[1:4]],
             defensive_candidates=["高股息", "低位防御"],
-            core_view=f"明日重点不是追高扩散，而是观察科技内部{leader_name}分歧后的承接与{runner_up_name}轮动强度。",
+            core_view=f"明日重点不是追高扩散，而是观察{leader_name}分歧后的承接与{runner_up_name}轮动强度。",
             operating_focus=[
                 f"先看{leader_name}是否温和分歧后继续承接。",
                 f"再看{runner_up_name}能否从轮动转为持续。",

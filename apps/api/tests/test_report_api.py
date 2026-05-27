@@ -10,13 +10,14 @@ from app.main import app
 from app.db.models import Report, ReportKindModel, ReportStatusModel
 from app.db.session import create_sqlite_engine, init_db, session_scope
 from app.providers.llm import FakeLLMProvider, LLMFallbackError
-from app.providers.market import FakeMarketDataProvider
+from app.providers.market import FakeMarketDataProvider, MarketBreadth, MarketCloseSnapshot
+from app.rules.scoring import RawSectorInput
 from app.providers.news import FakeNewsProvider
 from app.providers.tickflow import FakeTickFlowProvider
 from app.renderers.html_renderer import render_mobile_report_html
 from app.rules.scoring import score_sectors
 from app.rules.validation import validate_narrative_facts
-from app.schemas.report import ReportDTO, ReportKind, SectorCandidate
+from app.schemas.report import IndexSnapshot, ReportDTO, ReportKind, SectorCandidate
 from app.services import report_generator as report_generator_module
 from app.services.report_generator import ReportGenerator
 from app.watchlist.parser import WatchlistItem
@@ -313,7 +314,7 @@ def test_mobile_report_renderer_contains_core_sections(tmp_path: Path) -> None:
     for title in expected_titles:
         assert title in html
     assert "自选股观察" not in html
-    assert "科技内部" in html
+    assert "轮动强度" in html
     assert "非投资建议" in html
 
 
@@ -344,6 +345,86 @@ def test_report_generator_writes_structured_review_status_on_llm_fallback(tmp_pa
     }
     snapshot = json.loads(result.assets.snapshot.read_text(encoding="utf-8"))
     assert snapshot["structured_review_status"] == result.structured_review_status
+
+
+class ConflictingRawAndScoredMarketProvider:
+    def get_close_snapshot(self, trade_date: str) -> MarketCloseSnapshot:
+        return MarketCloseSnapshot(
+            trade_date=trade_date,
+            indices=[
+                IndexSnapshot(name="上证指数", code="000001", close=3100.5, pct_change=1.2)
+            ],
+            breadth=MarketBreadth(up_count=3000, down_count=2000, limit_up_count=40, limit_down_count=5),
+            turnover_cny=12000,
+            market_state_tags=["分化", "放量"],
+            raw_sectors=[
+                RawSectorInput(
+                    name="会展服务",
+                    pct_change=5.23,
+                    limit_up_count=0,
+                    stock_up_ratio=0.2,
+                    turnover_change=-0.2,
+                    news_weight=0.0,
+                ),
+                RawSectorInput(
+                    name="半导体",
+                    pct_change=3.85,
+                    limit_up_count=3,
+                    stock_up_ratio=0.9,
+                    turnover_change=0.8,
+                    news_weight=0.8,
+                ),
+                RawSectorInput(
+                    name="机器人",
+                    pct_change=4.86,
+                    limit_up_count=2,
+                    stock_up_ratio=0.8,
+                    turnover_change=0.5,
+                    news_weight=0.6,
+                ),
+                RawSectorInput(
+                    name="PCB",
+                    pct_change=3.6,
+                    limit_up_count=2,
+                    stock_up_ratio=0.75,
+                    turnover_change=0.5,
+                    news_weight=0.6,
+                ),
+                RawSectorInput(
+                    name="有色金属",
+                    pct_change=3.3,
+                    limit_up_count=2,
+                    stock_up_ratio=0.7,
+                    turnover_change=0.4,
+                    news_weight=0.5,
+                ),
+                RawSectorInput(
+                    name="电力",
+                    pct_change=2.9,
+                    limit_up_count=1,
+                    stock_up_ratio=0.8,
+                    turnover_change=0.6,
+                    news_weight=0.5,
+                ),
+            ],
+        )
+
+
+def test_report_generator_narrative_uses_final_ranked_sectors(tmp_path: Path) -> None:
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=ConflictingRawAndScoredMarketProvider(),
+        news_provider=FakeNewsProvider(),
+        llm_provider=FakeLLMProvider(),
+    )
+
+    result = generator.generate_close_report("2026-05-26")
+    narrative_text = "\n".join(result.report.narrative.sector_commentary)
+
+    assert result.report.sectors[0].name == "半导体"
+    assert "半导体" in narrative_text
+    assert "会展服务" not in narrative_text
+    assert result.validation.is_valid
 class StaticWatchlistService:
     called = False
 

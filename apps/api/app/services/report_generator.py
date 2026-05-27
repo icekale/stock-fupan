@@ -96,6 +96,17 @@ class ReportGenerator:
             )
 
         seed = market_snapshot.to_report_seed(news_items)
+        seed["raw_sectors"] = [
+            {
+                "name": scored.name,
+                "pct_change": scored.pct_change,
+                "limit_up_count": 0,
+                "stock_up_ratio": 0.0,
+                "turnover_change": 0.0,
+                "news_weight": scored.factor_scores.get("news", 0) / 100,
+            }
+            for scored in scored_sectors
+        ]
         narrative = self.llm_provider.generate_narrative(seed)
 
         sector_candidates = [
