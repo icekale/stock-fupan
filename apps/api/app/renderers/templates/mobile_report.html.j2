@@ -233,6 +233,12 @@
     color: var(--slate);
     font-size: 14px;
   }
+  .evidence-note {
+    color: var(--text-muted);
+    font-size: 13.5px;
+    line-height: 1.65;
+    margin-top: 8px;
+  }
   .sector-grid {
     display: grid;
     grid-template-columns: minmax(0, 1.15fr) minmax(280px, .85fr);
@@ -331,6 +337,18 @@
   tbody td:first-child {
     text-align: left;
     font-weight: 500;
+  }
+  .prediction-stock-table {
+    overflow-x: visible;
+  }
+  .prediction-stock-table table {
+    min-width: 0;
+    table-layout: fixed;
+  }
+  .prediction-stock-table .observation-cell {
+    text-align: left;
+    white-space: normal;
+    word-break: break-word;
   }
 
   .divider {
@@ -620,24 +638,35 @@
               {% endif %}
             </span>
             <span><strong>置信度：</strong><span class="tag tag-navy">{{ prediction.confidence.value if prediction.confidence.value is defined else prediction.confidence }}</span></span>
-            {% if prediction.source_basis %}
-              <span><strong>复盘源：</strong>{{ prediction.source_basis|join("、") }}</span>
+            {% if prediction.primary_basis %}
+              <span><strong>主源：</strong>{{ prediction.primary_basis|join("；") }}</span>
+            {% endif %}
+            {% if prediction.secondary_basis %}
+              <span><strong>辅助源：</strong>{{ prediction.secondary_basis|join("；") }}</span>
+            {% elif prediction.source_basis %}
+              <span><strong>辅助源：</strong>辅助复盘：{{ prediction.source_basis|join("、") }}</span>
+            {% endif %}
+            {% if prediction.market_quality_basis %}
+              <span><strong>市场质量：</strong>{{ prediction.market_quality_basis|join("；") }}</span>
             {% endif %}
           </div>
+          {% if prediction.market_quality_basis and "单源确认" in prediction.risk_labels %}
+            <div class="evidence-note">说明：市场质量证据参与评分，但未形成板块双源确认；板块确认仍按同花顺/东方财富复盘中解析到的主题证据计算。</div>
+          {% endif %}
 
           <div class="sector-grid">
             <div class="insight-card action-card">
               <div class="insight-label">概率结论</div>
               <p>{{ prediction.headline }}</p>
               {% if prediction.front_row_stocks %}
-                <div class="table-wrap" style="margin-top:12px;">
+                <div class="table-wrap prediction-stock-table" style="margin-top:12px;">
                   <table aria-label="次日前排观察股">
                     <thead><tr><th style="width:28%;">前排个股</th><th>观察条件</th></tr></thead>
                     <tbody>
                       {% for stock in prediction.front_row_stocks %}
                         <tr>
                           <td><strong>{{ stock.name }}</strong>{% if stock.code %}<br>{{ stock.code }}{% endif %}</td>
-                          <td style="text-align:left;">{{ stock.observation }}</td>
+                          <td class="observation-cell">{{ stock.observation }}</td>
                         </tr>
                       {% endfor %}
                     </tbody>
@@ -675,6 +704,52 @@
     {% endif %}
 
     <hr class="divider">
+
+    {% if structured.historical_theme_reviews %}
+      <span class="section-num">TRACK</span>
+      <h2 class="section-title">前期强势主线跟踪</h2>
+      <div class="preamble">不只看今日涨幅前排，也回看前一报告的强势主线，判断其今日是延续、分化、退潮还是修复。</div>
+      {% for theme in structured.historical_theme_reviews %}
+        <article class="sector-block">
+          <h3 class="section-subtitle">{{ loop.index }}. {{ theme.theme }}</h3>
+          <div class="sector-meta">
+            <span><strong>前期状态：</strong>{{ theme.previous_status }}</span>
+            <span><strong>今日状态：</strong>{{ theme.current_status }}</span>
+            <span><strong>判断：</strong><span class="tag {% if theme.judgement == '延续确认' %}tag-bull{% elif theme.judgement == '继续回避' %}tag-bear{% else %}tag-navy{% endif %}">{{ theme.judgement }}</span></span>
+          </div>
+          <div class="sector-grid">
+            <div class="insight-card">
+              <div class="insight-label">历史证据</div>
+              <ul class="point-list">
+                {% for item in theme.evidence %}
+                  <li>{{ item }}</li>
+                {% endfor %}
+              </ul>
+            </div>
+            {% if theme.current_stock_checks %}
+              <div class="insight-card">
+                <div class="insight-label">当日核心股校验</div>
+                <ul class="point-list">
+                  {% for item in theme.current_stock_checks %}
+                    <li class="{{ 'bear' if '今日-' in item else 'bull' }}">{{ item }}</li>
+                  {% endfor %}
+                </ul>
+              </div>
+            {% endif %}
+            <div class="insight-card">
+              <div class="insight-label">后续观察</div>
+              <ul class="point-list">
+                {% for item in theme.watch_items %}
+                  <li>{{ item }}</li>
+                {% endfor %}
+              </ul>
+            </div>
+          </div>
+        </article>
+      {% endfor %}
+
+      <hr class="divider">
+    {% endif %}
 
     <span class="section-num">TWO</span>
     <h2 class="section-title">盘面总览</h2>

@@ -4,6 +4,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from app.schemas.structured_review import StructuredReviewDTO
+from app.schemas.structured_review import HistoricalThemeReview
 
 
 class ReportKind(StrEnum):
@@ -87,6 +88,9 @@ class NextDayPrediction(BaseModel):
     risk_labels: list[str] = Field(default_factory=list)
     score_breakdown: PredictionScoreBreakdown | None = None
     source_basis: list[str] = Field(default_factory=list)
+    primary_basis: list[str] = Field(default_factory=list)
+    secondary_basis: list[str] = Field(default_factory=list)
+    market_quality_basis: list[str] = Field(default_factory=list)
     evidence_notes: list[str] = Field(default_factory=list)
 
 
@@ -158,6 +162,7 @@ class ReportDTO(BaseModel):
     sectors: list[SectorCandidate]
     narrative: ReportNarrative
     news: list[NewsItem] = Field(default_factory=list)
+    previous_strong_themes: list[HistoricalThemeReview] = Field(default_factory=list)
     structured_review: StructuredReviewDTO | None = None
     watchlist_observation: WatchlistObservation | None = None
     overrides: list[OverrideRecord] = Field(default_factory=list)

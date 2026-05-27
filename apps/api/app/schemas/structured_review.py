@@ -48,6 +48,16 @@ class CapitalRotationPath(BaseModel):
     next_path_watch: list[str] = Field(default_factory=list)
 
 
+class HistoricalThemeReview(BaseModel):
+    theme: str
+    previous_status: str
+    current_status: str
+    judgement: str
+    evidence: list[str] = Field(default_factory=list)
+    current_stock_checks: list[str] = Field(default_factory=list)
+    watch_items: list[str] = Field(default_factory=list)
+
+
 class NextDayOpportunityPlan(BaseModel):
     focus_candidates: list[str] = Field(default_factory=list)
     position_discipline: list[str] = Field(default_factory=list)
@@ -103,6 +113,7 @@ class StructuredReviewDTO(BaseModel):
     sector_reviews: list[StructuredSectorReview] = Field(default_factory=list)
     sustainability_ranking: list[SustainabilityRank] = Field(default_factory=list)
     capital_rotation: CapitalRotationPath
+    historical_theme_reviews: list[HistoricalThemeReview] = Field(default_factory=list)
     next_day_opportunity: NextDayOpportunityPlan
     practical_conclusion: PracticalConclusion
     index_mid_term_outlook: IndexMidTermOutlook

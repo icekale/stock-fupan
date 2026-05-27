@@ -32,24 +32,26 @@ def build_structured_review(report: ReportDTO) -> StructuredReviewDTO:
     top_prediction = _top_numeric_prediction(report)
     leader_name = top_prediction.sector if top_prediction is not None else leader.name if leader else "暂无主线"
     runner_up_name = runner_up.name if runner_up else "暂无轮动方向"
+    previous_theme_names = [item.theme for item in report.previous_strong_themes if item.judgement != "延续确认"]
+    diverge_name = "、".join(previous_theme_names[:3]) if previous_theme_names else runner_up_name
 
     return StructuredReviewDTO(
         topic=_build_topic(report, leader, runner_up),
         prediction_review=PredictionReview(
-            previous_prediction="昨日预判暂未接入自动回放，本阶段保留为结构化手动输入位。",
+            previous_prediction=_previous_prediction_text(report),
             actual_result=_build_actual_result(report),
             correct_items=[f"{leader_name}方向保持相对强势"] if leader else [],
-            missed_items=["自动对比前一日报告尚未启用"],
+            missed_items=_missed_items(report),
             bias_reasons=[
-                "当前版本尚未接入前一交易日报告回放，因此偏差归因以当日结构变化为主。",
+                _history_bias_reason(report),
                 f"{runner_up_name}的轮动强度需要结合次日竞价与量能继续确认。",
             ],
             revision=f"后续预判重点观察{leader_name}与{runner_up_name}之间的资金切换。",
-            source="manual_placeholder",
+            source="previous_report" if report.previous_strong_themes else "manual_placeholder",
         ),
         tomorrow_judgement=TomorrowJudgement(
             most_likely_to_continue=leader_name,
-            most_likely_to_diverge=runner_up_name,
+            most_likely_to_diverge=diverge_name,
             rotation_candidates=[sector.name for sector in report.sectors[1:4]],
             defensive_candidates=["高股息", "低位防御"],
             core_view=f"明日重点不是追高扩散，而是观察{leader_name}分歧后的承接与{runner_up_name}轮动强度。",
@@ -72,6 +74,7 @@ def build_structured_review(report: ReportDTO) -> StructuredReviewDTO:
             for index, sector in enumerate(report.sectors)
         ],
         capital_rotation=_build_capital_rotation(report, leader, runner_up),
+        historical_theme_reviews=report.previous_strong_themes,
         next_day_opportunity=_build_next_day_opportunity(report, leader),
         practical_conclusion=_build_practical_conclusion(leader_name, runner_up_name),
         index_mid_term_outlook=_build_index_mid_term_outlook(report),
@@ -81,6 +84,30 @@ def build_structured_review(report: ReportDTO) -> StructuredReviewDTO:
             final_view=f"最实战的动作是围绕{leader_name}去弱留强，同时警惕高位一致后的分歧。",
         ),
     )
+
+
+def _previous_prediction_text(report: ReportDTO) -> str:
+    if not report.previous_strong_themes:
+        return "昨日预判暂未接入自动回放，本阶段保留为结构化手动输入位。"
+    themes = "、".join(item.theme for item in report.previous_strong_themes[:4])
+    return f"前一报告重点跟踪：{themes}。今日需要验证这些方向是延续、分化、退潮还是修复。"
+
+
+def _missed_items(report: ReportDTO) -> list[str]:
+    if not report.previous_strong_themes:
+        return ["自动对比前一日报告尚未启用"]
+    items = []
+    for theme in report.previous_strong_themes:
+        if theme.judgement == "延续确认":
+            continue
+        items.append(f"{theme.theme}{theme.current_status}，判断为{theme.judgement}。")
+    return items or ["前期强势主线仍在今日前排中延续。"]
+
+
+def _history_bias_reason(report: ReportDTO) -> str:
+    if not report.previous_strong_themes:
+        return "当前版本尚未接入前一交易日报告回放，因此偏差归因以当日结构变化为主。"
+    return "已接入前一报告主线回放，偏差归因优先看前期强势方向是否继续进入今日前排。"
 
 
 def _build_topic(report: ReportDTO, leader: SectorCandidate | None, runner_up: SectorCandidate | None) -> str:

@@ -137,6 +137,7 @@ def create_close_report(request: CreateCloseReportRequest) -> dict[str, object]:
             tickflow_provider=providers.tickflow_provider,
             watchlist_enabled=settings.report_watchlist_enabled,
             review_source_provider=providers.review_source_provider,
+            previous_review_html_path=settings.previous_review_html_path,
         )
         result = generator.generate_close_report(request.trade_date)
     status = (

@@ -33,6 +33,7 @@ from app.schemas.report import (
     SectorCandidate,
 )
 from app.services import report_generator as report_generator_module
+from app.services.assets import write_json
 from app.services.report_generator import ReportGenerator
 from app.watchlist.parser import WatchlistItem
 from app.watchlist.service import WatchlistImportResult
@@ -471,8 +472,11 @@ def test_mobile_report_html_renders_next_day_prediction_section(tmp_path: Path) 
             ],
             trigger_conditions=["观察胜宏科技竞价是否强于板块平均。"],
             invalidation_conditions=["胜宏科技低开低走。"],
-            risk_labels=["高位加速"],
-            source_basis=["同花顺复盘", "东方财富涨停复盘"],
+            risk_labels=["高位加速", "单源确认"],
+            source_basis=["同花顺复盘"],
+            primary_basis=["TickFlow行情：强度82.0、排名1、板块涨幅+4.50%", "Anspire新闻：1条催化"],
+            secondary_basis=["辅助复盘：同花顺复盘"],
+            market_quality_basis=["东方财富涨停复盘：封板率64.21%"],
         )
     ]
 
@@ -483,6 +487,16 @@ def test_mobile_report_html_renders_next_day_prediction_section(tmp_path: Path) 
     assert "76%" in html
     assert "观察胜宏科技竞价是否强于板块平均" in html
     assert "同花顺复盘" in html
+    assert "市场质量" in html
+    assert "东方财富涨停复盘：封板率64.21%" in html
+    assert "主源" in html
+    assert "TickFlow行情" in html
+    assert "Anspire新闻" in html
+    assert "辅助源" in html
+    assert "辅助复盘：同花顺复盘" in html
+    assert "未形成板块双源确认" in html
+    assert "prediction-stock-table" in html
+    assert "observation-cell" in html
 
 
 def test_mobile_report_renderer_unifies_component_polish_and_sources(tmp_path: Path) -> None:
@@ -679,6 +693,163 @@ def test_report_generator_reads_frontline_stocks_through_market_fallback_wrapper
     assert semiconductor.top_stocks[0].name == "中芯国际"
 
 
+class TodayPowerMarketProvider:
+    def get_close_snapshot(self, trade_date: str) -> MarketCloseSnapshot:
+        return MarketCloseSnapshot(
+            trade_date=trade_date,
+            indices=[IndexSnapshot(name="上证指数", code="000001", close=4145.37, pct_change=0.5)],
+            breadth=MarketBreadth(up_count=3200, down_count=1800, limit_up_count=86, limit_down_count=4),
+            turnover_cny=12345.67,
+            market_state_tags=["放量", "分化"],
+            raw_sectors=[
+                RawSectorInput(
+                    name="电力",
+                    pct_change=4.2,
+                    limit_up_count=5,
+                    stock_up_ratio=0.76,
+                    turnover_change=0.38,
+                    news_weight=0.5,
+                )
+            ],
+        )
+
+    def get_sector_frontline_stocks(self, sector_name: str) -> list[WatchlistQuote]:
+        if sector_name != "电力":
+            return []
+        return [
+            WatchlistQuote(symbol="000539.SZ", name="粤电力Ａ", pct_change=10.04, turnover_cny=1_247_563_400)
+        ]
+
+
+class HistoricalThemeTickFlowProvider:
+    provider_name = "tickflow"
+
+    def __init__(self) -> None:
+        self.requested_symbols: list[str] = []
+
+    def get_quotes(self, symbols: list[str]) -> list[WatchlistQuote]:
+        self.requested_symbols.extend(symbols)
+        quotes = {
+            "600584.SH": WatchlistQuote(
+                symbol="600584.SH",
+                name="长电科技",
+                pct_change=-3.2,
+                turnover_cny=8_800_000_000,
+                quote_time="2026-05-27T15:00:00+08:00",
+            ),
+            "002896.SZ": WatchlistQuote(
+                symbol="002896.SZ",
+                name="中大力德",
+                pct_change=4.6,
+                turnover_cny=1_200_000_000,
+                quote_time="2026-05-27T15:00:00+08:00",
+            ),
+            "688183.SH": WatchlistQuote(
+                symbol="688183.SH",
+                name="生益电子",
+                pct_change=-1.8,
+                turnover_cny=2_400_000_000,
+                quote_time="2026-05-27T15:00:00+08:00",
+            ),
+        }
+        return [quotes[symbol] for symbol in symbols if symbol in quotes]
+
+
+def test_report_generator_tracks_previous_strong_themes_not_in_today_top(tmp_path: Path) -> None:
+    previous_snapshot = {
+        "report": {
+            "trade_date": "2026-05-26",
+            "sectors": [
+                {
+                    "name": "先进封装",
+                    "score": 91.0,
+                    "rank": 1,
+                    "pct_change": 7.8,
+                    "top_stocks": [
+                        {"code": "600584.SH", "name": "长电科技", "pct_change": 10.0},
+                        {"code": "002185.SZ", "name": "华天科技", "pct_change": 10.0},
+                    ],
+                }
+            ],
+            "structured_review": {
+                "sustainability_ranking": [
+                    {"rank": 1, "sector": "先进封装", "rating": "high", "reason": "前排核心强势"}
+                ],
+                "sector_reviews": [
+                    {
+                        "sector": "存储芯片",
+                        "sustainability": "low",
+                        "strengths": [],
+                        "weaknesses": ["昨日已明显转弱"],
+                        "watch_items": ["观察是否弱修复"],
+                    }
+                ],
+            },
+        }
+    }
+    previous_dir = tmp_path / "2026-05-26" / "close" / "v001"
+    write_json(previous_dir / "snapshot.json", previous_snapshot)
+
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=TodayPowerMarketProvider(),
+        news_provider=FakeNewsProvider(),
+        llm_provider=FakeLLMProvider(),
+    )
+
+    result = generator.generate_close_report("2026-05-27")
+
+    assert [sector.name for sector in result.report.sectors] == ["电力"]
+    assert result.report.structured_review is not None
+    tracked = result.report.structured_review.historical_theme_reviews
+    assert tracked[0].theme == "先进封装"
+    assert tracked[0].judgement == "降级观察"
+    assert "长电科技" in tracked[0].evidence[0]
+
+    html = result.assets.report_html.read_text(encoding="utf-8")
+    assert "前期强势主线跟踪" in html
+    assert "先进封装" in html
+    assert "降级观察" in html
+    assert "今日未进入强势前排" in html
+
+
+def test_report_generator_tracks_previous_reference_html_themes(tmp_path: Path) -> None:
+    tickflow = HistoricalThemeTickFlowProvider()
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=TodayPowerMarketProvider(),
+        news_provider=FakeNewsProvider(),
+        llm_provider=FakeLLMProvider(),
+        previous_review_html_path=Path("/Users/kale/Downloads/2026-05-26_structured_review.html"),
+        tickflow_provider=tickflow,
+    )
+
+    result = generator.generate_close_report("2026-05-27")
+
+    assert result.report.structured_review is not None
+    themes = [item.theme for item in result.report.structured_review.historical_theme_reviews]
+    assert "先进封装/半导体设备" in themes
+    assert "人形机器人" in themes
+    assert "PCB前排核心" in themes
+    assert "存储芯片" in themes
+    advanced = result.report.structured_review.historical_theme_reviews[0]
+    assert advanced.judgement == "降级观察"
+    assert any("长电科技" in item for item in advanced.evidence)
+    robot = next(item for item in result.report.structured_review.historical_theme_reviews if item.theme == "人形机器人")
+    pcb = next(item for item in result.report.structured_review.historical_theme_reviews if item.theme == "PCB前排核心")
+    assert any("中大力德" in item for item in robot.evidence)
+    assert any("宝鼎科技" in item for item in pcb.evidence)
+    assert all("连板晋级率" not in item for item in [*robot.evidence, *pcb.evidence])
+    assert "600584.SH" in tickflow.requested_symbols
+    assert "002896.SZ" in tickflow.requested_symbols
+    assert any("长电科技 600584.SH 今日-3.20%" in item for item in advanced.current_stock_checks)
+    assert any("中大力德 002896.SZ 今日+4.60%" in item for item in robot.current_stock_checks)
+
+    html = result.assets.report_html.read_text(encoding="utf-8")
+    assert "当日核心股校验" in html
+    assert "长电科技 600584.SH 今日-3.20%" in html
+
+
 class StaticWatchlistService:
     called = False
 
@@ -715,6 +886,13 @@ def test_report_generator_disables_watchlist_by_default(tmp_path: Path) -> None:
 
     assert watchlist_service.called is False
     assert result.report.watchlist_observation is None
+    assert result.provider_status["market_tickflow"] == result.provider_status["market"]
+    assert result.provider_status["watchlist_tickflow"] == {
+        "provider": "tickflow",
+        "status": "disabled",
+        "fallback_used": False,
+        "reason": "自选股模块未开启",
+    }
     assert result.provider_status["tickflow"] == {
         "provider": "tickflow",
         "status": "disabled",
@@ -742,6 +920,12 @@ def test_report_generator_writes_watchlist_observation_and_tickflow_status_when_
 
     assert result.report.watchlist_observation is not None
     assert result.report.watchlist_observation.total_count == 2
+    assert result.provider_status["watchlist_tickflow"] == {
+        "provider": "fake_tickflow",
+        "status": "success",
+        "fallback_used": False,
+        "reason": None,
+    }
     assert result.provider_status["tickflow"] == {
         "provider": "fake_tickflow",
         "status": "success",

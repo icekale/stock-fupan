@@ -25,8 +25,8 @@ def build_next_day_predictions(
 ) -> list[NextDayPrediction]:
     if max_items <= 0 or not report.sectors:
         return []
-    board_efficiency = _board_efficiency(review_source_results or [])
-    predictions = [_prediction_for_sector(report, sector, board_efficiency) for sector in report.sectors[:max_items]]
+    market_quality = _market_quality_evidence(review_source_results or [])
+    predictions = [_prediction_for_sector(report, sector, market_quality) for sector in report.sectors[:max_items]]
     return sorted(
         predictions,
         key=lambda item: (
@@ -41,11 +41,12 @@ def build_next_day_predictions(
 def _prediction_for_sector(
     report: ReportDTO,
     sector: SectorCandidate,
-    board_efficiency: str | None,
+    market_quality: tuple[str | None, list[str]],
 ) -> NextDayPrediction:
     source_basis = _curated_sources(sector.review_sources)
     evidence_notes = _evidence_notes(sector)
-    front_row = [_stock_focus(stock) for stock in sector.top_stocks if stock.name]
+    board_efficiency, market_quality_basis = market_quality
+    front_row = [_stock_focus(stock, position) for position, stock in enumerate(sector.top_stocks, start=1) if stock.name]
     if not _has_sufficient_evidence(sector, source_basis):
         return NextDayPrediction(
             sector=sector.name,
@@ -59,6 +60,9 @@ def _prediction_for_sector(
             risk_labels=_risk_labels(report, sector, source_basis),
             score_breakdown=None,
             source_basis=source_basis,
+            primary_basis=_primary_basis(sector),
+            secondary_basis=_secondary_basis(source_basis),
+            market_quality_basis=market_quality_basis,
             evidence_notes=evidence_notes,
         )
 
@@ -76,6 +80,9 @@ def _prediction_for_sector(
         risk_labels=_risk_labels(report, sector, source_basis),
         score_breakdown=breakdown,
         source_basis=source_basis,
+        primary_basis=_primary_basis(sector),
+        secondary_basis=_secondary_basis(source_basis),
+        market_quality_basis=market_quality_basis,
         evidence_notes=evidence_notes,
     )
 
@@ -84,19 +91,64 @@ def _curated_sources(sources: list[str]) -> list[str]:
     return [source for source in sources if source in CURATED_REVIEW_SOURCES]
 
 
+def _primary_basis(sector: SectorCandidate) -> list[str]:
+    basis = [f"TickFlow行情：强度{sector.score:.1f}、排名{sector.rank}、板块涨幅{sector.pct_change:+.2f}%"]
+    news_count = len(_distinct_text(sector.news_summaries))
+    if news_count:
+        basis.append(f"Anspire新闻：{news_count}条催化")
+    return basis
+
+
+def _secondary_basis(source_basis: list[str]) -> list[str]:
+    if not source_basis:
+        return []
+    return [f"辅助复盘：{'、'.join(source_basis)}"]
+
+
 def _has_sufficient_evidence(sector: SectorCandidate, source_basis: list[str]) -> bool:
     return bool(source_basis or sector.top_stocks or (sector.rank <= 3 and sector.review_notes))
 
 
-def _stock_focus(stock: StockCandidate) -> PredictionStockFocus:
+def _stock_focus(stock: StockCandidate, position: int) -> PredictionStockFocus:
     return PredictionStockFocus(
         code=stock.code,
         name=stock.name,
         pct_change=stock.pct_change,
         role="前排强势股",
         source_tags=stock.tags,
-        observation=f"观察{stock.name}竞价与开盘承接是否强于板块平均。",
+        observation=_stock_observation(stock, position),
     )
+
+
+def _stock_observation(stock: StockCandidate, position: int) -> str:
+    pct_text = f"涨幅约{stock.pct_change:.2f}%"
+    turnover_text = _turnover_text(stock.turnover_cny)
+    turnover_part = f"、成交约{turnover_text}" if turnover_text else ""
+    if _is_20cm_stock(stock):
+        return f"{pct_text}{turnover_part}，{_position_context(position)}，观察高弹性前排是否继续领涨，避免冲高回落削弱板块强度。"
+    if stock.pct_change >= 9.5:
+        return f"{pct_text}，{_position_context(position)}，观察竞价溢价与开盘承接，确认是否继续维持队形。"
+    if stock.pct_change >= 5:
+        return f"{pct_text}{turnover_part}，观察放量强势后是否继续保持主动承接。"
+    if position >= 4 or stock.pct_change < 2:
+        return f"{pct_text}，属于前排中的跟随位，观察是否补涨转强或掉队。"
+    return f"{pct_text}{turnover_part}，观察是否继续强于板块平均并承接前排分歧。"
+
+
+def _position_context(position: int) -> str:
+    if position == 1:
+        return "位于前排领涨位"
+    if position <= 3:
+        return "位于前排同梯队"
+    return "位于前排扩散位"
+
+
+def _turnover_text(turnover_cny: float | None) -> str:
+    if not turnover_cny or turnover_cny <= 0:
+        return ""
+    if turnover_cny >= 100_000_000:
+        return f"{turnover_cny / 100_000_000:.2f}亿"
+    return f"{turnover_cny / 10_000:.0f}万"
 
 
 def _score_breakdown(
@@ -105,8 +157,8 @@ def _score_breakdown(
     source_basis: list[str],
     board_efficiency: str | None,
 ) -> PredictionScoreBreakdown:
-    review_confirmation = 15 if len(set(source_basis)) >= 2 else 8 if source_basis else 0
-    market_strength = round(min(max(sector.score, 0), 100) * 0.25)
+    review_confirmation = 10 if len(set(source_basis)) >= 2 else 5 if source_basis else 0
+    market_strength = round(min(max(sector.score, 0), 100) * 0.35)
     rank_bonus = 5 if sector.rank == 1 else 3 if sector.rank in {2, 3} else 0
     pct_bonus = 5 if sector.pct_change >= 3 else -5 if sector.pct_change <= 0 else 0
     front_row_quality = min(len(sector.top_stocks) * 5, 15)
@@ -156,6 +208,8 @@ def _risk_labels(report: ReportDTO, sector: SectorCandidate, source_basis: list[
         labels.append("前排缺失")
     if len(set(source_basis)) == 1:
         labels.append("单源确认")
+    if not source_basis:
+        labels.append("复盘源缺失")
     if _has_height_evidence(sector):
         labels.append("高位加速")
     if report.breadth.limit_down_count >= 10 or any(tag in "".join(report.market_state_tags) for tag in HIGH_RISK_MARKET_TAGS):
@@ -222,16 +276,23 @@ def _evidence_notes(sector: SectorCandidate) -> list[str]:
     return _dedupe([*sector.review_notes, *sector.news_summaries])[:4]
 
 
-def _board_efficiency(results: list[ReviewSourceResult]) -> str | None:
-    fallback: str | None = None
+def _market_quality_evidence(results: list[ReviewSourceResult]) -> tuple[str | None, list[str]]:
+    fallback: ReviewSourceResult | None = None
     for result in results:
         if not result.board_efficiency:
             continue
         if fallback is None:
-            fallback = result.board_efficiency
+            fallback = result
         if _board_quality_points(result.board_efficiency) != 0:
-            return result.board_efficiency
-    return fallback
+            return result.board_efficiency, [_market_quality_note(result)]
+    if fallback is None:
+        return None, []
+    return fallback.board_efficiency, [_market_quality_note(fallback)]
+
+
+def _market_quality_note(result: ReviewSourceResult) -> str:
+    label = "封板率" if "%" in (result.board_efficiency or "") else "封板效率"
+    return f"{result.source}：{label}{result.board_efficiency}"
 
 
 def _board_quality_points(board_efficiency: str | None) -> int:

@@ -38,6 +38,7 @@ class Settings(BaseSettings):
     review_sources_enabled: bool = True
     ths_fupan_url: str = "https://stock.10jqka.com.cn/fupan/"
     eastmoney_ztfp_url: str = "https://stock.eastmoney.com/a/cztfp.html"
+    previous_review_html_path: Path | None = None
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

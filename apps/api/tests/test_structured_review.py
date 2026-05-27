@@ -17,6 +17,7 @@ from app.schemas.structured_review import (
     ActionDiscipline,
     AfterHoursNewsSummary,
     CapitalRotationPath,
+    HistoricalThemeReview,
     IndexMidTermOutlook,
     MarketOverviewTable,
     NextDayOpportunityPlan,
@@ -89,6 +90,17 @@ def test_structured_review_serializes_core_modules() -> None:
             key_finding="科技内部仍是资金轮动主场。",
             next_path_watch=["观察机器人分歧后是否回流", "观察PCB是否继续扩散"],
         ),
+        historical_theme_reviews=[
+            HistoricalThemeReview(
+                theme="先进封装",
+                previous_status="昨日持续性高",
+                current_status="今日未进入前排",
+                judgement="降级观察",
+                evidence=["昨日核心股：长电科技+10.00%"],
+                current_stock_checks=["长电科技 600584.SH 今日-3.20%"],
+                watch_items=["观察长电科技能否重新转强"],
+            )
+        ],
         next_day_opportunity=NextDayOpportunityPlan(
             focus_candidates=["机器人核心股承接", "PCB前排分歧转强"],
             position_discipline=["只观察确认后的承接，不追一致加速"],
@@ -123,6 +135,9 @@ def test_structured_review_serializes_core_modules() -> None:
     assert payload["after_hours_news"]["domestic_catalysts"] == ["机器人产业催化延续"]
     assert payload["capital_rotation"]["actual_path"][0] == "机器人承接"
     assert payload["capital_rotation"]["path_summary"] == "机器人承接 → PCB轮动 → 防御补位"
+    assert payload["historical_theme_reviews"][0]["theme"] == "先进封装"
+    assert payload["historical_theme_reviews"][0]["judgement"] == "降级观察"
+    assert payload["historical_theme_reviews"][0]["current_stock_checks"] == ["长电科技 600584.SH 今日-3.20%"]
     assert payload["next_day_opportunity"]["focus_candidates"][0] == "机器人核心股承接"
     assert payload["practical_conclusion"]["headline"] == "明日重点是科技内部去弱留强。"
     assert payload["index_mid_term_outlook"]["scenario_table"][0]["scenario"] == "强势"
@@ -247,6 +262,39 @@ def test_build_structured_review_prefers_highest_prediction_for_tomorrow_view() 
 
     assert review.tomorrow_judgement.most_likely_to_continue == "PCB"
     assert review.next_day_opportunity.focus_candidates[0] == "观察胜宏科技竞价是否强于板块平均。"
+
+
+def test_build_structured_review_tracks_previous_strong_themes() -> None:
+    report = _fake_report()
+    report.sectors = [
+        SectorCandidate(
+            name="电力",
+            score=86.0,
+            rank=1,
+            pct_change=4.2,
+            reason="今日强势",
+            top_stocks=[StockCandidate(code="000539.SZ", name="粤电力Ａ", pct_change=10.04)],
+            review_sources=["同花顺复盘"],
+            review_notes=["电力方向前排强势。"],
+        )
+    ]
+    report.previous_strong_themes = [
+        HistoricalThemeReview(
+            theme="先进封装",
+            previous_status="昨日持续性高",
+            current_status="今日未进入强势前排",
+            judgement="降级观察",
+            evidence=["昨日核心股：长电科技+10.00%、华天科技+10.00%"],
+            watch_items=["观察长电科技、华天科技能否重新转强"],
+        )
+    ]
+
+    review = build_structured_review(report)
+
+    assert review.historical_theme_reviews[0].theme == "先进封装"
+    assert review.historical_theme_reviews[0].judgement == "降级观察"
+    assert "先进封装" in review.prediction_review.missed_items[0]
+    assert "先进封装" in review.tomorrow_judgement.most_likely_to_diverge
 
 
 def test_build_structured_review_keeps_news_evidence_compact() -> None:

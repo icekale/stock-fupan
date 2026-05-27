@@ -1,8 +1,124 @@
-# A 股收盘复盘 v0.3e
+# A 股每日复盘助手
 
-A 股收盘复盘是一个本地优先的每日复盘工作流。v0.3e 优先使用 TickFlow 行情、Anspire 新闻搜索和 TickFlow 自选股行情；生产报告默认不允许使用 fake 数据。
+一个本地优先的 A 股每日复盘程序，用真实行情、新闻和复盘源生成可分享的 HTML/PNG 报告。项目目标不是生成泛泛而谈的市场摘要，而是围绕“当天最强势的板块和个股、前期强势主线的延续/退潮、次日可能继续强势的方向”做结构化复盘。
 
-## Backend Dev Startup
+> 仅用于个人研究和复盘，不构成投资建议。
+
+## 核心能力
+
+- **真实数据优先**：TickFlow 和 Anspire 是主要数据源，不在生产报告中使用 fake 内容。
+- **强势主线识别**：从全市场行情中提取当日强势板块、前排个股、涨跌幅、成交额和强度排名。
+- **新闻催化分析**：使用 Anspire 搜索新闻，辅助判断板块强势是否有事件催化。
+- **复盘源校验**：同花顺复盘和东方财富涨停复盘作为辅助源，用于校验题材、封板质量和市场情绪。
+- **前期主线跟踪**：对昨日或历史强势方向做延续、分化、退潮判断，例如半导体、先进封装、存储芯片等。
+- **次日观察模块**：把强度、前排股、封板质量、持续性和催化转成次日观察条件。
+- **HTML/PNG 输出**：生成结构化 `report.html`，并导出适合分享的 `report.png`。
+- **自选股导入**：支持同花顺 `.blk`、CSV、纯文本代码和 OCR 图片导入；报告里的自选股模块默认关闭。
+
+## 数据源优先级
+
+| 层级 | 数据源 | 用途 |
+| --- | --- | --- |
+| 主源 | TickFlow | 指数、全市场行情、板块强度、前排个股、成交额、核心股当日校验 |
+| 主源 | Anspire | 新闻搜索、题材催化、事件解释 |
+| 辅助源 | 同花顺复盘 | 题材语义、热门方向、市场复盘文本 |
+| 辅助源 | 东方财富涨停复盘 | 涨停复盘、封板率、市场质量 |
+| 跟踪源 | 历史 HTML / 快照 JSON | 前期强势主线延续性跟踪 |
+
+## 推荐部署：Docker Compose
+
+### 1. 克隆项目
+
+```bash
+git clone https://github.com/icekale/stock-fupan.git
+cd stock-fupan
+```
+
+### 2. 创建本地环境变量
+
+```bash
+cp .env.example .env
+```
+
+编辑 `.env`，至少填写：
+
+```dotenv
+TICKFLOW_API_KEY=你的_TickFlow_Key
+ANSPIRE_API_KEY=你的_Anspire_Key
+
+MARKET_PROVIDER=tickflow
+NEWS_PROVIDER=anspire
+TICKFLOW_PROVIDER=tickflow
+REVIEW_SOURCES_ENABLED=true
+REPORT_WATCHLIST_ENABLED=false
+```
+
+如果你希望本地生产级报告在数据源失败时直接失败，而不是回退到 fake 数据，建议设置：
+
+```dotenv
+APP_ENV=production
+PROVIDER_FALLBACK_ENABLED=false
+OCR_FALLBACK_ENABLED=false
+PRODUCTION_ALLOW_FAKE_PROVIDERS=false
+```
+
+### 3. 启动服务
+
+```bash
+docker compose up --build
+```
+
+启动后访问：
+
+- Web 前端：`http://localhost:3000`
+- API 服务：`http://localhost:8000`
+
+### 4. 生成每日复盘报告
+
+可以在本机仓库根目录运行：
+
+```bash
+make report DATE=2026-05-27
+```
+
+生成后会在终端打印：
+
+- `report.html`
+- `snapshot.json`
+- provider 状态，例如 TickFlow、Anspire、同花顺、东方财富是否成功
+
+报告文件默认写入：
+
+```text
+reports/YYYY-MM-DD/close/vXXX/
+```
+
+其中常用产物：
+
+```text
+report.html   # 核心 HTML 复盘报告
+report.png    # 可分享长图
+snapshot.json # 本次报告的结构化快照
+```
+
+### 5. 本地预览报告
+
+进入终端打印出来的版本目录：
+
+```bash
+cd reports/2026-05-27/close/vXXX
+python3 -m http.server 8888 --bind 127.0.0.1
+```
+
+然后打开：
+
+```text
+http://127.0.0.1:8888/report.html
+```
+
+## 本地开发
+
+### 后端 API
 
 ```bash
 cd apps/api
@@ -11,155 +127,7 @@ uv run playwright install chromium
 uv run uvicorn app.main:app --reload --port 8000
 ```
 
-Backend API runs at `http://localhost:8000`. Playwright Chromium is required for `report.png` export.
-
-## Daily Report Command
-
-Generate a local close-market report from the repository root:
-
-```bash
-make report DATE=2026-05-26
-```
-
-The command reads the same local `.env` provider settings as the API, writes assets under `REPORTS_ROOT`, and prints the generated `report.html` and `snapshot.json` paths. It does not print API keys. If report validation fails, the command exits non-zero and prints the validation errors.
-
-For a production-grade local run, load your private provider keys from your local API `.env` and disable fake fallback:
-
-```bash
-set -a
-source apps/api/.env
-set +a
-MARKET_PROVIDER=tickflow \
-NEWS_PROVIDER=anspire \
-TICKFLOW_PROVIDER=tickflow \
-PROVIDER_FALLBACK_ENABLED=false \
-REVIEW_SOURCES_ENABLED=true \
-make report DATE=2026-05-26
-```
-
-Preview the latest generated HTML by serving the version directory printed by the command:
-
-```bash
-cd reports/2026-05-26/close/<printed-version>
-python3 -m http.server 8884 --bind 127.0.0.1
-```
-
-Then open `http://127.0.0.1:8884/report.html`. The current production HTML renderer uses the supplied reference-report visual system with a wider desktop layout, top summary board, three-part sector blocks, unified tables/cards, and a card-based source area.
-
-Generated report assets live under `reports/` and are git-ignored. During UI iteration, keep the latest version and remove older same-day versions if they are no longer needed:
-
-```bash
-find reports/2026-05-26/close -maxdepth 1 -type d -name 'v*' ! -name '<latest-version>' -exec rm -rf {} +
-```
-
-## Real Data Providers
-
-v0.3e defaults to TickFlow-first real data:
-
-```dotenv
-MARKET_PROVIDER=tickflow
-NEWS_PROVIDER=anspire
-TICKFLOW_API_KEY=
-ANSPIRE_API_KEY=
-```
-
-Behavior:
-
-- TickFlow is the only market data source for generated reports.
-- Market provider failures stop the report run when `PROVIDER_FALLBACK_ENABLED=false`; production reports must fail visibly rather than emit fake market data.
-- Anspire requires `ANSPIRE_API_KEY`; missing key, API errors, timeouts, and empty results are reflected in provider diagnostics.
-- Provider diagnostics are returned in `provider_status` and saved in `snapshot.json`.
-
-Production controls:
-
-```dotenv
-APP_ENV=production
-PRODUCTION_ALLOW_FAKE_PROVIDERS=false
-PROVIDER_FALLBACK_ENABLED=false
-OCR_FALLBACK_ENABLED=false
-```
-
-Set `MARKET_PROVIDER=fake`, `NEWS_PROVIDER=fake`, or `TICKFLOW_PROVIDER=fake` only for local demos/tests, never for production-grade reports.
-
-## LLM Structured Review
-
-v0.3a can use an OpenAI-compatible LLM to generate `structured_review` content for the long-form HTML report:
-
-```dotenv
-LLM_PROVIDER=openai
-STRUCTURED_REVIEW_PROVIDER=llm
-STRUCTURED_REVIEW_FALLBACK_ENABLED=true
-OPENAI_API_KEY=
-OPENAI_BASE_URL=https://api.openai.com/v1
-LLM_MODEL=gpt-4.1-mini
-```
-
-Behavior:
-
-- Default local mode remains `LLM_PROVIDER=fake` and `STRUCTURED_REVIEW_PROVIDER=rule`.
-- LLM output is parsed into `StructuredReviewDTO`; invalid JSON or schema failures fall back to the deterministic rule builder when fallback is enabled.
-- `snapshot.json` includes `structured_review_status` so the frontend and generated assets can explain whether the review came from rules, LLM, or fallback.
-- API keys must be supplied through local environment variables only and are never written to generated assets.
-
-## Watchlist and TickFlow Enrichment
-
-v0.3b imports local watchlists. v0.3e keeps the `自选股观察` report block behind an explicit switch and disables it by default.
-
-Supported import inputs:
-
-- TongHuaShun-style `.blk` files containing six-digit A-share codes.
-- `.csv` files with `代码`/`名称` or `code`/`name` columns.
-- Plain text pasted codes.
-
-TickFlow settings:
-
-```dotenv
-TICKFLOW_API_KEY=
-TICKFLOW_BASE_URL=https://api.tickflow.org
-TICKFLOW_PROVIDER=tickflow
-REPORT_WATCHLIST_ENABLED=false
-WATCHLIST_PROVIDER=local
-WATCHLIST_SNAPSHOT_ROOT=./data/watchlists
-```
-
-Set `REPORT_WATCHLIST_ENABLED=true` to include `自选股观察` and call TickFlow for imported watchlist quotes. When disabled, report generation skips watchlist loading and TickFlow watchlist enrichment.
-
-## OCR Watchlist Import
-
-v0.3c supports screenshot-based watchlist import. Uploading an image creates an OCR preview first; the latest SQLite watchlist is updated only after clicking confirm.
-
-```dotenv
-OCR_PROVIDER=fake
-OCR_FALLBACK_ENABLED=true
-OCR_MODEL=gpt-4.1-mini
-```
-
-Behavior:
-
-- Supported image uploads: PNG, JPEG, and WebP.
-- `OCR_PROVIDER=fake` returns deterministic local data for offline development and tests.
-- `OCR_PROVIDER=openai` uses the existing OpenAI-compatible `OPENAI_API_KEY` and `OPENAI_BASE_URL` settings with `OCR_MODEL`.
-- OCR preview artifacts are stored under `WATCHLIST_SNAPSHOT_ROOT/ocr`.
-- Confirmed OCR imports reuse the normal watchlist import path and appear in generated HTML reports through `自选股观察`.
-- API keys are read only from local environment variables and are not written to snapshots or generated report assets.
-
-## Reference HTML Alignment
-
-v0.3d expands the structured review schema and generated `report.html` toward the supplied long-form reference HTML.
-
-Added report modules:
-
-- `盘后 / 隔夜消息梳理`
-- `资金轮动路径分析`
-- `明日可介入标的与仓位建议`
-- `最实战的结论`
-- `上证指数中期走势研判`
-
-The HTML remains the primary artifact. Provider data, watchlists, TickFlow enrichment, and OCR imports all feed the same structured report pipeline; the renderer turns that pipeline into the final mobile-friendly HTML/PNG.
-
-## Frontend Dev Startup
-
-From the repository root:
+### 前端 Web
 
 ```bash
 corepack enable
@@ -167,39 +135,91 @@ pnpm install
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 pnpm dev:web
 ```
 
-If the `pnpm` shim is unavailable even after enabling Corepack, run the same commands through Corepack:
+打开：
 
-```bash
-corepack pnpm install
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 corepack pnpm --filter @stock-review/web dev
+```text
+http://localhost:3000
 ```
 
-Open `http://localhost:3000` after both dev servers are running.
+## 常用配置
 
-## Docker Compose
+```dotenv
+DATABASE_URL=sqlite:///./data/stock_review.db
+REPORTS_ROOT=../../reports
 
-The local compose stack builds the API image from `apps/api/Dockerfile` and runs the web app with Node:
+TICKFLOW_API_KEY=
+TICKFLOW_BASE_URL=https://api.tickflow.org
+TICKFLOW_PROVIDER=tickflow
 
-```bash
-cp .env.example .env
-docker compose up --build
+ANSPIRE_API_KEY=
+ANSPIRE_BASE_URL=https://plugin.anspire.cn/api/ntsearch/search
+
+MARKET_PROVIDER=tickflow
+NEWS_PROVIDER=anspire
+REVIEW_SOURCES_ENABLED=true
+THS_FUPAN_URL=https://stock.10jqka.com.cn/fupan/
+EASTMONEY_ZTFP_URL=https://stock.eastmoney.com/a/cztfp.html
+
+REPORT_WATCHLIST_ENABLED=false
+WATCHLIST_PROVIDER=local
+WATCHLIST_SNAPSHOT_ROOT=./data/watchlists
+
+OCR_PROVIDER=fake
+OCR_FALLBACK_ENABLED=true
 ```
 
-Then open `http://localhost:3000`.
+## 自选股与 OCR
 
-## Current Scope
+自选股模块默认关闭：
 
-- Generate a close-market review through `POST /api/reports/close`.
-- Use TickFlow market data and Anspire news search by default.
-- Keep deterministic fake providers for tests/local demos only; production-grade reports disable fake fallback.
-- Persist report metadata and generated report assets locally.
-- Render the reference-style HTML/PNG report and expose it through the frontend.
-- Support local browser-to-API calls from `http://localhost:3000`.
+```dotenv
+REPORT_WATCHLIST_ENABLED=false
+```
 
-## Future v0.3 Items
+需要在报告中加入自选股观察时改为：
 
-- Scheduled report generation.
-- Real OCR quality tuning against more broker/watchlist screenshots.
-- Watchlist sector/tag grouping.
-- Markdown/PDF export.
-- Authentication and multi-user workflows.
+```dotenv
+REPORT_WATCHLIST_ENABLED=true
+```
+
+支持导入：
+
+- 同花顺 `.blk`
+- CSV
+- 纯文本股票代码
+- 图片 OCR 识别
+
+OCR 默认使用 fake provider 方便本地开发。如果要启用真实 OCR，可配置 OpenAI 兼容视觉模型。
+
+## 项目结构
+
+```text
+apps/api/          # FastAPI 后端、报告生成、数据源 provider、HTML/PNG 渲染
+apps/web/          # Next.js 前端
+reports/           # 本地生成的报告产物，默认不提交到 Git
+docker-compose.yml # 推荐部署入口
+.env.example       # 环境变量示例
+```
+
+## 验证
+
+后端测试：
+
+```bash
+cd apps/api
+.venv/bin/python -m ruff check app tests
+.venv/bin/python -m pytest -q
+```
+
+前端类型检查：
+
+```bash
+corepack pnpm --filter @stock-review/web test
+```
+
+## 注意事项
+
+- `.env`、`apps/api/.env`、`reports/`、`apps/api/data/` 默认不提交。
+- API Key 只应放在本地环境变量或 `.env` 中。
+- 生产级报告建议关闭 fake fallback，让数据源失败显式暴露。
+- 生成内容是复盘研究工具，不是买卖建议。

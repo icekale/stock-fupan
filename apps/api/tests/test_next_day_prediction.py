@@ -46,6 +46,9 @@ def test_next_day_prediction_schema_serializes_core_fields() -> None:
         ),
         source_basis=["同花顺复盘", "东方财富涨停复盘"],
         evidence_notes=["两家复盘源共同确认 PCB 强势。"],
+        market_quality_basis=["东方财富涨停复盘：封板率64.21%"],
+        primary_basis=["TickFlow行情：强度82.0、排名1、板块涨幅+4.50%", "Anspire新闻：1条催化"],
+        secondary_basis=["辅助复盘：同花顺复盘、东方财富涨停复盘"],
     )
 
     payload = prediction.model_dump(mode="json")
@@ -54,6 +57,9 @@ def test_next_day_prediction_schema_serializes_core_fields() -> None:
     assert payload["confidence"] == "high"
     assert payload["front_row_stocks"][0]["name"] == "胜宏科技"
     assert payload["score_breakdown"]["total"] == 76
+    assert payload["market_quality_basis"] == ["东方财富涨停复盘：封板率64.21%"]
+    assert payload["primary_basis"] == ["TickFlow行情：强度82.0、排名1、板块涨幅+4.50%", "Anspire新闻：1条催化"]
+    assert payload["secondary_basis"] == ["辅助复盘：同花顺复盘、东方财富涨停复盘"]
 
 
 def _prediction_report(sectors: list[SectorCandidate]) -> ReportDTO:
@@ -147,6 +153,46 @@ def test_no_curated_evidence_produces_insufficient_prediction() -> None:
     assert "证据不足" in predictions[0].headline
 
 
+def test_tickflow_and_anspire_are_primary_sources_for_prediction() -> None:
+    report = _prediction_report(
+        [
+            _sector(
+                score=86.0,
+                pct_change=4.8,
+                top_stocks=[
+                    StockCandidate(
+                        code="300476.SZ",
+                        name="胜宏科技",
+                        pct_change=20.0,
+                        turnover_cny=9_800_000_000,
+                        tags=["TickFlow前排"],
+                    ),
+                    StockCandidate(
+                        code="600601.SH",
+                        name="方正科技",
+                        pct_change=10.0,
+                        turnover_cny=2_100_000_000,
+                        tags=["TickFlow前排"],
+                    ),
+                ],
+                review_sources=[],
+                review_notes=[],
+                news_summaries=["PCB 产业链催化延续。"],
+            )
+        ]
+    )
+
+    prediction = build_next_day_predictions(report)[0]
+
+    assert prediction.continuation_probability is not None
+    assert prediction.score_breakdown is not None
+    assert prediction.score_breakdown.market_strength > prediction.score_breakdown.review_confirmation
+    assert "TickFlow行情：强度86.0、排名1、板块涨幅+4.80%" in prediction.primary_basis
+    assert "Anspire新闻：1条催化" in prediction.primary_basis
+    assert prediction.secondary_basis == []
+    assert "复盘源缺失" in prediction.risk_labels
+
+
 def test_front_row_stock_names_appear_in_trigger_conditions() -> None:
     report = _prediction_report(
         [
@@ -165,6 +211,71 @@ def test_front_row_stock_names_appear_in_trigger_conditions() -> None:
     condition_text = "\n".join(predictions[0].trigger_conditions)
 
     assert "胜宏科技" in condition_text or "方正科技" in condition_text
+
+
+def test_front_row_stock_observations_use_available_evidence() -> None:
+    report = _prediction_report(
+        [
+            _sector(
+                top_stocks=[
+                    StockCandidate(
+                        code="000539.SZ",
+                        name="粤电力Ａ",
+                        pct_change=10.04,
+                        turnover_cny=1_247_563_400,
+                        tags=["TickFlow前排"],
+                    ),
+                    StockCandidate(
+                        code="688676.SH",
+                        name="金盘科技",
+                        pct_change=7.98,
+                        turnover_cny=3_893_087_200,
+                        tags=["TickFlow前排"],
+                    ),
+                    StockCandidate(
+                        code="600312.SH",
+                        name="平高电气",
+                        pct_change=0.76,
+                        turnover_cny=578_004_600,
+                        tags=["TickFlow前排"],
+                    ),
+                ],
+                review_sources=["同花顺复盘"],
+                review_notes=["电力方向前排强势。"],
+            )
+        ]
+    )
+
+    stocks = build_next_day_predictions(report)[0].front_row_stocks
+
+    assert stocks[0].observation == "涨幅约10.04%，位于前排领涨位，观察竞价溢价与开盘承接，确认是否继续维持队形。"
+    assert stocks[1].observation == "涨幅约7.98%、成交约38.93亿，观察放量强势后是否继续保持主动承接。"
+    assert stocks[2].observation == "涨幅约0.76%，属于前排中的跟随位，观察是否补涨转强或掉队。"
+    assert len({stock.observation for stock in stocks}) == 3
+
+
+def test_limit_up_front_row_observations_include_position_context() -> None:
+    report = _prediction_report(
+        [
+            _sector(
+                top_stocks=[
+                    StockCandidate(code="000539.SZ", name="粤电力Ａ", pct_change=10.04, tags=["TickFlow前排"]),
+                    StockCandidate(code="001299.SZ", name="美能能源", pct_change=10.02, tags=["TickFlow前排"]),
+                    StockCandidate(code="600726.SH", name="华电能源", pct_change=9.99, tags=["TickFlow前排"]),
+                    StockCandidate(code="600744.SH", name="华银电力", pct_change=9.97, tags=["TickFlow前排"]),
+                ],
+                review_sources=["同花顺复盘"],
+                review_notes=["电力方向前排强势。"],
+            )
+        ]
+    )
+
+    observations = [stock.observation for stock in build_next_day_predictions(report)[0].front_row_stocks]
+
+    assert "领涨位" in observations[0]
+    assert "同梯队" in observations[1]
+    assert "扩散位" in observations[3]
+    assert len(set(observations)) == 4
 
 
 def test_risk_labels_are_deterministic() -> None:
@@ -228,6 +339,8 @@ def test_board_efficiency_from_review_sources_adjusts_probability() -> None:
     assert strong.score_breakdown.board_quality == 5
     assert weak.score_breakdown.board_quality == -5
     assert strong.continuation_probability == weak.continuation_probability + 10
+    assert strong.source_basis == ["同花顺复盘"]
+    assert strong.market_quality_basis == ["东方财富涨停复盘：封板率64.21%"]
 
 
 def test_board_efficiency_prefers_actionable_review_source_value() -> None:
@@ -259,4 +372,4 @@ def test_board_efficiency_prefers_actionable_review_source_value() -> None:
 
     assert prediction.score_breakdown is not None
     assert prediction.score_breakdown.board_quality == 5
-
+    assert prediction.market_quality_basis == ["东方财富涨停复盘：封板率64.21%"]

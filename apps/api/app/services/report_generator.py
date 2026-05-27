@@ -14,6 +14,7 @@ from app.schemas.report import ReportDTO, ReportKind, SectorCandidate, StockCand
 from app.services.assets import AssetPaths, create_report_asset_dir, write_json
 from app.services.next_day_prediction import build_next_day_predictions
 from app.services.structured_review_generator import generate_structured_review
+from app.services.theme_history import load_previous_strong_themes
 from app.services.watchlist_observation import build_watchlist_observation
 
 
@@ -49,6 +50,7 @@ class ReportGenerator:
         tickflow_provider: TickFlowQuoteProvider | None = None,
         watchlist_enabled: bool = False,
         review_source_provider: object | None = None,
+        previous_review_html_path: Path | None = None,
     ) -> None:
         self.reports_root = reports_root
         self.market_provider = market_provider
@@ -60,6 +62,7 @@ class ReportGenerator:
         self.tickflow_provider = tickflow_provider
         self.watchlist_enabled = watchlist_enabled
         self.review_source_provider = review_source_provider
+        self.previous_review_html_path = previous_review_html_path
 
     def generate_close_report(self, trade_date: str) -> GeneratedReport:
         assets = create_report_asset_dir(self.reports_root, trade_date, ReportKind.CLOSE.value)
@@ -146,6 +149,13 @@ class ReportGenerator:
             report=report,
             review_source_results=review_source_results,
         )
+        report.previous_strong_themes = load_previous_strong_themes(
+            reports_root=self.reports_root,
+            trade_date=trade_date,
+            current_sectors=report.sectors,
+            previous_review_html_path=self.previous_review_html_path,
+            tickflow_provider=self.tickflow_provider,
+        )
         structured_review, structured_review_status = generate_structured_review(
             report=report,
             llm_provider=self.llm_provider,
@@ -153,7 +163,7 @@ class ReportGenerator:
             fallback_enabled=self.structured_review_fallback_enabled,
         )
         report.structured_review = structured_review
-        tickflow_status = ProviderStatus(
+        watchlist_tickflow_status = ProviderStatus(
             provider="tickflow",
             status="disabled",
             fallback_used=False,
@@ -165,10 +175,10 @@ class ReportGenerator:
             quotes = []
             if self.tickflow_provider is not None and symbols:
                 if hasattr(self.tickflow_provider, "get_quotes_with_status"):
-                    quotes, tickflow_status = self.tickflow_provider.get_quotes_with_status(symbols)
+                    quotes, watchlist_tickflow_status = self.tickflow_provider.get_quotes_with_status(symbols)
                 else:
                     quotes = self.tickflow_provider.get_quotes(symbols)
-                    tickflow_status = ProviderStatus(
+                    watchlist_tickflow_status = ProviderStatus(
                         provider=getattr(self.tickflow_provider, "provider_name", "tickflow"),
                         status="success",
                         fallback_used=False,
@@ -183,8 +193,10 @@ class ReportGenerator:
         validation = validate_narrative_facts(report)
         provider_status = {
             "market": market_status.model_dump(mode="json"),
+            "market_tickflow": market_status.model_dump(mode="json"),
             "news": news_statuses,
-            "tickflow": tickflow_status.model_dump(mode="json"),
+            "tickflow": watchlist_tickflow_status.model_dump(mode="json"),
+            "watchlist_tickflow": watchlist_tickflow_status.model_dump(mode="json"),
             "review_sources": [_review_source_status(result) for result in review_source_results],
         }
         structured_review_status_payload = structured_review_status.model_dump(mode="json")

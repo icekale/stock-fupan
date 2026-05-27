@@ -42,6 +42,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             tickflow_provider=providers.tickflow_provider,
             watchlist_enabled=settings.report_watchlist_enabled,
             review_source_provider=providers.review_source_provider,
+            previous_review_html_path=settings.previous_review_html_path,
         )
         result = generator.generate_close_report(args.date)
 
@@ -111,9 +112,13 @@ def _print_provider_status(provider_status: dict[str, object]) -> None:
     if isinstance(market_status, dict):
         print(f"Provider market: {_format_status(market_status)}")
 
-    tickflow_status = provider_status.get("tickflow")
-    if isinstance(tickflow_status, dict):
-        print(f"Provider tickflow: {_format_status(tickflow_status)}")
+    market_tickflow_status = provider_status.get("market_tickflow")
+    if isinstance(market_tickflow_status, dict):
+        print(f"Provider tickflow[market]: {_format_status(market_tickflow_status)}")
+
+    watchlist_tickflow_status = provider_status.get("watchlist_tickflow")
+    if isinstance(watchlist_tickflow_status, dict):
+        print(f"Provider tickflow[watchlist]: {_format_status(watchlist_tickflow_status)}")
 
     news_statuses = provider_status.get("news")
     if isinstance(news_statuses, list):
