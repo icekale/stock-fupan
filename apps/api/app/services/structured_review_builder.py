@@ -1,6 +1,14 @@
 import re
 
-from app.schemas.report import IndexSnapshot, MarketBreadth, ReportDTO, ReportKind, ReportNarrative, SectorCandidate
+from app.schemas.report import (
+    IndexSnapshot,
+    MarketBreadth,
+    NextDayPrediction,
+    ReportDTO,
+    ReportKind,
+    ReportNarrative,
+    SectorCandidate,
+)
 from app.schemas.structured_review import (
     ActionDiscipline,
     AfterHoursNewsSummary,
@@ -21,7 +29,8 @@ from app.schemas.structured_review import (
 def build_structured_review(report: ReportDTO) -> StructuredReviewDTO:
     leader = report.sectors[0] if report.sectors else None
     runner_up = report.sectors[1] if len(report.sectors) > 1 else None
-    leader_name = leader.name if leader else "暂无主线"
+    top_prediction = _top_numeric_prediction(report)
+    leader_name = top_prediction.sector if top_prediction is not None else leader.name if leader else "暂无主线"
     runner_up_name = runner_up.name if runner_up else "暂无轮动方向"
 
     return StructuredReviewDTO(
@@ -162,15 +171,40 @@ def _build_capital_rotation(
 def _build_next_day_opportunity(
     report: ReportDTO, leader: SectorCandidate | None
 ) -> NextDayOpportunityPlan:
-    leader_name = leader.name if leader else "主线"
-    focus = [f"{leader_name}核心股承接确认"]
-    focus.extend(f"{sector.name}前排分歧转强" for sector in report.sectors[1:3])
+    prediction_focus = _prediction_focus_candidates(report)
+    if prediction_focus:
+        focus = prediction_focus
+    else:
+        leader_name = leader.name if leader else "主线"
+        focus = [f"{leader_name}核心股承接确认"]
+        focus.extend(f"{sector.name}前排分歧转强" for sector in report.sectors[1:3])
     return NextDayOpportunityPlan(
         focus_candidates=focus,
         position_discipline=["只观察确认后的承接，不追一致加速。", "弱分支只看修复，不做主线预设。"],
         trigger_conditions=["指数不出现明显放量下杀", "主线前排分歧温和", "成交额维持活跃区间"],
         avoid_conditions=["缩量冲高回落", "无催化后排补涨", "高位一致加速后的被动追高"],
     )
+
+
+def _top_numeric_prediction(report: ReportDTO) -> NextDayPrediction | None:
+    numeric = [item for item in report.next_day_predictions if item.continuation_probability is not None]
+    if not numeric:
+        return None
+    return sorted(
+        numeric,
+        key=lambda item: (item.continuation_probability or 0, -item.rank),
+        reverse=True,
+    )[0]
+
+
+def _prediction_focus_candidates(report: ReportDTO) -> list[str]:
+    prediction = _top_numeric_prediction(report)
+    if prediction is None:
+        return []
+    focus = [stock.observation for stock in prediction.front_row_stocks[:3] if stock.observation]
+    if focus:
+        return focus
+    return prediction.trigger_conditions[:2]
 
 
 def _build_practical_conclusion(leader_name: str, runner_up_name: str) -> PracticalConclusion:
