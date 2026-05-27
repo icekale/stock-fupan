@@ -41,6 +41,8 @@
     .section-title { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
     .section-num { background: var(--navy); color: var(--gold); border-radius: 8px; min-width: 34px; padding: 4px 7px; text-align: center; font-weight: 900; font-size: 13px; }
     h2 { margin: 0; color: var(--navy); font-size: 20px; letter-spacing: -.02em; }
+    h3 { margin: 14px 0 8px; color: var(--navy); font-size: 16px; letter-spacing: -.01em; }
+    h4 { margin: 12px 0 6px; color: var(--navy-soft); font-size: 14px; }
     p { margin: 0; }
     p + p { margin-top: 7px; }
     ul { margin: 0; padding-left: 19px; }
@@ -62,6 +64,11 @@
     .rating { color: var(--red); font-weight: 900; white-space: nowrap; }
     .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .mini-title { color: var(--navy); font-size: 13px; font-weight: 900; margin: 10px 0 4px; }
+    .subsection { margin-top: 12px; }
+    .module-card { background: #fbfaf6; border: 1px solid var(--line); border-radius: 14px; padding: 12px; margin-top: 10px; }
+    .path-flow { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+    .path-node { background: var(--navy); color: white; border-radius: 999px; padding: 5px 10px; font-size: 12px; font-weight: 800; }
+    .path-arrow { color: var(--gold); font-weight: 900; }
     .footer, .disclaimer { color: var(--muted); text-align: center; font-size: 12px; margin-top: 14px; }
     @media (max-width: 520px) { .grid-2 { grid-template-columns: 1fr; } h1 { font-size: 25px; } .body { padding: 14px; } }
   </style>
@@ -95,10 +102,15 @@
                 <ul>{% for item in structured.prediction_review.missed_items %}<li>{{ item }}</li>{% endfor %}</ul>
               </div>
             </div>
+            <div class="module-card">
+              <h4>偏差原因</h4>
+              <ul>{% for item in structured.prediction_review.bias_reasons %}<li>{{ item }}</li>{% endfor %}</ul>
+            </div>
           </section>
 
           <section>
             <div class="section-title"><span class="section-num">02</span><h2>先给结论</h2></div>
+            <h3>对明日的核心判断</h3>
             <div class="conclusion-box"><p>{{ structured.tomorrow_judgement.core_view }}</p></div>
             <table aria-label="明日核心判断">
               <tr><th>最容易继续</th><td>{{ structured.tomorrow_judgement.most_likely_to_continue }}</td></tr>
@@ -106,22 +118,30 @@
               <tr><th>轮动方向</th><td>{{ structured.tomorrow_judgement.rotation_candidates|join("、") }}</td></tr>
               <tr><th>防御方向</th><td>{{ structured.tomorrow_judgement.defensive_candidates|join("、") }}</td></tr>
             </table>
+            <div class="module-card">
+              <h4>操作重点</h4>
+              <ul>{% for item in structured.tomorrow_judgement.operating_focus %}<li>{{ item }}</li>{% endfor %}</ul>
+            </div>
           </section>
 
           <section>
             <div class="section-title"><span class="section-num">03</span><h2>盘面总览</h2></div>
+            <h3>指数数据</h3>
             <table>
               <tr><th>指数</th><th>收盘</th><th>涨跌幅</th></tr>
               {% for row in structured.market_overview.index_rows %}
                 <tr><td>{{ row.name }}</td><td>{{ row.close }}</td><td>{{ row.change }}</td></tr>
               {% endfor %}
             </table>
+            <h3>市场情绪</h3>
             <table>
               {% for row in structured.market_overview.emotion_rows %}
                 <tr><th>{{ row.label }}</th><td>{{ row.value }}</td></tr>
               {% endfor %}
             </table>
+            <h3>市场结构特征</h3>
             <div class="pill-row">{% for feature in structured.market_overview.structure_features %}<span class="pill">{{ feature }}</span>{% endfor %}</div>
+            <ul class="subsection">{% for item in structured.market_overview.structure_notes %}<li>{{ item }}</li>{% endfor %}</ul>
             <p class="muted">{{ structured.market_overview.capital_flow_summary }}</p>
           </section>
 
@@ -129,13 +149,18 @@
             <div class="section-title"><span class="section-num">04</span><h2>各板块详细分析</h2></div>
             {% for sector in structured.sector_reviews %}
               <article class="sector-card">
-                <div class="sector-head"><strong>{{ sector.headline }}</strong><span class="rating">{{ sector.sustainability|upper }}</span></div>
+                <div class="sector-head"><strong>{{ loop.index }}. {{ sector.headline }}</strong><span class="rating">{{ sector.sustainability|upper }}</span></div>
                 <p><strong>当前阶段：</strong>{{ sector.stage }}</p>
-                <p><strong>板块逻辑：</strong>{{ sector.logic }}</p>
                 <div class="grid-2">
                   <div><div class="mini-title">强势证据</div><ul>{% for item in sector.strengths %}<li>{{ item }}</li>{% endfor %}</ul></div>
                   <div><div class="mini-title">弱势 / 分歧</div><ul>{% for item in sector.weaknesses %}<li>{{ item }}</li>{% endfor %}</ul></div>
                 </div>
+                <h4>板块逻辑分析</h4>
+                <p>{{ sector.logic }}</p>
+                <ul>{% for item in sector.logic_points %}<li>{{ item }}</li>{% endfor %}</ul>
+                <h4>持续性分析</h4>
+                <p>{{ sector.sustainability_analysis }}</p>
+                <h4>下个交易日看法</h4>
                 <p><strong>下个交易日看法：</strong>{{ sector.next_day_view }}</p>
               </article>
             {% endfor %}
@@ -146,6 +171,7 @@
             <div class="grid-2">
               <div class="info-card">
                 <div class="mini-title">美股映射</div>
+                {% if structured.after_hours_news.us_market_conclusion %}<p>{{ structured.after_hours_news.us_market_conclusion }}</p>{% endif %}
                 <ul>{% for item in structured.after_hours_news.us_market_mapping %}<li>{{ item }}</li>{% endfor %}</ul>
               </div>
               <div class="info-card">
@@ -170,8 +196,15 @@
 
           <section>
             <div class="section-title"><span class="section-num">07</span><h2>资金轮动路径分析</h2></div>
+            <h3>实际轮动路径</h3>
             <div class="conclusion-box"><p>{{ structured.capital_rotation.key_finding }}</p></div>
-            <div class="pill-row">{% for item in structured.capital_rotation.actual_path %}<span class="pill">{{ item }}</span>{% endfor %}</div>
+            <div class="path-flow">
+              {% for item in structured.capital_rotation.actual_path %}
+                <span class="path-node">{{ item }}</span>{% if not loop.last %}<span class="path-arrow">→</span>{% endif %}
+              {% endfor %}
+            </div>
+            {% if structured.capital_rotation.path_summary %}<p class="muted subsection">{{ structured.capital_rotation.path_summary }}</p>{% endif %}
+            <h3>关键发现</h3>
             <div class="mini-title">次日路径观察</div>
             <ul>{% for item in structured.capital_rotation.next_path_watch %}<li>{{ item }}</li>{% endfor %}</ul>
           </section>

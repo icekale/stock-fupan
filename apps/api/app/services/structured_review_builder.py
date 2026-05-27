@@ -31,6 +31,10 @@ def build_structured_review(report: ReportDTO) -> StructuredReviewDTO:
             actual_result=_build_actual_result(report),
             correct_items=[f"{leader_name}方向保持相对强势"] if leader else [],
             missed_items=["自动对比前一日报告尚未启用"],
+            bias_reasons=[
+                "当前版本尚未接入前一交易日报告回放，因此偏差归因以当日结构变化为主。",
+                f"{runner_up_name}的轮动强度需要结合次日竞价与量能继续确认。",
+            ],
             revision=f"后续预判重点观察{leader_name}与{runner_up_name}之间的资金切换。",
             source="manual_placeholder",
         ),
@@ -40,6 +44,11 @@ def build_structured_review(report: ReportDTO) -> StructuredReviewDTO:
             rotation_candidates=[sector.name for sector in report.sectors[1:4]],
             defensive_candidates=["高股息", "低位防御"],
             core_view=f"明日重点不是追高扩散，而是观察科技内部{leader_name}分歧后的承接与{runner_up_name}轮动强度。",
+            operating_focus=[
+                f"先看{leader_name}是否温和分歧后继续承接。",
+                f"再看{runner_up_name}能否从轮动转为持续。",
+                "若指数放量下杀，优先降低节奏预期。",
+            ],
         ),
         market_overview=_build_market_overview(report),
         after_hours_news=_build_after_hours_news(report),
@@ -95,6 +104,11 @@ def _build_market_overview(report: ReportDTO) -> MarketOverviewTable:
             {"label": "成交额", "value": f"{report.turnover_cny:.2f} 亿"},
         ],
         structure_features=report.market_state_tags,
+        structure_notes=[
+            f"{report.market_state_tags[0]}是当前盘面的第一标签。" if report.market_state_tags else "结构标签暂不明确。",
+            f"强势方向集中在{report.sectors[0].name}，扩散质量仍需观察。" if report.sectors else "强势方向暂不明确。",
+            "涨跌家数与涨跌停数量共同决定短线情绪温度。",
+        ],
         capital_flow_summary="资金不是简单流入流出，而是在强势板块之间做结构切换。",
     )
 
@@ -110,6 +124,11 @@ def _build_after_hours_news(report: ReportDTO) -> AfterHoursNewsSummary:
     )
     return AfterHoursNewsSummary(
         us_market_mapping=us_mapping,
+        us_market_conclusion=(
+            f"海外线索主要作为{report.sectors[0].name}产业链映射观察。"
+            if report.sectors
+            else "海外映射暂未形成明确方向。"
+        ),
         domestic_catalysts=domestic[:4],
         risk_notes=["盘后消息只作为次日观察线索，不作为单独决策依据。"],
     )
@@ -130,6 +149,7 @@ def _build_capital_rotation(
     runner_up_name = runner_up.name if runner_up else "暂无轮动方向"
     return CapitalRotationPath(
         actual_path=actual_path,
+        path_summary=" → ".join(actual_path),
         key_finding=f"资金仍围绕{leader_name}展开，但{runner_up_name}的轮动强度决定次日扩散质量。",
         next_path_watch=[
             f"观察{leader_name}分歧后的回流强度",
@@ -199,11 +219,25 @@ def _build_sector_review(sector: SectorCandidate) -> StructuredSectorReview:
         ],
         weaknesses=["短线一致后可能出现分歧", "后排跟风股承接要求更高"],
         logic="短线强度、板块广度与消息催化共同决定当前排序。",
+        logic_points=[
+            f"价格强度：板块涨跌幅{sector.pct_change:+.2f}%。",
+            f"评分结构：综合评分{sector.score:.1f}，排名第{sector.rank}。",
+            "消息线索：有真实新闻时作为催化观察，没有新闻时只保留技术强度判断。",
+        ],
+        sustainability_analysis=_sustainability_analysis(sector, rating),
         sustainability=rating,
         next_day_view=f"观察{sector.name}方向分歧后的核心股承接，而不是简单追逐后排补涨。",
         watch_items=[f"{sector.name}核心股回踩承接", "板块内强弱切换是否温和"],
         avoid_items=["缩量冲高回落", "无催化的低位跟风"],
     )
+
+
+def _sustainability_analysis(sector: SectorCandidate, rating: SustainabilityRating) -> str:
+    if rating == "high":
+        return f"{sector.name}同时具备较高评分与消息确认度，次日更适合观察分歧承接。"
+    if rating == "medium":
+        return f"{sector.name}处在轮动观察区，持续性取决于前排是否继续扩散。"
+    return f"{sector.name}当前持续性偏弱，更适合作为观察对象而非追高方向。"
 
 
 def _compact_news_evidence(news_summaries: list[str], max_length: int = 72) -> str | None:

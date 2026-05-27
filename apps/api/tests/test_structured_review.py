@@ -31,6 +31,7 @@ def test_structured_review_serializes_core_modules() -> None:
             actual_result="机器人方向继续领涨，PCB轮动增强。",
             correct_items=["机器人方向延续强势"],
             missed_items=["PCB强度高于预期"],
+            bias_reasons=["昨日对PCB轮动估计偏保守"],
             revision="明日观察机器人与PCB之间的资金切换。",
             source="manual_placeholder",
         ),
@@ -40,15 +41,18 @@ def test_structured_review_serializes_core_modules() -> None:
             rotation_candidates=["PCB"],
             defensive_candidates=["高股息"],
             core_view="主线仍在科技内部轮动，去弱留强。",
+            operating_focus=["先看机器人承接", "再看PCB扩散"],
         ),
         market_overview=MarketOverviewTable(
             index_rows=[{"name": "上证指数", "close": "3100.50", "change": "+1.20%"}],
             emotion_rows=[{"label": "涨停 / 跌停", "value": "86 / 8"}],
             structure_features=["放量", "分化"],
+            structure_notes=["科技内部强弱分化"],
             capital_flow_summary="资金集中在科技方向内部轮动。",
         ),
         after_hours_news=AfterHoursNewsSummary(
             us_market_mapping=["英伟达链条映射仍需观察"],
+            us_market_conclusion="美股映射只作为观察线索",
             domestic_catalysts=["机器人产业催化延续"],
             risk_notes=["盘后消息只作为次日观察线索"],
         ),
@@ -60,6 +64,8 @@ def test_structured_review_serializes_core_modules() -> None:
                 strengths=["涨幅居前", "新闻催化明确"],
                 weaknesses=["高位分歧可能加大"],
                 logic="产业消息与短线强度共振。",
+                logic_points=["产业消息催化", "短线强度居前"],
+                sustainability_analysis="主线承接仍强，但高位分歧需要观察。",
                 sustainability="high",
                 next_day_view="观察分歧后的核心股承接。",
                 watch_items=["核心股回踩不破均线"],
@@ -71,6 +77,7 @@ def test_structured_review_serializes_core_modules() -> None:
         ],
         capital_rotation=CapitalRotationPath(
             actual_path=["机器人承接", "PCB轮动", "防御补位"],
+            path_summary="机器人承接 → PCB轮动 → 防御补位",
             key_finding="科技内部仍是资金轮动主场。",
             next_path_watch=["观察机器人分歧后是否回流", "观察PCB是否继续扩散"],
         ),
@@ -107,6 +114,7 @@ def test_structured_review_serializes_core_modules() -> None:
     assert payload["action_discipline"]["avoid"] == ["回避无催化的跟风补涨"]
     assert payload["after_hours_news"]["domestic_catalysts"] == ["机器人产业催化延续"]
     assert payload["capital_rotation"]["actual_path"][0] == "机器人承接"
+    assert payload["capital_rotation"]["path_summary"] == "机器人承接 → PCB轮动 → 防御补位"
     assert payload["next_day_opportunity"]["focus_candidates"][0] == "机器人核心股承接"
     assert payload["practical_conclusion"]["headline"] == "明日重点是科技内部去弱留强。"
     assert payload["index_mid_term_outlook"]["scenario_table"][0]["scenario"] == "强势"
@@ -160,13 +168,19 @@ def test_build_structured_review_derives_core_modules_from_report() -> None:
         {"label": "涨停 / 跌停", "value": "86 / 8"},
         {"label": "成交额", "value": "12345.67 亿"},
     ]
+    assert review.prediction_review.bias_reasons
+    assert review.tomorrow_judgement.operating_focus
+    assert review.market_overview.structure_notes
     assert review.sector_reviews[0].sector == "机器人"
+    assert review.sector_reviews[0].logic_points
+    assert review.sector_reviews[0].sustainability_analysis
     assert review.sector_reviews[0].sustainability == "high"
     assert review.sustainability_ranking[0].sector == "机器人"
     assert "机器人" in review.action_discipline.final_view
     assert review.after_hours_news.domestic_catalysts
     assert review.after_hours_news.risk_notes == ["盘后消息只作为次日观察线索，不作为单独决策依据。"]
     assert review.capital_rotation.actual_path[0] == "机器人承接"
+    assert review.capital_rotation.path_summary == "机器人承接 → PCB轮动"
     assert "机器人" in review.capital_rotation.key_finding
     assert review.next_day_opportunity.focus_candidates[0] == "机器人核心股承接确认"
     assert "不追一致加速" in review.next_day_opportunity.position_discipline[0]
