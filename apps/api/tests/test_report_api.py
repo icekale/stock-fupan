@@ -18,7 +18,15 @@ from app.providers.tickflow import FakeTickFlowProvider
 from app.renderers.html_renderer import render_mobile_report_html
 from app.rules.scoring import score_sectors
 from app.rules.validation import validate_narrative_facts
-from app.schemas.report import IndexSnapshot, ReportDTO, ReportKind, SectorCandidate
+from app.schemas.report import (
+    IndexSnapshot,
+    NextDayPrediction,
+    PredictionConfidence,
+    ReportDTO,
+    ReportKind,
+    SectorCandidate,
+)
+from app.services.structured_review_builder import build_structured_review
 from app.services import report_generator as report_generator_module
 from app.services.report_generator import ReportGenerator
 from app.watchlist.parser import WatchlistItem
@@ -326,6 +334,42 @@ def test_mobile_report_renderer_contains_core_sections(tmp_path: Path) -> None:
     assert "自选股观察" not in html
     assert "轮动强度" in html
     assert "非投资建议" in html
+
+
+def test_mobile_report_html_renders_next_day_prediction_section() -> None:
+    report = ReportDTO(
+        trade_date="2026-05-27",
+        kind=ReportKind.CLOSE,
+        title="2026-05-27 A股复盘",
+        indices=[IndexSnapshot(name="上证指数", code="000001", close=4145.37, pct_change=0.5)],
+        breadth=MarketBreadth(up_count=3200, down_count=1800, limit_up_count=86, limit_down_count=4),
+        turnover_cny=12345.67,
+        market_state_tags=["放量", "分化"],
+        sectors=[SectorCandidate(name="PCB", score=82, rank=1, pct_change=4.5, reason="强势")],
+        narrative=FakeLLMProvider().generate_narrative({"raw_sectors": []}),
+        news=[],
+        next_day_predictions=[
+            NextDayPrediction(
+                sector="PCB",
+                rank=1,
+                continuation_probability=76,
+                confidence=PredictionConfidence.HIGH,
+                headline="PCB 延续概率较高，重点观察前排分歧承接。",
+                trigger_conditions=["观察胜宏科技竞价是否强于板块平均。"],
+                invalidation_conditions=["胜宏科技低开低走。"],
+                risk_labels=["高位加速"],
+                source_basis=["同花顺复盘"],
+            )
+        ],
+    )
+    report.structured_review = build_structured_review(report)
+
+    html = render_mobile_report_html(report)
+
+    assert "次日强势概率与观察条件" in html
+    assert "PCB" in html
+    assert "76%" in html
+    assert "观察胜宏科技竞价是否强于板块平均。" in html
 
 
 class BrokenStructuredReviewLLM(FakeLLMProvider):
