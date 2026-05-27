@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from app.providers.llm import LLMProvider
@@ -76,6 +76,10 @@ class ReportGenerator:
         review_source_results: list[ReviewSourceResult] = []
         if self.review_source_provider is not None:
             review_source_results = self.review_source_provider.collect(trade_date)
+        scored_sectors = self._filter_review_confirmed_sectors(
+            scored_sectors,
+            review_source_results,
+        )
 
         news_items = []
         news_statuses = []
@@ -268,6 +272,20 @@ class ReportGenerator:
             review_notes=_dedupe_strings(review_notes),
         )
 
+    def _filter_review_confirmed_sectors(
+        self,
+        scored_sectors: list[object],
+        review_source_results: list[ReviewSourceResult],
+    ) -> list[object]:
+        if not any(result.status == "success" for result in review_source_results):
+            return scored_sectors
+        confirmed = [
+            scored
+            for scored in scored_sectors
+            if self._build_sector_candidate(scored, [], review_source_results).review_sources
+        ]
+        return [_rerank_scored_sector(scored, index + 1) for index, scored in enumerate(confirmed)]
+
 
 def _theme_matches(sector_name: str, theme_name: str) -> bool:
     sector_key = sector_name.lower()
@@ -328,6 +346,10 @@ def _dedupe_stock_candidates(stocks: list[StockCandidate]) -> list[StockCandidat
         seen.add(key)
         output.append(stock)
     return output[:8]
+
+
+def _rerank_scored_sector(scored: object, rank: int) -> object:
+    return replace(scored, rank=rank)
 
 
 def _review_source_status(result: ReviewSourceResult) -> dict[str, object]:

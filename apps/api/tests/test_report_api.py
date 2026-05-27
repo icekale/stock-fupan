@@ -600,5 +600,54 @@ def test_report_generator_does_not_confirm_strong_theme_from_weak_review_source_
 
     result = generator.generate_close_report("2026-05-26")
 
-    electric = next(sector for sector in result.report.sectors if sector.name == "电力")
-    assert electric.review_sources == []
+    assert all(sector.name != "电力" for sector in result.report.sectors)
+
+
+class MixedThemeReviewSourceProvider:
+    def collect(self, trade_date: str) -> list[ReviewSourceResult]:
+        return [
+            ReviewSourceResult(
+                source="同花顺复盘",
+                source_url="https://stock.10jqka.com.cn/fupan/",
+                status="success",
+                themes=[
+                    ReviewThemeEvidence(name="PCB", source="同花顺复盘"),
+                    ReviewThemeEvidence(name="有色金属", source="同花顺复盘"),
+                ],
+                hot_stocks=[
+                    ReviewStockEvidence(name="生益电子", code="688183", pct_change=20.0, source="同花顺复盘"),
+                    ReviewStockEvidence(name="宝鼎科技", code="002552", pct_change=10.0, source="同花顺复盘"),
+                    ReviewStockEvidence(name="招金黄金", code="603000", pct_change=10.0, source="同花顺复盘"),
+                    ReviewStockEvidence(name="西部黄金", code="601069", pct_change=7.8, source="同花顺复盘"),
+                ],
+                market_notes=[
+                    "贵金属、有色金属板块低开高走，招金黄金早盘涨停，西部黄金涨幅居前。",
+                    "PCB概念股午后多数上扬，生益电子20cm涨停，宝鼎科技涨停。",
+                ],
+            )
+        ]
+
+
+def test_report_generator_uses_curated_review_sources_as_primary_sector_gate(tmp_path: Path) -> None:
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=ConflictingRawAndScoredMarketProvider(),
+        news_provider=FakeNewsProvider(),
+        llm_provider=FakeLLMProvider(),
+        review_source_provider=MixedThemeReviewSourceProvider(),
+    )
+
+    result = generator.generate_close_report("2026-05-26")
+    narrative_text = "\n".join(
+        [
+            result.report.narrative.conclusion,
+            *result.report.narrative.sector_commentary,
+            result.report.narrative.tomorrow,
+        ]
+    )
+
+    assert [sector.name for sector in result.report.sectors] == ["PCB", "有色金属"]
+    assert [sector.rank for sector in result.report.sectors] == [1, 2]
+    assert all(sector.review_sources for sector in result.report.sectors)
+    assert "半导体" not in narrative_text
+    assert "机器人" not in narrative_text

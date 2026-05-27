@@ -1,11 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from html import unescape
 from html.parser import HTMLParser
 import re
 import time
-from types import ModuleType
 from typing import Any, Literal
 
 import httpx
@@ -148,6 +147,7 @@ def parse_eastmoney_ztfp_html(html: str, source_url: str) -> ReviewSourceResult:
             source="东方财富涨停复盘",
         )
         for name, marker in STOCK_NAME_PATTERN.findall(text)
+        if _looks_like_stock_mention(name.strip())
     ]
     has_content = bool(themes or hot_stocks or titles)
     return ReviewSourceResult(
@@ -181,7 +181,16 @@ def parse_eastmoney_ztfp_api_payload(
             source="东方财富涨停复盘",
         )
         for name, marker in STOCK_NAME_PATTERN.findall(combined_text)
+        if _looks_like_stock_mention(name.strip())
     ]
+    for name, note_text in _extract_height_stocks(combined_text):
+        hot_stocks.append(
+            ReviewStockEvidence(
+                name=name,
+                note=note_text,
+                source="东方财富涨停复盘",
+            )
+        )
     notes = _dedupe_texts(article_texts)
     has_content = bool(themes or hot_stocks or notes)
     return ReviewSourceResult(
@@ -303,50 +312,6 @@ class EastmoneyZtFpProvider:
         return parse_eastmoney_ztfp_html(response.text, source_url=self.source_url)
 
 
-class AkShareReviewProvider:
-    source_name = "AkShare概念/龙虎榜"
-    source_url = "akshare://stock_board_concept_name_em,stock_lhb_detail_em"
-
-    def __init__(
-        self,
-        akshare_module: ModuleType | object | None = None,
-        concept_limit: int = 10,
-        lhb_limit: int = 50,
-    ) -> None:
-        self.akshare_module = akshare_module
-        self.concept_limit = concept_limit
-        self.lhb_limit = lhb_limit
-
-    def __call__(self, trade_date: str) -> ReviewSourceResult:
-        ak = self._akshare()
-        concept_frame = ak.stock_board_concept_name_em()
-        lhb_frame = ak.stock_lhb_detail_em(
-            start_date=_compact_trade_date(trade_date),
-            end_date=_compact_trade_date(trade_date),
-        )
-        themes = _extract_akshare_concept_themes(concept_frame, self.concept_limit)
-        hot_stocks = _extract_akshare_lhb_stocks(lhb_frame, self.lhb_limit)
-        market_notes = _build_akshare_notes(themes, hot_stocks)
-        has_content = bool(themes or hot_stocks)
-        return ReviewSourceResult(
-            source=self.source_name,
-            source_url=self.source_url,
-            status="success" if has_content else "failed",
-            reason=None if has_content else "AkShare 未返回概念或龙虎榜数据",
-            trade_date=trade_date,
-            themes=themes,
-            hot_stocks=hot_stocks,
-            market_notes=market_notes,
-        )
-
-    def _akshare(self) -> ModuleType | object:
-        if self.akshare_module is not None:
-            return self.akshare_module
-        import akshare as ak
-
-        return ak
-
-
 def _extract_mainstream_views(text: str) -> list[str]:
     match = re.search(r"主流看点\n([^\n]+)", text)
     if not match:
@@ -386,10 +351,17 @@ def _eastmoney_articles_for_trade_date(
 
 def _join_title_summary(title: object, summary: object) -> str:
     title_text = str(title or "").strip()
-    summary_text = str(summary or "").strip()
+    summary_text = _clean_text(str(summary or ""))
     if title_text and summary_text:
         return f"{title_text}：{summary_text}"
     return title_text or summary_text
+
+
+def _clean_text(value: str) -> str:
+    value = re.sub(r"<[^>]+>", "", value)
+    value = unescape(value)
+    value = re.sub(r"^【[^】]+】", "", value).strip()
+    return re.sub(r"\s+", " ", value).strip()
 
 
 def _extract_market_notes(text: str) -> list[str]:
@@ -483,91 +455,19 @@ def _looks_like_stock_name(name: str) -> bool:
     )
 
 
-def _compact_trade_date(trade_date: str) -> str:
-    try:
-        return datetime.strptime(trade_date, "%Y-%m-%d").strftime("%Y%m%d")
-    except ValueError:
-        return trade_date.replace("-", "")
+def _looks_like_stock_mention(name: str) -> bool:
+    if not name or name in {"个股", "只股"}:
+        return False
+    if any(token in name for token in ("个股", "只股", "盘中一度触及")):
+        return False
+    return True
 
 
-def _extract_akshare_concept_themes(frame: object, limit: int) -> list[ReviewThemeEvidence]:
-    if getattr(frame, "empty", False):
-        return []
-    themes: list[ReviewThemeEvidence] = []
-    for _idx, row in frame.head(limit).iterrows():
-        name = _pick_optional(row, "板块名称", "名称", "概念名称")
-        if not name:
-            continue
-        pct_change = _to_float(str(_pick_optional(row, "涨跌幅", "涨幅") or ""))
-        themes.append(
-            ReviewThemeEvidence(
-                name=str(name),
-                pct_change=pct_change,
-                reason=_akshare_concept_reason(row, pct_change),
-                source="AkShare概念/龙虎榜",
-            )
-        )
-    return _dedupe_themes(themes)
-
-
-def _extract_akshare_lhb_stocks(frame: object, limit: int) -> list[ReviewStockEvidence]:
-    if getattr(frame, "empty", False):
-        return []
-    stocks: list[ReviewStockEvidence] = []
-    for _idx, row in frame.head(limit).iterrows():
-        name = _pick_optional(row, "股票名称", "名称", "证券简称")
-        if not name:
-            continue
-        code = _pick_optional(row, "股票代码", "代码", "证券代码")
-        pct_change = _to_float(str(_pick_optional(row, "涨跌幅", "涨幅") or ""))
-        stocks.append(
-            ReviewStockEvidence(
-                name=str(name),
-                code=str(code) if code is not None else None,
-                pct_change=pct_change,
-                note=str(_pick_optional(row, "解读", "上榜原因", "类型") or "龙虎榜上榜"),
-                source="AkShare概念/龙虎榜",
-            )
-        )
-    return _dedupe_stocks(stocks)
-
-
-def _build_akshare_notes(
-    themes: list[ReviewThemeEvidence], stocks: list[ReviewStockEvidence]
-) -> list[str]:
-    notes: list[str] = []
-    if themes:
-        theme_text = "、".join(
-            f"{theme.name}{theme.pct_change:+.2f}%" if theme.pct_change is not None else theme.name
-            for theme in themes[:5]
-        )
-        notes.append(f"概念板块强度：{theme_text}")
-    if stocks:
-        stock_text = "、".join(stock.name for stock in stocks[:8])
-        notes.append(f"龙虎榜活跃：{stock_text}")
-    return notes
-
-
-def _akshare_concept_reason(row: object, pct_change: float | None) -> str:
-    up_count = _pick_optional(row, "上涨家数")
-    down_count = _pick_optional(row, "下跌家数")
-    breadth = ""
-    if up_count is not None and down_count is not None:
-        breadth = f"，上涨/下跌家数 {up_count}/{down_count}"
-    if pct_change is None:
-        return f"AkShare概念板块排名靠前{breadth}"
-    return f"AkShare概念板块涨幅{pct_change:+.2f}%{breadth}"
-
-
-def _pick_optional(row: object, *names: str) -> object | None:
-    for name in names:
-        try:
-            value = row[name]
-        except Exception:
-            continue
-        if value is not None:
-            return value
-    return None
+def _extract_height_stocks(text: str) -> list[tuple[str, str]]:
+    matches: list[tuple[str, str]] = []
+    for name, height in re.findall(r"([\u4e00-\u9fa5A-Za-z]{2,8})(\d+天\d+板)", text):
+        matches.append((name, f"{name}{height}"))
+    return matches
 
 
 def _dedupe_themes(themes: list[ReviewThemeEvidence]) -> list[ReviewThemeEvidence]:

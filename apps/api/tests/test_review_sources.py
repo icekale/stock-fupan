@@ -3,7 +3,6 @@ from pathlib import Path
 from app.config import Settings
 from app.providers.factory import create_provider_bundle
 from app.providers.review_sources import (
-    AkShareReviewProvider,
     EastmoneyZtFpProvider,
     ReviewSourceAggregator,
     ReviewSourceResult,
@@ -102,6 +101,9 @@ def test_parse_eastmoney_ztfp_api_payload_extracts_current_limit_up_article() ->
     assert result.trade_date == "2026-05-26"
     assert [theme.name for theme in result.themes] == ["PCB"]
     assert any(stock.name == "生益电子" and stock.pct_change == 20.0 for stock in result.hot_stocks)
+    assert any(stock.name == "宝鼎科技" and "14天9板" in stock.note for stock in result.hot_stocks)
+    assert "只股" not in {stock.name for stock in result.hot_stocks}
+    assert "个股" not in {stock.name for stock in result.hot_stocks}
     assert result.market_notes == [
         "5月26日涨停复盘：64只股涨停 宝鼎科技14天9板：涨停个股数量方面，今日共计64股涨停。PCB概念股活跃，生益电子20CM涨停。"
     ]
@@ -234,51 +236,7 @@ def test_provider_bundle_includes_enabled_review_sources() -> None:
     bundle = create_provider_bundle(settings)
 
     assert bundle.review_source_provider is not None
-
-
-def test_akshare_review_provider_extracts_concept_and_lhb_evidence() -> None:
-    class FakeFrame:
-        def __init__(self, rows: list[dict[str, object]]) -> None:
-            self.rows = rows
-
-        @property
-        def empty(self) -> bool:
-            return not self.rows
-
-        def head(self, limit: int) -> "FakeFrame":
-            return FakeFrame(self.rows[:limit])
-
-        def iterrows(self):
-            yield from enumerate(self.rows)
-
-    class FakeAkShare:
-        @staticmethod
-        def stock_board_concept_name_em() -> FakeFrame:
-            return FakeFrame(
-                [
-                    {"板块名称": "PCB", "涨跌幅": 4.2, "上涨家数": 38, "下跌家数": 9},
-                    {"板块名称": "贵金属", "涨跌幅": 4.1, "上涨家数": 20, "下跌家数": 3},
-                ]
-            )
-
-        @staticmethod
-        def stock_lhb_detail_em(start_date: str, end_date: str) -> FakeFrame:
-            assert start_date == "20260526"
-            assert end_date == "20260526"
-            return FakeFrame(
-                [
-                    {"股票名称": "生益电子", "股票代码": "688183", "涨跌幅": 20.0, "解读": "机构净买入"},
-                    {"股票名称": "招金黄金", "股票代码": "600916", "涨跌幅": 10.0, "解读": "游资活跃"},
-                ]
-            )
-
-    provider = AkShareReviewProvider(akshare_module=FakeAkShare)
-
-    result = provider("2026-05-26")
-
-    assert result.source == "AkShare概念/龙虎榜"
-    assert result.status == "success"
-    assert [theme.name for theme in result.themes] == ["PCB", "贵金属"]
-    assert result.themes[0].pct_change == 4.2
-    assert any(stock.name == "生益电子" and stock.code == "688183" for stock in result.hot_stocks)
-    assert any("龙虎榜" in note for note in result.market_notes)
+    assert [provider.source_name for provider in bundle.review_source_provider.providers] == [
+        "同花顺复盘",
+        "东方财富涨停复盘",
+    ]

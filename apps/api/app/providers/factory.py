@@ -16,7 +16,6 @@ from app.providers.ocr import (
     OpenAIVisionOcrProvider,
 )
 from app.providers.review_sources import (
-    AkShareReviewProvider,
     EastmoneyZtFpProvider,
     ReviewSourceAggregator,
     ThsFupanProvider,
@@ -155,20 +154,17 @@ def _create_tickflow_provider(settings: Settings) -> TickFlowQuoteProvider:
 def _create_review_source_provider(settings: Settings) -> ReviewSourceAggregator | None:
     if not settings.review_sources_enabled:
         return None
-    providers: list[object] = [
-        ThsFupanProvider(
-            source_url=settings.ths_fupan_url,
-            timeout_seconds=settings.provider_timeout_seconds,
-        ),
-        EastmoneyZtFpProvider(
-            source_url=settings.eastmoney_ztfp_url,
-            timeout_seconds=settings.provider_timeout_seconds,
-        ),
-    ]
-    if settings.akshare_review_source_enabled:
-        providers.append(AkShareReviewProvider())
     return ReviewSourceAggregator(
-        providers=providers
+        providers=[
+            ThsFupanProvider(
+                source_url=settings.ths_fupan_url,
+                timeout_seconds=settings.provider_timeout_seconds,
+            ),
+            EastmoneyZtFpProvider(
+                source_url=settings.eastmoney_ztfp_url,
+                timeout_seconds=settings.provider_timeout_seconds,
+            ),
+        ]
     )
 
 
