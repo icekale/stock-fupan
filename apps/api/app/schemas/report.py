@@ -49,6 +49,47 @@ class NewsItem(BaseModel):
     weight: float = 1.0
 
 
+class PredictionConfidence(StrEnum):
+    HIGH = "high"
+    MEDIUM = "medium"
+    LOW = "low"
+    INSUFFICIENT = "insufficient"
+
+
+class PredictionStockFocus(BaseModel):
+    code: str = ""
+    name: str
+    pct_change: float | None = None
+    role: str
+    source_tags: list[str] = Field(default_factory=list)
+    observation: str
+
+
+class PredictionScoreBreakdown(BaseModel):
+    review_confirmation: int = 0
+    market_strength: int = 0
+    front_row_quality: int = 0
+    board_quality: int = 0
+    catalyst: int = 0
+    risk_penalty: int = 0
+    total: int
+
+
+class NextDayPrediction(BaseModel):
+    sector: str
+    rank: int
+    continuation_probability: int | None
+    confidence: PredictionConfidence
+    headline: str
+    front_row_stocks: list[PredictionStockFocus] = Field(default_factory=list)
+    trigger_conditions: list[str] = Field(default_factory=list)
+    invalidation_conditions: list[str] = Field(default_factory=list)
+    risk_labels: list[str] = Field(default_factory=list)
+    score_breakdown: PredictionScoreBreakdown | None = None
+    source_basis: list[str] = Field(default_factory=list)
+    evidence_notes: list[str] = Field(default_factory=list)
+
+
 class SectorCandidate(BaseModel):
     name: str
     score: float
@@ -125,5 +166,7 @@ class ReportDTO(BaseModel):
             "sector_score": "sector_score_v1",
             "news_weight": "news_weight_v1",
             "fact_validation": "fact_validation_v1",
+            "next_day_prediction": "next_day_prediction_v0_5",
         }
     )
+    next_day_predictions: list[NextDayPrediction] = Field(default_factory=list)
