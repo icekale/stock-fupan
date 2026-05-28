@@ -4,7 +4,8 @@ WORKDIR /workspace/apps/api
 
 ENV PYTHONUNBUFFERED=1 \
     UV_COMPILE_BYTECODE=1 \
-    UV_LINK_MODE=copy
+    UV_LINK_MODE=copy \
+    TZ=Asia/Shanghai
 
 RUN pip install --no-cache-dir uv
 

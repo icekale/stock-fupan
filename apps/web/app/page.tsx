@@ -7,6 +7,7 @@ import { ReportPreview } from "../components/ReportPreview";
 import { TaskProgress } from "../components/TaskProgress";
 import { WatchlistImportPanel } from "../components/WatchlistImportPanel";
 import { createReport, deleteReport, getConfigStatus, listReports, reportAssetUrl } from "../lib/api";
+import { getLatestTradeDate } from "../lib/tradeDate";
 import type { ConfigStatusItem, CreateReportResponse, ReportKind, ReportListItem } from "../lib/types";
 
 export default function HomePage() {
@@ -262,31 +263,6 @@ export default function HomePage() {
       </div>
     </AdminShell>
   );
-}
-
-function getLatestTradeDate() {
-  const formatter = new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Shanghai",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    weekday: "short",
-  });
-  const parts = formatter.formatToParts(new Date());
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
-  const date = new Date(`${values.year}-${values.month}-${values.day}T00:00:00+08:00`);
-  const day = date.getDay();
-  if (day === 0) {
-    date.setDate(date.getDate() - 2);
-  } else if (day === 6) {
-    date.setDate(date.getDate() - 1);
-  }
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone: "Asia/Shanghai",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(date);
 }
 
 function SelectedReportCard({ report }: { report: ReportListItem }) {

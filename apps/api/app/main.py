@@ -1,8 +1,10 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC
 from pathlib import Path
 import shutil
 from urllib.parse import quote
+from zoneinfo import ZoneInfo
 
 from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -75,6 +77,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+CHINA_TZ = ZoneInfo("Asia/Shanghai")
 
 
 @app.get("/health")
@@ -236,11 +240,21 @@ def list_reports() -> dict[str, object]:
                     "png": str(Path(row.asset_dir) / "report.png"),
                     "html_url": _asset_url(Path(row.asset_dir) / "report.html"),
                     "png_url": _asset_url(Path(row.asset_dir) / "report.png"),
-                    "created_at": row.created_at.isoformat() if row.created_at else None,
+                    "created_at": _china_time_iso(row.created_at),
                 }
                 for row in rows
             ]
         }
+
+
+def _china_time_iso(value: object) -> str | None:
+    if value is None:
+        return None
+    if not hasattr(value, "astimezone"):
+        return None
+    if getattr(value, "tzinfo", None) is None:
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(CHINA_TZ).isoformat()
 
 
 @app.get("/api/reports/asset")

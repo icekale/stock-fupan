@@ -6,7 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "lint": "tsc --noEmit",
-    "test": "tsc --noEmit"
+    "test": "tsc --noEmit && node --experimental-strip-types --test lib/*.test.ts"
   },
   "dependencies": {
     "next": "15.1.0",

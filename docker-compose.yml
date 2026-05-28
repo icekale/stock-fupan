@@ -5,6 +5,8 @@ services:
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      TZ: Asia/Shanghai
     ports:
       - "8000:8000"
     volumes:
@@ -14,10 +16,11 @@ services:
     image: node:22-alpine
     restart: unless-stopped
     working_dir: /workspace
-    command: sh -c "corepack enable && pnpm install && pnpm --filter @stock-review/web dev --hostname 0.0.0.0"
+    command: sh -c "apk add --no-cache tzdata >/dev/null && corepack enable && pnpm install && pnpm --filter @stock-review/web dev --hostname 0.0.0.0"
     ports:
       - "3000:3000"
     volumes:
       - .:/workspace
     environment:
+      TZ: Asia/Shanghai
       NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}

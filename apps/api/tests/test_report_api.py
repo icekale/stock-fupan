@@ -98,6 +98,7 @@ def test_report_api_lists_reports_and_serves_assets(tmp_path: Path, monkeypatch)
         assert item["kind"] == "midday"
         assert item["kind_label"] == "午间复盘"
         assert item["html_url"].startswith("/api/reports/asset?path=")
+        assert item["created_at"].endswith("+08:00")
 
         asset_response = client.get(item["html_url"])
         assert asset_response.status_code == 200
