@@ -92,38 +92,6 @@ def test_generate_report_cli_can_write_midday_report(
     assert (tmp_path / "2026-05-26" / "midday" / "v001" / "2026-05-26-午间复盘.html").exists()
 
 
-@pytest.mark.parametrize(
-    ("trade_date", "message"),
-    [
-        ("2026-05-23", "非交易日"),
-        ("2026-05-01", "休市日"),
-        ("2026-05-29", "未来日期"),
-    ],
-)
-def test_generate_report_cli_rejects_invalid_trade_dates(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
-    trade_date: str,
-    message: str,
-) -> None:
-    from app.cli import generate_report
-
-    monkeypatch.setattr(generate_report, "create_provider_bundle", lambda settings: _fake_bundle())
-
-    exit_code = generate_report.main([
-        "--date",
-        trade_date,
-        "--reports-root",
-        str(tmp_path),
-    ])
-
-    captured = capsys.readouterr()
-    assert exit_code == 2
-    assert message in captured.err
-    assert not (tmp_path / trade_date).exists()
-
-
 def test_generate_report_cli_returns_nonzero_for_invalid_report(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

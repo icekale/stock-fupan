@@ -85,30 +85,6 @@ def test_create_midday_report_api_returns_generated_report(tmp_path: Path, monke
     assert payload["assets"]["root"].endswith("/2026-05-26/midday/v001")
 
 
-@pytest.mark.parametrize(
-    ("trade_date", "message"),
-    [
-        ("2026-05-23", "非交易日"),
-        ("2026-05-01", "休市日"),
-        ("2026-05-29", "未来日期"),
-    ],
-)
-def test_create_report_api_rejects_invalid_trade_dates(
-    tmp_path: Path,
-    monkeypatch,
-    trade_date: str,
-    message: str,
-) -> None:
-    monkeypatch.setenv("REPORTS_ROOT", str(tmp_path))
-
-    with TestClient(app) as client:
-        response = client.post("/api/reports/close", json={"trade_date": trade_date})
-
-    assert response.status_code == 400
-    assert message in response.json()["detail"]
-    assert not (tmp_path / trade_date).exists()
-
-
 def test_report_api_lists_reports_and_serves_assets(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("REPORTS_ROOT", str(tmp_path))
 
@@ -612,9 +588,6 @@ def test_mobile_report_renderer_groups_sector_detail_into_scannable_blocks(
     assert "02 资金与换手证据" in html
     assert "03 板块逻辑" in html
     assert "动作 · 明日看法" in html
-    assert "来源 / 标签" not in html
-    assert "TickFlow前排" not in html
-    assert "资金状态" not in html
 
 
 def test_mobile_report_renderer_uses_daily_summary_board(tmp_path: Path) -> None:
@@ -869,13 +842,6 @@ def test_report_generator_merges_tickflow_frontline_stocks_into_strong_sectors(
     assert semiconductor.capital_evidence.avg_turnover_rate == 13.0
     assert "前排成交额合计222.00亿" in semiconductor.capital_evidence.summary
     assert "TickFlow前排" in semiconductor.top_stocks[0].tags
-    html = result.assets.report_html.read_text(encoding="utf-8")
-    assert "来源 / 标签" not in html
-    assert "TickFlow前排" not in html
-    assert "资金状态" not in html
-    assert "涨幅 / 资金" in html
-    assert "成交 / 换手" in html
-    assert "frontline-stock-table" in html
     snapshot = json.loads(result.assets.snapshot.read_text(encoding="utf-8"))
     snapshot_sector = next(
         sector for sector in snapshot["report"]["sectors"] if sector["name"] == "半导体"
@@ -1022,50 +988,6 @@ def test_report_generator_tracks_previous_strong_themes_not_in_today_top(tmp_pat
     assert "先进封装" in html
     assert "降级观察" in html
     assert "今日未进入强势前排" in html
-
-
-def test_report_generator_uses_previous_midday_when_close_snapshot_is_missing(
-    tmp_path: Path,
-) -> None:
-    previous_snapshot = {
-        "report": {
-            "trade_date": "2026-05-26",
-            "kind": "midday",
-            "sectors": [
-                {
-                    "name": "先进封装",
-                    "score": 91.0,
-                    "rank": 1,
-                    "pct_change": 7.8,
-                    "top_stocks": [
-                        {"code": "600584.SH", "name": "长电科技", "pct_change": 10.0},
-                    ],
-                }
-            ],
-            "structured_review": {
-                "sustainability_ranking": [
-                    {"rank": 1, "sector": "先进封装", "rating": "high", "reason": "午间前排核心强势"}
-                ],
-            },
-        }
-    }
-    previous_dir = tmp_path / "2026-05-26" / "midday" / "v001"
-    write_json(previous_dir / "snapshot.json", previous_snapshot)
-
-    generator = ReportGenerator(
-        reports_root=tmp_path,
-        market_provider=TodayPowerMarketProvider(),
-        news_provider=FakeNewsProvider(),
-        llm_provider=FakeLLMProvider(),
-    )
-
-    result = generator.generate_close_report("2026-05-27")
-
-    assert result.report.structured_review is not None
-    tracked = result.report.structured_review.historical_theme_reviews
-    assert tracked[0].theme == "先进封装"
-    assert result.report.structured_review.prediction_review.source == "previous_report"
-    assert "自动对比前一日报告尚未启用" not in result.assets.report_html.read_text(encoding="utf-8")
 
 
 def test_report_generator_tracks_previous_reference_html_themes(tmp_path: Path) -> None:

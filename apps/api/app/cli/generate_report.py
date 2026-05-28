@@ -1,7 +1,6 @@
 import argparse
 import os
 from pathlib import Path
-import sys
 from typing import Sequence
 
 from dotenv import dotenv_values
@@ -12,7 +11,6 @@ from app.db.session import create_sqlite_engine, init_db
 from app.db.session import session_scope
 from app.providers.factory import create_provider_bundle
 from app.services.report_generator import GeneratedReport, ReportGenerator
-from app.services.trading_calendar import validate_trade_date
 from app.watchlist.service import WatchlistImportService
 
 
@@ -32,10 +30,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     settings = get_settings()
     reports_root = Path(args.reports_root) if args.reports_root else Path(settings.reports_root)
     watchlist_service = _create_watchlist_service(settings)
-    trade_date_validation = validate_trade_date(args.date)
-    if not trade_date_validation.is_valid:
-        print(trade_date_validation.message, file=sys.stderr)
-        return 2
 
     with create_provider_bundle(settings) as providers:
         generator = ReportGenerator(

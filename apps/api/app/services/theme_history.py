@@ -307,20 +307,18 @@ def _matching_current_sector(theme: str, current_by_name: dict[str, SectorCandid
 
 
 def _latest_snapshot_for_date(date_dir: Path) -> Path | None:
-    for kind in ("close", "midday"):
-        kind_dir = date_dir / kind
-        if not kind_dir.exists():
-            continue
-        version_dirs = [
-            path
-            for path in kind_dir.iterdir()
-            if path.is_dir() and VERSION_PATTERN.fullmatch(path.name) and (path / "snapshot.json").exists()
-        ]
-        if not version_dirs:
-            continue
-        latest = max(version_dirs, key=lambda path: int(VERSION_PATTERN.fullmatch(path.name).group(1)))  # type: ignore[union-attr]
-        return latest / "snapshot.json"
-    return None
+    close_dir = date_dir / "close"
+    if not close_dir.exists():
+        return None
+    version_dirs = [
+        path
+        for path in close_dir.iterdir()
+        if path.is_dir() and VERSION_PATTERN.fullmatch(path.name) and (path / "snapshot.json").exists()
+    ]
+    if not version_dirs:
+        return None
+    latest = max(version_dirs, key=lambda path: int(VERSION_PATTERN.fullmatch(path.name).group(1)))  # type: ignore[union-attr]
+    return latest / "snapshot.json"
 
 
 def _build_historical_theme_reviews(

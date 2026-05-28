@@ -18,7 +18,6 @@ from app.providers.factory import create_provider_bundle
 from app.providers.ocr import OcrExtractError
 from app.services.assets import report_kind_label
 from app.services.report_generator import ReportGenerator
-from app.services.trading_calendar import validate_trade_date
 from app.watchlist.ocr_service import (
     OcrPreviewNotFoundError,
     UnsupportedOcrImageError,
@@ -289,10 +288,6 @@ def create_midday_report(request: CreateCloseReportRequest) -> dict[str, object]
 
 
 def _create_report_response(request: CreateCloseReportRequest, report_kind: str) -> dict[str, object]:
-    trade_date_validation = validate_trade_date(request.trade_date)
-    if not trade_date_validation.is_valid:
-        raise HTTPException(status_code=400, detail=trade_date_validation.message)
-
     settings = get_settings()
     with create_provider_bundle(settings) as providers:
         generator = ReportGenerator(
