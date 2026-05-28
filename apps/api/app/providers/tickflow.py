@@ -1,10 +1,10 @@
-from dataclasses import dataclass
 from typing import Any, Protocol
 
 import httpx
 from pydantic import BaseModel
 
 from app.providers.market import MarketBreadth, MarketCloseSnapshot, ProviderFallbackError, ProviderStatus
+from app.providers.ths_concepts import ThsConceptBoardProvider
 from app.rules.scoring import RawSectorInput
 from app.schemas.report import IndexSnapshot
 
@@ -12,13 +12,13 @@ from app.schemas.report import IndexSnapshot
 DEFAULT_MARKET_SYMBOLS = ["600000.SH", "000001.SZ", "300750.SZ", "002594.SZ", "601318.SH"]
 INDEX_SYMBOLS = ["000001.SH", "399006.SZ"]
 FULL_MARKET_UNIVERSE = "CN_Equity_A"
-INDUSTRY_UNIVERSE_PREFIX = "CN_Equity_SW3_"
 TOP_STRONG_QUOTES = 80
 MIN_STRONG_QUOTE_PCT = 5.0
-MAX_INDUSTRY_DETAIL_REQUESTS = 40
 THEME_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("存储芯片", ("存储", "佰维", "德明利", "兆易", "江波龙", "普冉", "东芯")),
+    ("先进封装", ("先进封装", "封装", "封测", "长电", "通富", "华天", "甬矽", "晶方")),
     ("PCB", ("生益", "沪电", "胜宏", "景旺", "深南", "鹏鼎", "东山", "世运", "方正科技")),
-    ("半导体", ("芯", "半导体", "晶", "微", "封测", "长电", "通富", "华天", "中芯")),
+    ("半导体", ("芯", "半导体", "晶", "微", "中芯")),
     ("新材料", ("新材", "材料", "纳米", "复材", "碳", "膜")),
     ("环保", ("环保", "复洁", "清源", "水务", "节能", "固废")),
     ("机器人", ("机器人", "智能", "自动化", "精工", "机电", "伺服")),
@@ -38,14 +38,6 @@ class WatchlistQuote(BaseModel):
     capital_strength: str | None = None
     volume: float | None = None
     quote_time: str | None = None
-
-
-@dataclass(frozen=True)
-class IndustryUniverse:
-    universe_id: str
-    name: str
-    symbol_count: int
-    symbols: tuple[str, ...] = ()
 
 
 class TickFlowQuoteProvider(Protocol):
@@ -136,48 +128,6 @@ class TickFlowProvider:
             raise ProviderFallbackError(f"TickFlow 请求失败: {exc.__class__.__name__}") from exc
         return [_quote_from_item(item) for item in _extract_items(payload)]
 
-    def get_industry_universes(self) -> list[IndustryUniverse]:
-        if not self.api_key:
-            raise ProviderFallbackError("TICKFLOW_API_KEY 未配置")
-        try:
-            response = self.http_client.get(
-                f"{self.base_url}/v1/universes",
-                headers={"x-api-key": self.api_key},
-                timeout=self.timeout_seconds,
-            )
-            response.raise_for_status()
-            payload = response.json()
-        except httpx.TimeoutException as exc:
-            raise ProviderFallbackError("TickFlow 请求超时") from exc
-        except httpx.HTTPStatusError as exc:
-            status_code = exc.response.status_code if exc.response is not None else None
-            raise ProviderFallbackError(_safe_status_error(status_code)) from exc
-        except Exception as exc:
-            raise ProviderFallbackError(f"TickFlow 请求失败: {exc.__class__.__name__}") from exc
-        return _industry_universes_from_items(_extract_items(payload))
-
-    def get_universe(self, universe_id: str) -> IndustryUniverse:
-        if not self.api_key:
-            raise ProviderFallbackError("TICKFLOW_API_KEY 未配置")
-        try:
-            response = self.http_client.get(
-                f"{self.base_url}/v1/universes/{universe_id}",
-                headers={"x-api-key": self.api_key},
-                timeout=self.timeout_seconds,
-            )
-            response.raise_for_status()
-            payload = response.json()
-        except httpx.TimeoutException as exc:
-            raise ProviderFallbackError("TickFlow 请求超时") from exc
-        except httpx.HTTPStatusError as exc:
-            status_code = exc.response.status_code if exc.response is not None else None
-            raise ProviderFallbackError(_safe_status_error(status_code)) from exc
-        except Exception as exc:
-            raise ProviderFallbackError(f"TickFlow 请求失败: {exc.__class__.__name__}") from exc
-        item = _extract_single_item(payload)
-        return _industry_universe_from_item(item)
-
-
 class TickFlowMarketDataProvider:
     provider_name = "tickflow"
 
@@ -188,6 +138,7 @@ class TickFlowMarketDataProvider:
         symbols: list[str] | None = None,
         timeout_seconds: float = 12,
         http_client: object | None = None,
+        concept_provider: ThsConceptBoardProvider | None = None,
     ) -> None:
         self.quote_provider = TickFlowProvider(
             api_key=api_key,
@@ -197,9 +148,11 @@ class TickFlowMarketDataProvider:
         )
         self.symbols = symbols or DEFAULT_MARKET_SYMBOLS
         self._sector_frontline_stocks: dict[str, list[WatchlistQuote]] = {}
+        self.concept_provider = concept_provider or ThsConceptBoardProvider()
 
     def close(self) -> None:
         self.quote_provider.close()
+        self.concept_provider.close()
 
     def get_close_snapshot(self, trade_date: str) -> MarketCloseSnapshot:
         market_quotes = self.quote_provider.get_universe_quotes(FULL_MARKET_UNIVERSE)
@@ -214,7 +167,7 @@ class TickFlowMarketDataProvider:
             sum(quote.turnover_cny or 0 for quote in equity_quotes) / 100_000_000,
             2,
         )
-        raw_sectors = self._strong_sectors_from_market(equity_quotes)
+        raw_sectors = self._strong_sectors_from_market(equity_quotes, trade_date=trade_date)
         if not raw_sectors:
             raise ProviderFallbackError("TickFlow 未返回可排序标的")
         return MarketCloseSnapshot(
@@ -234,64 +187,44 @@ class TickFlowMarketDataProvider:
     def get_sector_frontline_stocks(self, sector_name: str) -> list[WatchlistQuote]:
         return list(self._sector_frontline_stocks.get(sector_name, []))
 
-    def _strong_sectors_from_market(self, equity_quotes: list[WatchlistQuote]) -> list[RawSectorInput]:
+    def _strong_sectors_from_market(
+        self,
+        equity_quotes: list[WatchlistQuote],
+        trade_date: str | None = None,
+    ) -> list[RawSectorInput]:
         self._sector_frontline_stocks = {}
         strong_quotes = _strong_quotes(equity_quotes, top_n=TOP_STRONG_QUOTES)
         themed = _sectors_from_theme_quotes(strong_quotes)
         self._sector_frontline_stocks = _frontline_stocks_from_theme_quotes(strong_quotes)
-        industry_theme_quotes = self._refine_theme_frontline_stocks_with_industries(
+        concept_sectors = self._refine_theme_frontline_stocks_with_concepts(
             equity_quotes,
             strong_quotes,
+            trade_date=trade_date,
         )
-        if themed and industry_theme_quotes:
-            themed = _replace_theme_sectors_with_industry_quotes(themed, industry_theme_quotes)
+        if themed and concept_sectors:
+            themed = _replace_theme_sectors_with_concepts(themed, concept_sectors)
         return themed or _sectors_from_quotes(strong_quotes)
 
-    def _refine_theme_frontline_stocks_with_industries(
+    def _refine_theme_frontline_stocks_with_concepts(
         self,
         equity_quotes: list[WatchlistQuote],
         strong_quotes: list[WatchlistQuote],
-    ) -> dict[str, list[WatchlistQuote]]:
-        industries = self._matching_industries_for_quotes(strong_quotes)
-        if not industries:
-            return {}
-        industry_frontline = _frontline_stocks_from_industry_members(
-            equity_quotes,
-            industries,
-        )
-        industry_theme_quotes: dict[str, list[WatchlistQuote]] = {}
-        for theme, theme_industries in _industries_by_theme(industries).items():
-            quotes = [
-                quote
-                for industry in theme_industries
-                for quote in industry_frontline.get(industry.name, [])
-            ]
-            if quotes:
-                ranked = _rank_frontline_stocks(quotes)
-                self._sector_frontline_stocks[theme] = ranked
-                industry_theme_quotes[theme] = ranked
-        return industry_theme_quotes
-
-    def _matching_industries_for_quotes(
-        self,
-        quotes: list[WatchlistQuote],
-    ) -> list[IndustryUniverse]:
-        strong_symbols = {quote.symbol for quote in quotes}
-        if not strong_symbols:
-            return []
-        try:
-            candidates = self.quote_provider.get_industry_universes()
-        except Exception:
-            return []
-        detailed: list[IndustryUniverse] = []
-        for industry in candidates[:MAX_INDUSTRY_DETAIL_REQUESTS]:
-            try:
-                detail = industry if industry.symbols else self.quote_provider.get_universe(industry.universe_id)
-            except Exception:
-                continue
-            if set(detail.symbols).intersection(strong_symbols):
-                detailed.append(detail)
-        return detailed
+        trade_date: str | None = None,
+    ) -> dict[str, RawSectorInput]:
+        concept_sectors: dict[str, RawSectorInput] = {}
+        for theme, theme_quotes in _group_quotes_by_theme(strong_quotes).items():
+            sector_quotes = [quote for quote in equity_quotes if _quote_matches_theme(quote, theme)]
+            if not sector_quotes:
+                sector_quotes = theme_quotes
+            concept_sector = self.concept_provider.build_sector_input(
+                theme,
+                sector_quotes,
+                trade_date=trade_date,
+            )
+            if concept_sector is not None:
+                concept_sectors[theme] = concept_sector
+                self._sector_frontline_stocks[concept_sector.name] = _rank_frontline_stocks(sector_quotes)
+        return concept_sectors
 
 
 class FallbackTickFlowProvider:
@@ -358,27 +291,6 @@ def _extract_single_item(payload: object) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ProviderFallbackError("TickFlow 响应结构异常")
     return data
-
-
-def _industry_universes_from_items(items: list[dict[str, Any]]) -> list[IndustryUniverse]:
-    return [
-        _industry_universe_from_item(item)
-        for item in items
-        if str(item.get("id") or "").startswith(INDUSTRY_UNIVERSE_PREFIX)
-    ]
-
-
-def _industry_universe_from_item(item: dict[str, Any]) -> IndustryUniverse:
-    universe_id = str(item.get("id") or "")
-    name = _clean_industry_name(str(item.get("name") or item.get("description") or universe_id))
-    symbol_count = int(_optional_float(item.get("symbol_count")) or 0)
-    symbols = tuple(str(symbol) for symbol in item.get("symbols", []) if symbol)
-    return IndustryUniverse(
-        universe_id=universe_id,
-        name=name,
-        symbol_count=symbol_count,
-        symbols=symbols,
-    )
 
 
 def _quote_from_item(item: dict[str, Any]) -> WatchlistQuote:
@@ -494,6 +406,20 @@ def _sectors_from_theme_quotes(quotes: list[WatchlistQuote]) -> list[RawSectorIn
     )[:10]
 
 
+def _group_quotes_by_theme(quotes: list[WatchlistQuote]) -> dict[str, list[WatchlistQuote]]:
+    grouped: dict[str, list[WatchlistQuote]] = {}
+    for quote in quotes:
+        theme = _theme_for_quote(quote)
+        if theme is not None:
+            grouped.setdefault(theme, []).append(quote)
+    return grouped
+
+
+def _quote_matches_theme(quote: WatchlistQuote, theme: str) -> bool:
+    name = quote.name or quote.symbol
+    return any(alias in name for alias in _theme_aliases(theme))
+
+
 def _frontline_stocks_from_theme_quotes(quotes: list[WatchlistQuote]) -> dict[str, list[WatchlistQuote]]:
     grouped: dict[str, list[WatchlistQuote]] = {}
     for quote in quotes:
@@ -537,6 +463,22 @@ def _theme_for_quote(quote: WatchlistQuote) -> str | None:
     return None
 
 
+def _theme_aliases(theme: str) -> tuple[str, ...]:
+    aliases = {
+        "存储芯片": ("存储芯片", "存储", "半导体存储"),
+        "先进封装": ("先进封装", "封装", "封测"),
+        "PCB": ("PCB", "印制电路板"),
+        "半导体": ("半导体", "芯片", "封装", "封测", "集成电路"),
+        "新材料": ("新材料", "材料", "培育钻石", "复合材料"),
+        "环保": ("环保", "节能环保", "水务", "固废", "污水"),
+        "机器人": ("机器人", "人形机器人", "自动化", "伺服", "工业母机"),
+        "有色金属": ("有色金属", "贵金属", "黄金", "铜", "铝", "锂", "稀土", "小金属"),
+        "电力设备": ("电力设备", "智能电网", "输变电", "电网设备", "特高压"),
+        "电力": ("电力", "风电", "光伏", "核电", "发电", "火电"),
+    }
+    return aliases.get(theme, (theme,))
+
+
 def _sector_from_group(theme: str, quotes: list[WatchlistQuote]) -> RawSectorInput | None:
     if not quotes:
         return None
@@ -557,115 +499,18 @@ def _sector_from_group(theme: str, quotes: list[WatchlistQuote]) -> RawSectorInp
     )
 
 
-def _replace_theme_sectors_with_industry_quotes(
+def _replace_theme_sectors_with_concepts(
     sectors: list[RawSectorInput],
-    industry_theme_quotes: dict[str, list[WatchlistQuote]],
+    concept_sectors: dict[str, RawSectorInput],
 ) -> list[RawSectorInput]:
     output: list[RawSectorInput] = []
     for sector in sectors:
-        quotes = industry_theme_quotes.get(sector.name)
-        replacement = _sector_from_group(sector.name, quotes) if quotes else None
-        output.append(replacement or sector)
+        output.append(concept_sectors.get(sector.name, sector))
     return sorted(
         output,
         key=lambda sector: (sector.limit_up_count, sector.pct_change, sector.stock_up_ratio),
         reverse=True,
     )[:10]
-
-
-def _sectors_from_industry_members(
-    quotes: list[WatchlistQuote],
-    industries: list[IndustryUniverse],
-) -> list[RawSectorInput]:
-    quote_by_symbol = {quote.symbol: quote for quote in quotes}
-    grouped: dict[str, list[WatchlistQuote]] = {}
-    for industry in industries:
-        for symbol in industry.symbols:
-            quote = quote_by_symbol.get(symbol)
-            if quote is not None and _is_mainland_regular_equity(quote):
-                grouped.setdefault(industry.name, []).append(quote)
-
-    sectors: list[RawSectorInput] = []
-    for name, sector_quotes in grouped.items():
-        changes = [quote.pct_change or 0 for quote in sector_quotes if quote.pct_change is not None]
-        if not changes:
-            continue
-        turnover_values = [quote.turnover_cny or 0 for quote in sector_quotes]
-        avg_change = sum(changes) / len(changes)
-        limit_up_count = sum(1 for change in changes if change >= 9.8)
-        up_ratio = sum(1 for change in changes if change > 0) / len(changes)
-        sectors.append(
-            RawSectorInput(
-                name=name,
-                pct_change=avg_change,
-                limit_up_count=limit_up_count,
-                stock_up_ratio=up_ratio,
-                turnover_change=min(sum(turnover_values) / 10_000_000_000, 1.0),
-                news_weight=min(max((limit_up_count * 0.25) + (avg_change / 20), 0.0), 1.0),
-            )
-        )
-    return sorted(
-        sectors,
-        key=lambda sector: (sector.limit_up_count, sector.pct_change, sector.stock_up_ratio),
-        reverse=True,
-    )[:10]
-
-
-def _frontline_stocks_from_industry_members(
-    quotes: list[WatchlistQuote],
-    industries: list[IndustryUniverse],
-) -> dict[str, list[WatchlistQuote]]:
-    quote_by_symbol = {quote.symbol: quote for quote in quotes}
-    output: dict[str, list[WatchlistQuote]] = {}
-    for industry in industries:
-        sector_quotes = [
-            quote
-            for symbol in industry.symbols
-            if (quote := quote_by_symbol.get(symbol)) is not None
-        ]
-        ranked = _rank_frontline_stocks(sector_quotes)
-        if ranked:
-            output[industry.name] = ranked
-    return output
-
-
-def _industries_by_theme(industries: list[IndustryUniverse]) -> dict[str, list[IndustryUniverse]]:
-    grouped: dict[str, list[IndustryUniverse]] = {}
-    for industry in industries:
-        theme = _theme_for_industry(industry.name)
-        if theme is not None:
-            grouped.setdefault(theme, []).append(industry)
-    return grouped
-
-
-def _theme_for_industry(industry_name: str) -> str | None:
-    aliases: tuple[tuple[str, tuple[str, ...]], ...] = (
-        ("PCB", ("印制电路板", "PCB")),
-        ("半导体", ("半导体", "集成电路", "芯片", "封测")),
-        ("机器人", ("机器人", "自动化设备")),
-        ("有色金属", ("黄金", "贵金属", "铜", "铝", "铅锌", "小金属", "金属新材料")),
-        ("电力设备", ("电力设备", "综合电力设备商", "电网", "输变电")),
-        ("电力", ("火力发电", "水力发电", "核力发电", "热力服务")),
-        ("新材料", ("新材料", "非金属材料", "磁性材料", "膜材料", "改性塑料")),
-    )
-    return next(
-        (
-            theme
-            for theme, keywords in aliases
-            if any(keyword in industry_name for keyword in keywords)
-        ),
-        None,
-    )
-
-
-def _clean_industry_name(name: str) -> str:
-    text = name
-    if ":" in text:
-        text = text.split(":", 1)[1]
-    for prefix in ("SW3", "SW2", "SW1"):
-        if text.startswith(prefix):
-            text = text.removeprefix(prefix)
-    return text.replace("Ⅲ", "").replace("Ⅱ", "").strip()
 
 
 def _market_tags(changes: list[float], turnover_cny: float) -> list[str]:
