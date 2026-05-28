@@ -28,9 +28,9 @@ from app.schemas.structured_review import (
 
 def build_structured_review(report: ReportDTO) -> StructuredReviewDTO:
     leader = report.sectors[0] if report.sectors else None
-    runner_up = report.sectors[1] if len(report.sectors) > 1 else None
     top_prediction = _top_numeric_prediction(report)
     leader_name = top_prediction.sector if top_prediction is not None else leader.name if leader else "暂无主线"
+    runner_up = _rotation_sector(report, leader_name)
     runner_up_name = runner_up.name if runner_up else "暂无轮动方向"
     next_session = _next_session(report)
     post_session = _post_session(report)
@@ -54,7 +54,7 @@ def build_structured_review(report: ReportDTO) -> StructuredReviewDTO:
         tomorrow_judgement=TomorrowJudgement(
             most_likely_to_continue=leader_name,
             most_likely_to_diverge=diverge_name,
-            rotation_candidates=[sector.name for sector in report.sectors[1:4]],
+            rotation_candidates=_rotation_candidate_names(report, leader_name),
             defensive_candidates=["高股息", "低位防御"],
             core_view=f"{next_session}重点不是追高扩散，而是观察{leader_name}分歧后的承接与{runner_up_name}轮动强度。",
             operating_focus=[
@@ -94,6 +94,17 @@ def _next_session(report: ReportDTO) -> str:
 
 def _post_session(report: ReportDTO) -> str:
     return "下午盘中" if report.kind == ReportKind.MIDDAY else "次日竞价与盘中"
+
+
+def _rotation_sector(report: ReportDTO, leader_name: str) -> SectorCandidate | None:
+    for sector in report.sectors:
+        if sector.name != leader_name:
+            return sector
+    return None
+
+
+def _rotation_candidate_names(report: ReportDTO, leader_name: str) -> list[str]:
+    return [sector.name for sector in report.sectors if sector.name != leader_name][:3]
 
 
 def _previous_prediction_text(report: ReportDTO) -> str:

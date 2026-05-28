@@ -305,6 +305,45 @@ def test_prediction_opportunity_candidates_include_stock_names_and_codes() -> No
     assert "观察竞价溢价与开盘承接" in focus_text
 
 
+def test_structured_review_uses_distinct_leader_and_rotation_when_prediction_leader_differs() -> None:
+    report = _fake_report()
+    report.kind = ReportKind.MIDDAY
+    report.sectors = [
+        SectorCandidate(name="新材料", score=94, rank=1, pct_change=10.34, reason="综合评分靠前"),
+        SectorCandidate(name="电力", score=92, rank=2, pct_change=10.0, reason="复盘源确认", review_sources=["同花顺复盘"]),
+        SectorCandidate(name="半导体", score=90, rank=3, pct_change=13.87, reason="综合评分靠前"),
+    ]
+    report.next_day_predictions = [
+        NextDayPrediction(
+            sector="电力",
+            rank=2,
+            continuation_probability=94,
+            confidence=PredictionConfidence.HIGH,
+            headline="电力延续概率较高。",
+            trigger_conditions=["观察电力前排承接。"],
+            invalidation_conditions=["前排股集体低开低走。"],
+            risk_labels=[],
+        ),
+        NextDayPrediction(
+            sector="新材料",
+            rank=1,
+            continuation_probability=92,
+            confidence=PredictionConfidence.HIGH,
+            headline="新材料延续概率较高。",
+            trigger_conditions=["观察新材料前排承接。"],
+            invalidation_conditions=["前排股集体低开低走。"],
+            risk_labels=[],
+        ),
+    ]
+
+    review = build_structured_review(report)
+
+    assert review.tomorrow_judgement.most_likely_to_continue == "电力"
+    assert review.tomorrow_judgement.rotation_candidates[0] == "新材料"
+    assert "围绕电力去弱留强，同时确认新材料是否具备持续性" in review.practical_conclusion.headline
+    assert "电力与新材料之间的资金切换" in review.prediction_review.revision
+
+
 def test_build_structured_review_tracks_previous_strong_themes() -> None:
     report = _fake_report()
     report.sectors = [

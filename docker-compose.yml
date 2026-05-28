@@ -2,6 +2,7 @@ services:
   api:
     build:
       context: ./apps/api
+    restart: unless-stopped
     env_file:
       - .env
     ports:
@@ -11,11 +12,12 @@ services:
       - ./apps/api/data:/workspace/apps/api/data
   web:
     image: node:22-alpine
+    restart: unless-stopped
     working_dir: /workspace
-    command: sh -c "corepack enable && pnpm install && pnpm dev:web"
+    command: sh -c "corepack enable && pnpm install && pnpm --filter @stock-review/web dev --hostname 0.0.0.0"
     ports:
       - "3000:3000"
     volumes:
       - .:/workspace
     environment:
-      NEXT_PUBLIC_API_BASE_URL: http://localhost:8000
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000}

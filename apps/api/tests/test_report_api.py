@@ -104,6 +104,26 @@ def test_report_api_lists_reports_and_serves_assets(tmp_path: Path, monkeypatch)
         assert "2026-05-26-午间复盘" in asset_response.text
 
 
+def test_report_api_deletes_report_row_and_asset_dir(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("REPORTS_ROOT", str(tmp_path))
+
+    with TestClient(app) as client:
+        create_response = client.post("/api/reports/midday", json={"trade_date": "2026-05-26"})
+        report_item = client.get("/api/reports").json()["items"][0]
+        asset_dir = Path(report_item["asset_dir"])
+
+        delete_response = client.delete(f"/api/reports/{report_item['id']}")
+        list_response = client.get("/api/reports")
+        asset_response = client.get(create_response.json()["assets"]["html_url"])
+
+    assert create_response.status_code == 200
+    assert delete_response.status_code == 200
+    assert delete_response.json() == {"deleted": True, "id": report_item["id"]}
+    assert report_item["id"] not in {item["id"] for item in list_response.json()["items"]}
+    assert not asset_dir.exists()
+    assert asset_response.status_code == 404
+
+
 def test_config_status_api_returns_sanitized_provider_state(monkeypatch) -> None:
     monkeypatch.setenv("MARKET_PROVIDER", "tickflow")
     monkeypatch.setenv("NEWS_PROVIDER", "anspire")
@@ -1150,6 +1170,44 @@ def test_report_generator_merges_curated_review_sources_into_strong_theme(tmp_pa
     assert not any(stock.name == "招金黄金" for stock in pcb.top_stocks)
     assert any("PCB概念股午后多数上扬" in note for note in pcb.review_notes)
     assert result.provider_status["review_sources"][0]["source"] == "同花顺复盘"
+
+
+class PowerOnlyReviewSourceProvider:
+    def collect(self, trade_date: str) -> list[ReviewSourceResult]:
+        return [
+            ReviewSourceResult(
+                source="同花顺复盘",
+                source_url="https://stock.10jqka.com.cn/fupan/",
+                status="success",
+                themes=[ReviewThemeEvidence(name="电力", pct_change=4.2, reason="电力前排活跃", source="同花顺复盘")],
+                hot_stocks=[ReviewStockEvidence(name="粤电力Ａ", code="000539.SZ", pct_change=10.04, source="同花顺复盘")],
+                market_notes=["电力板块早盘走强，粤电力Ａ涨停。"],
+            )
+        ]
+
+
+def test_report_generator_keeps_tickflow_top_sectors_when_review_source_confirms_only_one(
+    tmp_path: Path,
+) -> None:
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=ConflictingRawAndScoredMarketProvider(),
+        news_provider=FakeNewsProvider(),
+        llm_provider=FakeLLMProvider(),
+        review_source_provider=PowerOnlyReviewSourceProvider(),
+    )
+
+    result = generator.generate_midday_report("2026-05-26")
+
+    sector_names = [sector.name for sector in result.report.sectors]
+    assert len(sector_names) >= 5
+    assert sector_names[:3] == ["半导体", "机器人", "PCB"]
+    assert "电力" in sector_names
+    electric = next(sector for sector in result.report.sectors if sector.name == "电力")
+    assert electric.review_sources == ["同花顺复盘"]
+    assert len(result.report.next_day_predictions) >= 5
+    assert result.report.structured_review is not None
+    assert len(result.report.structured_review.sector_reviews) >= 5
 
 
 class WeakThemeReviewSourceProvider:

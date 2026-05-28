@@ -1,6 +1,7 @@
 import type {
   ConfigStatusResponse,
   CreateReportResponse,
+  DeleteReportResponse,
   ReportKind,
   ReportListResponse,
   WatchlistImportResult,
@@ -50,6 +51,16 @@ export async function listReports(): Promise<ReportListResponse> {
     throw new Error(`读取报告列表失败：${response.status} ${await response.text()}`);
   }
   return response.json() as Promise<ReportListResponse>;
+}
+
+export async function deleteReport(reportId: number): Promise<DeleteReportResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/reports/${reportId}`, {
+    method: "DELETE",
+  });
+  if (!response.ok) {
+    throw new Error(`删除报告失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<DeleteReportResponse>;
 }
 
 export async function getConfigStatus(): Promise<ConfigStatusResponse> {

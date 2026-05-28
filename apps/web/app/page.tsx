@@ -6,20 +6,23 @@ import { DataSourceStatusPanel } from "../components/DataSourceStatusPanel";
 import { ReportPreview } from "../components/ReportPreview";
 import { TaskProgress } from "../components/TaskProgress";
 import { WatchlistImportPanel } from "../components/WatchlistImportPanel";
-import { createReport, getConfigStatus, listReports, reportAssetUrl } from "../lib/api";
+import { createReport, deleteReport, getConfigStatus, listReports, reportAssetUrl } from "../lib/api";
 import type { ConfigStatusItem, CreateReportResponse, ReportKind, ReportListItem } from "../lib/types";
 
 export default function HomePage() {
-  const [tradeDate, setTradeDate] = useState("2026-05-27");
+  const [tradeDate, setTradeDate] = useState(() => getLatestTradeDate());
   const [reportKind, setReportKind] = useState<ReportKind>("close");
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<CreateReportResponse | null>(null);
   const [watchlistImported, setWatchlistImported] = useState(false);
   const [reports, setReports] = useState<ReportListItem[]>([]);
+  const [selectedReportId, setSelectedReportId] = useState<number | null>(null);
+  const [deletingReportId, setDeletingReportId] = useState<number | null>(null);
   const [configItems, setConfigItems] = useState<ConfigStatusItem[]>([]);
 
   const latestReport = reports[0];
+  const selectedReport = reports.find((item) => item.id === selectedReportId) ?? null;
   const readySourceCount = configItems.filter((item) => item.status === "ready" || item.status === "local").length;
   const activeStep = useMemo(() => {
     if (result) {
@@ -38,8 +41,15 @@ export default function HomePage() {
     try {
       const response = await listReports();
       setReports(response.items);
+      setSelectedReportId((currentId) => {
+        if (currentId && response.items.some((item) => item.id === currentId)) {
+          return currentId;
+        }
+        return response.items[0]?.id ?? null;
+      });
     } catch {
       setReports([]);
+      setSelectedReportId(null);
     }
   }
 
@@ -66,6 +76,28 @@ export default function HomePage() {
       setError(err instanceof Error ? err.message : "生成失败");
     } finally {
       setRunning(false);
+    }
+  }
+
+  async function handleDeleteReport(item: ReportListItem) {
+    const confirmed = window.confirm(`确认删除 ${item.trade_date}-${item.kind_label} ${item.version} 吗？`);
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingReportId(item.id);
+    setError(null);
+    try {
+      await deleteReport(item.id);
+      if (selectedReportId === item.id) {
+        setSelectedReportId(null);
+      }
+      setResult(null);
+      await refreshReports();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "删除失败");
+    } finally {
+      setDeletingReportId(null);
     }
   }
 
@@ -153,9 +185,28 @@ export default function HomePage() {
                 {reports.length > 0 ? (
                   <div className="divide-y divide-slate-100">
                     {reports.slice(0, 10).map((item) => (
-                      <article key={item.id} className="grid gap-3 bg-white p-4 text-sm transition hover:bg-slate-50 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center">
-                        <div>
+                      <article
+                        key={item.id}
+                        className={`grid gap-3 p-4 text-sm transition lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center ${
+                          selectedReportId === item.id ? "bg-slate-50 ring-1 ring-inset ring-slate-300" : "bg-white hover:bg-slate-50"
+                        }`}
+                      >
+                        <button
+                          className="text-left"
+                          onClick={() => {
+                            setSelectedReportId(item.id);
+                            setResult(null);
+                          }}
+                          type="button"
+                        >
                           <div className="font-black text-slate-950">
+                            <span
+                              className={`mr-2 inline-flex h-4 w-4 items-center justify-center rounded-full border align-[-2px] ${
+                                selectedReportId === item.id ? "border-slate-950 bg-slate-950" : "border-slate-300 bg-white"
+                              }`}
+                            >
+                              {selectedReportId === item.id && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
+                            </span>
                             {item.trade_date}-{item.kind_label}
                             <span className="ml-2 text-xs font-semibold text-slate-400">{item.version}</span>
                           </div>
@@ -163,14 +214,22 @@ export default function HomePage() {
                             <span>{item.status}</span>
                             {item.created_at && <span>{new Date(item.created_at).toLocaleString("zh-CN")}</span>}
                           </div>
-                        </div>
-                        <div className="flex gap-2">
+                        </button>
+                        <div className="flex flex-wrap gap-2">
                           <a className="rounded-full bg-slate-950 px-3 py-1.5 text-xs font-bold text-white" href={reportAssetUrl(item.html_url)} rel="noreferrer" target="_blank">
                             查看 HTML
                           </a>
                           <a className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-700" href={reportAssetUrl(item.png_url)} rel="noreferrer" target="_blank">
                             打开 PNG
                           </a>
+                          <button
+                            className="rounded-full bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                            disabled={deletingReportId === item.id}
+                            onClick={() => void handleDeleteReport(item)}
+                            type="button"
+                          >
+                            {deletingReportId === item.id ? "删除中" : "删除"}
+                          </button>
                         </div>
                       </article>
                     ))}
@@ -184,13 +243,15 @@ export default function HomePage() {
             <section aria-label="报告预览">
               {result ? (
                 <ReportPreview result={result} />
+              ) : selectedReport ? (
+                <SelectedReportCard report={selectedReport} />
               ) : (
                 <div className="flex min-h-[360px] items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-white/70 p-8 text-center text-sm text-slate-500">
                   <div>
                     <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-lg">沪</div>
                     <p className="font-medium text-slate-700">选择交易日后生成报告预览</p>
                     <p className="mt-1 text-slate-500">
-                      {latestReport ? `最近报告：${latestReport.trade_date}-${latestReport.kind_label}` : "默认交易日为 2026-05-27。"}
+                      {latestReport ? `最近报告：${latestReport.trade_date}-${latestReport.kind_label}` : `默认交易日为 ${tradeDate}。`}
                     </p>
                   </div>
                 </div>
@@ -200,6 +261,68 @@ export default function HomePage() {
         </div>
       </div>
     </AdminShell>
+  );
+}
+
+function getLatestTradeDate() {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    weekday: "short",
+  });
+  const parts = formatter.formatToParts(new Date());
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const date = new Date(`${values.year}-${values.month}-${values.day}T00:00:00+08:00`);
+  const day = date.getDay();
+  if (day === 0) {
+    date.setDate(date.getDate() - 2);
+  } else if (day === 6) {
+    date.setDate(date.getDate() - 1);
+  }
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(date);
+}
+
+function SelectedReportCard({ report }: { report: ReportListItem }) {
+  return (
+    <article className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+      <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">Selected Report</p>
+      <h2 className="mt-2 text-2xl font-black tracking-tight text-slate-950">
+        {report.trade_date}-{report.kind_label}
+        <span className="ml-2 text-sm font-semibold text-slate-400">{report.version}</span>
+      </h2>
+      <p className="mt-3 text-sm leading-6 text-slate-600">
+        已选择历史报告。HTML 是主产物，PNG 适合分享；删除会同时移除数据库记录和该版本文件夹。
+      </p>
+      <div className="mt-5 flex flex-wrap gap-2">
+        <a className="rounded-full bg-slate-950 px-4 py-2 text-sm font-bold text-white" href={reportAssetUrl(report.html_url)} rel="noreferrer" target="_blank">
+          查看 HTML
+        </a>
+        <a className="rounded-full bg-slate-100 px-4 py-2 text-sm font-bold text-slate-700" href={reportAssetUrl(report.png_url)} rel="noreferrer" target="_blank">
+          打开 PNG
+        </a>
+      </div>
+      <dl className="mt-5 grid gap-3 text-sm sm:grid-cols-3">
+        <InfoItem label="状态" value={report.status} />
+        <InfoItem label="类型" value={report.kind_label} />
+        <InfoItem label="创建时间" value={report.created_at ? new Date(report.created_at).toLocaleString("zh-CN") : "--"} />
+      </dl>
+    </article>
+  );
+}
+
+function InfoItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-2xl bg-slate-50 p-4">
+      <div className="text-xs font-semibold text-slate-500">{label}</div>
+      <div className="mt-1 font-bold text-slate-950">{value}</div>
+    </div>
   );
 }
 

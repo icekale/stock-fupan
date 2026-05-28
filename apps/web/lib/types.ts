@@ -238,6 +238,11 @@ export type ReportListResponse = {
   items: ReportListItem[];
 };
 
+export type DeleteReportResponse = {
+  deleted: boolean;
+  id: number;
+};
+
 export type ConfigStatusState = "ready" | "missing_key" | "disabled" | "local";
 
 export type ConfigStatusItem = {

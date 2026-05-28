@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     app_env: str = "development"
     database_url: str = "sqlite:///./data/stock_review.db"
     reports_root: Path = Path("../../reports")
+    cors_allow_origins: str = "http://localhost:3000,http://127.0.0.1:3000"
     openai_api_key: str = ""
     openai_base_url: str = "https://api.openai.com/v1"
     llm_model: str = "gpt-4.1-mini"

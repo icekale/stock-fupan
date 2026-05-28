@@ -1,6 +1,7 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+import shutil
 from urllib.parse import quote
 
 from fastapi import FastAPI, HTTPException, UploadFile
@@ -62,10 +63,14 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     yield
 
 
+def _cors_allow_origins() -> list[str]:
+    return [origin.strip() for origin in get_settings().cors_allow_origins.split(",") if origin.strip()]
+
+
 app = FastAPI(title="A 股每日复盘 API", version="0.1.0", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=_cors_allow_origins(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -244,6 +249,20 @@ def get_report_asset(path: str) -> FileResponse:
     return FileResponse(asset_path)
 
 
+@app.delete("/api/reports/{report_id}")
+def delete_report(report_id: int) -> dict[str, object]:
+    with session_scope(app.state.engine) as session:
+        report = session.get(Report, report_id)
+        if report is None:
+            raise HTTPException(status_code=404, detail="report not found")
+        asset_dir = _validated_report_dir_path(report.asset_dir)
+        session.delete(report)
+
+    if asset_dir.exists():
+        shutil.rmtree(asset_dir)
+    return {"deleted": True, "id": report_id}
+
+
 @app.post("/api/reports/close")
 def create_close_report(request: CreateCloseReportRequest) -> dict[str, object]:
     return _create_report_response(request, report_kind="close")
@@ -327,3 +346,14 @@ def _validated_report_asset_path(path: str) -> Path:
     if not asset_path.exists() or asset_path.suffix not in {".html", ".png"}:
         raise HTTPException(status_code=404, detail="report asset not found")
     return asset_path
+
+
+def _validated_report_dir_path(path: str) -> Path:
+    settings = get_settings()
+    reports_root = Path(settings.reports_root).resolve(strict=False)
+    asset_dir = Path(path).resolve(strict=False)
+    try:
+        asset_dir.relative_to(reports_root)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="asset path must stay under REPORTS_ROOT") from exc
+    return asset_dir
