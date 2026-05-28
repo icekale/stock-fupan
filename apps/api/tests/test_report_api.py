@@ -479,6 +479,7 @@ def test_mobile_report_renderer_contains_core_sections(tmp_path: Path) -> None:
         "市场情绪",
         "市场结构特征",
         "各板块详细分析",
+        "资金与换手证据",
         "板块逻辑分析",
         "持续性分析",
         "明日看法",
@@ -583,8 +584,9 @@ def test_mobile_report_renderer_groups_sector_detail_into_scannable_blocks(
     assert 'class="insight-card"' in html
     assert 'class="insight-card action-card"' in html
     assert "01 前排个股" in html
-    assert "02 板块逻辑" in html
-    assert "03 次日动作" in html
+    assert "02 资金与换手证据" in html
+    assert "03 板块逻辑" in html
+    assert "动作 · 明日看法" in html
 
 
 def test_mobile_report_renderer_uses_daily_summary_board(tmp_path: Path) -> None:
@@ -804,12 +806,14 @@ class FrontlineStockMarketProvider(ConflictingRawAndScoredMarketProvider):
                 name="中芯国际",
                 pct_change=12.3,
                 turnover_cny=18_000_000_000,
+                turnover_rate=9.8,
             ),
             WatchlistQuote(
                 symbol="600584.SH",
                 name="长电科技",
                 pct_change=10.01,
                 turnover_cny=4_200_000_000,
+                turnover_rate=16.2,
             ),
         ]
 
@@ -830,12 +834,19 @@ def test_report_generator_merges_tickflow_frontline_stocks_into_strong_sectors(
     assert [stock.name for stock in semiconductor.top_stocks[:2]] == ["中芯国际", "长电科技"]
     assert semiconductor.top_stocks[0].code == "688981.SH"
     assert semiconductor.top_stocks[0].turnover_cny == 18_000_000_000
+    assert semiconductor.top_stocks[0].turnover_rate == 9.8
+    assert semiconductor.top_stocks[0].capital_strength == "强"
+    assert semiconductor.capital_evidence is not None
+    assert semiconductor.capital_evidence.front_row_turnover_cny == 22_200_000_000
+    assert semiconductor.capital_evidence.avg_turnover_rate == 13.0
+    assert "前排成交额合计222.00亿" in semiconductor.capital_evidence.summary
     assert "TickFlow前排" in semiconductor.top_stocks[0].tags
     snapshot = json.loads(result.assets.snapshot.read_text(encoding="utf-8"))
     snapshot_sector = next(
         sector for sector in snapshot["report"]["sectors"] if sector["name"] == "半导体"
     )
     assert snapshot_sector["top_stocks"][0]["name"] == "中芯国际"
+    assert snapshot_sector["capital_evidence"]["avg_turnover_rate"] == 13.0
 
 
 def test_report_generator_reads_frontline_stocks_through_market_fallback_wrapper(

@@ -223,6 +223,8 @@ def test_front_row_stock_observations_use_available_evidence() -> None:
                         name="粤电力Ａ",
                         pct_change=10.04,
                         turnover_cny=1_247_563_400,
+                        turnover_rate=7.2,
+                        capital_strength="温和放量",
                         tags=["TickFlow前排"],
                     ),
                     StockCandidate(
@@ -230,6 +232,8 @@ def test_front_row_stock_observations_use_available_evidence() -> None:
                         name="金盘科技",
                         pct_change=7.98,
                         turnover_cny=3_893_087_200,
+                        turnover_rate=22.5,
+                        capital_strength="高换手强承接",
                         tags=["TickFlow前排"],
                     ),
                     StockCandidate(
@@ -248,10 +252,51 @@ def test_front_row_stock_observations_use_available_evidence() -> None:
 
     stocks = build_next_day_predictions(report)[0].front_row_stocks
 
-    assert stocks[0].observation == "涨幅约10.04%，位于前排领涨位，观察竞价溢价与开盘承接，确认是否继续维持队形。"
-    assert stocks[1].observation == "涨幅约7.98%、成交约38.93亿，观察放量强势后是否继续保持主动承接。"
+    assert stocks[0].observation == "涨幅约10.04%、成交约12.48亿、换手约7.20%，位于前排领涨位，观察竞价溢价与开盘承接，确认是否继续维持队形。"
+    assert stocks[1].observation == "涨幅约7.98%、成交约38.93亿、换手约22.50%，高换手强承接，观察放量强势后是否继续保持主动承接。"
     assert stocks[2].observation == "涨幅约0.76%，属于前排中的跟随位，观察是否补涨转强或掉队。"
     assert len({stock.observation for stock in stocks}) == 3
+
+
+def test_capital_strength_boosts_prediction_and_adds_primary_basis() -> None:
+    report = _prediction_report(
+        [
+            _sector(
+                score=72.0,
+                pct_change=4.2,
+                top_stocks=[
+                    StockCandidate(
+                        code="688981.SH",
+                        name="中芯国际",
+                        pct_change=12.3,
+                        turnover_cny=18_000_000_000,
+                        turnover_rate=9.8,
+                        capital_strength="强",
+                        tags=["TickFlow前排"],
+                    ),
+                    StockCandidate(
+                        code="600584.SH",
+                        name="长电科技",
+                        pct_change=10.01,
+                        turnover_cny=4_200_000_000,
+                        turnover_rate=16.2,
+                        capital_strength="强",
+                        tags=["TickFlow前排"],
+                    ),
+                ],
+                review_sources=[],
+                review_notes=[],
+                news_summaries=["先进封装订单景气度延续。"],
+            )
+        ]
+    )
+
+    prediction = build_next_day_predictions(report)[0]
+
+    assert prediction.score_breakdown is not None
+    assert prediction.score_breakdown.capital_strength > 0
+    assert any("前排成交额合计222.00亿" in item for item in prediction.primary_basis)
+    assert any("平均换手13.00%" in item for item in prediction.primary_basis)
 
 
 def test_limit_up_front_row_observations_include_position_context() -> None:

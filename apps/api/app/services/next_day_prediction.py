@@ -93,6 +93,9 @@ def _curated_sources(sources: list[str]) -> list[str]:
 
 def _primary_basis(sector: SectorCandidate) -> list[str]:
     basis = [f"TickFlow行情：强度{sector.score:.1f}、排名{sector.rank}、板块涨幅{sector.pct_change:+.2f}%"]
+    capital_evidence = _capital_evidence_for_sector(sector)
+    if capital_evidence is not None:
+        basis.append(f"TickFlow资金：{capital_evidence.summary}，资金强度{capital_evidence.strength}")
     news_count = len(_distinct_text(sector.news_summaries))
     if news_count:
         basis.append(f"Anspire新闻：{news_count}条催化")
@@ -114,6 +117,9 @@ def _stock_focus(stock: StockCandidate, position: int) -> PredictionStockFocus:
         code=stock.code,
         name=stock.name,
         pct_change=stock.pct_change,
+        turnover_cny=stock.turnover_cny,
+        turnover_rate=stock.turnover_rate,
+        capital_strength=stock.capital_strength,
         role="前排强势股",
         source_tags=stock.tags,
         observation=_stock_observation(stock, position),
@@ -122,17 +128,27 @@ def _stock_focus(stock: StockCandidate, position: int) -> PredictionStockFocus:
 
 def _stock_observation(stock: StockCandidate, position: int) -> str:
     pct_text = f"涨幅约{stock.pct_change:.2f}%"
-    turnover_text = _turnover_text(stock.turnover_cny)
-    turnover_part = f"、成交约{turnover_text}" if turnover_text else ""
+    evidence_part = _stock_capital_evidence_text(stock)
+    strength_part = f"，{stock.capital_strength}" if stock.capital_strength and stock.capital_strength not in {"强", "温和放量"} else ""
     if _is_20cm_stock(stock):
-        return f"{pct_text}{turnover_part}，{_position_context(position)}，观察高弹性前排是否继续领涨，避免冲高回落削弱板块强度。"
+        return f"{pct_text}{evidence_part}{strength_part}，{_position_context(position)}，观察高弹性前排是否继续领涨，避免冲高回落削弱板块强度。"
     if stock.pct_change >= 9.5:
-        return f"{pct_text}，{_position_context(position)}，观察竞价溢价与开盘承接，确认是否继续维持队形。"
+        return f"{pct_text}{evidence_part}{strength_part}，{_position_context(position)}，观察竞价溢价与开盘承接，确认是否继续维持队形。"
     if stock.pct_change >= 5:
-        return f"{pct_text}{turnover_part}，观察放量强势后是否继续保持主动承接。"
+        return f"{pct_text}{evidence_part}{strength_part}，观察放量强势后是否继续保持主动承接。"
     if position >= 4 or stock.pct_change < 2:
         return f"{pct_text}，属于前排中的跟随位，观察是否补涨转强或掉队。"
-    return f"{pct_text}{turnover_part}，观察是否继续强于板块平均并承接前排分歧。"
+    return f"{pct_text}{evidence_part}{strength_part}，观察是否继续强于板块平均并承接前排分歧。"
+
+
+def _stock_capital_evidence_text(stock: StockCandidate) -> str:
+    parts = []
+    turnover_text = _turnover_text(stock.turnover_cny)
+    if turnover_text:
+        parts.append(f"成交约{turnover_text}")
+    if stock.turnover_rate is not None:
+        parts.append(f"换手约{stock.turnover_rate:.2f}%")
+    return f"、{'、'.join(parts)}" if parts else ""
 
 
 def _position_context(position: int) -> str:
@@ -166,6 +182,7 @@ def _score_breakdown(
         front_row_quality += 4
     if _has_height_evidence(sector):
         front_row_quality += 6
+    capital_strength = _capital_strength_points(sector)
     board_quality = _board_quality_points(board_efficiency)
     catalyst = 8 if len(_distinct_text(sector.news_summaries)) >= 2 else 5 if sector.news_summaries else 0
     risk_penalty = _risk_penalty(report, sector)
@@ -176,6 +193,7 @@ def _score_breakdown(
         + rank_bonus
         + pct_bonus
         + front_row_quality
+        + capital_strength
         + board_quality
         + catalyst
         + risk_penalty
@@ -184,6 +202,7 @@ def _score_breakdown(
         review_confirmation=review_confirmation,
         market_strength=market_strength + rank_bonus + pct_bonus,
         front_row_quality=front_row_quality,
+        capital_strength=capital_strength,
         board_quality=board_quality,
         catalyst=catalyst,
         risk_penalty=risk_penalty,
@@ -218,6 +237,10 @@ def _risk_labels(report: ReportDTO, sector: SectorCandidate, source_basis: list[
         labels.append("催化不足")
     if sector.score >= 70 and len(sector.review_notes) <= 1:
         labels.append("后排补涨风险")
+    if sector.capital_evidence is not None and sector.capital_evidence.strength == "弱":
+        labels.append("资金强度不足")
+    if any((stock.turnover_rate or 0) >= 25 and stock.pct_change < 5 for stock in sector.top_stocks):
+        labels.append("高换手分歧")
     return _dedupe(labels)
 
 
@@ -310,6 +333,69 @@ def _board_quality_points(board_efficiency: str | None) -> int:
     if any(word in board_efficiency for word in WEAK_BOARD_WORDS):
         return -5
     return 0
+
+
+def _capital_strength_points(sector: SectorCandidate) -> int:
+    evidence = _capital_evidence_for_sector(sector)
+    if evidence is None:
+        return 0
+    if evidence.strength == "强":
+        return 8
+    if evidence.strength == "中":
+        return 4
+    return -4
+
+
+def _capital_evidence_for_sector(sector: SectorCandidate):
+    if sector.capital_evidence is not None:
+        return sector.capital_evidence
+    turnover_values = [stock.turnover_cny for stock in sector.top_stocks if stock.turnover_cny is not None]
+    turnover_rate_values = [stock.turnover_rate for stock in sector.top_stocks if stock.turnover_rate is not None]
+    if not turnover_values and not turnover_rate_values:
+        return None
+    front_row_turnover = sum(turnover_values) if turnover_values else None
+    avg_turnover_rate = (
+        round(sum(turnover_rate_values) / len(turnover_rate_values), 2)
+        if turnover_rate_values
+        else None
+    )
+    active_count = sum(
+        1
+        for stock in sector.top_stocks
+        if (stock.turnover_cny or 0) >= 1_000_000_000 or (stock.turnover_rate or 0) >= 5
+    )
+    strength = _capital_strength_label(front_row_turnover, avg_turnover_rate, active_count)
+    summary_parts = []
+    if front_row_turnover is not None:
+        summary_parts.append(f"前排成交额合计{front_row_turnover / 100_000_000:.2f}亿")
+    if avg_turnover_rate is not None:
+        summary_parts.append(f"平均换手{avg_turnover_rate:.2f}%")
+    summary_parts.append(f"活跃前排{active_count}只")
+    return type(
+        "DerivedCapitalEvidence",
+        (),
+        {
+            "front_row_turnover_cny": front_row_turnover,
+            "avg_turnover_rate": avg_turnover_rate,
+            "active_stock_count": active_count,
+            "strength": strength,
+            "summary": "、".join(summary_parts),
+        },
+    )()
+
+
+def _capital_strength_label(
+    front_row_turnover: float | None,
+    avg_turnover_rate: float | None,
+    active_count: int,
+) -> str:
+    turnover_yi = (front_row_turnover or 0) / 100_000_000
+    rate = avg_turnover_rate or 0
+    if turnover_yi >= 80 and active_count >= 2 and rate >= 8:
+        return "强"
+    if turnover_yi >= 30 or active_count >= 2 or rate >= 6:
+        return "中"
+    return "弱"
 
 
 def _is_20cm_stock(stock: StockCandidate) -> bool:

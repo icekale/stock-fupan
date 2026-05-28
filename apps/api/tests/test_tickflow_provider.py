@@ -151,6 +151,7 @@ def test_tickflow_provider_maps_nested_ext_quote_fields() -> None:
                         "ext": {
                             "name": "浦发银行",
                             "change_pct": 0.020925110132158534,
+                            "turnover_rate": 0.0185,
                         },
                     }
                 ]
@@ -168,6 +169,7 @@ def test_tickflow_provider_maps_nested_ext_quote_fields() -> None:
     assert quotes[0].name == "浦发银行"
     assert quotes[0].pct_change == pytest.approx(2.0925110132158534)
     assert quotes[0].turnover_cny == 135000000
+    assert quotes[0].turnover_rate == pytest.approx(1.85)
     assert quotes[0].quote_time == "1779778804000"
 
 
@@ -343,8 +345,20 @@ def test_tickflow_market_provider_does_not_classify_jinpan_as_nonferrous_by_sing
 
 def test_tickflow_market_provider_exposes_frontline_stocks_for_ranked_sectors() -> None:
     quotes = [
-        WatchlistQuote(symbol="688183.SH", name="生益电子", pct_change=20, turnover_cny=9_700_000_000),
-        WatchlistQuote(symbol="002463.SZ", name="沪电股份", pct_change=10.1, turnover_cny=1_200_000_000),
+        WatchlistQuote(
+            symbol="688183.SH",
+            name="生益电子",
+            pct_change=20,
+            turnover_cny=9_700_000_000,
+            turnover_rate=18.5,
+        ),
+        WatchlistQuote(
+            symbol="002463.SZ",
+            name="沪电股份",
+            pct_change=10.1,
+            turnover_cny=1_200_000_000,
+            turnover_rate=6.2,
+        ),
         WatchlistQuote(symbol="688335.SH", name="复洁科技", pct_change=19.98, turnover_cny=270_000_000),
         WatchlistQuote(symbol="300234.SZ", name="开尔新材", pct_change=14.65, turnover_cny=440_000_000),
         WatchlistQuote(symbol="600000.SH", name="浦发银行", pct_change=2.09, turnover_cny=1_350_000_000),
@@ -356,6 +370,8 @@ def test_tickflow_market_provider_exposes_frontline_stocks_for_ranked_sectors() 
 
     assert sectors[0].name == "PCB"
     assert [quote.name for quote in pcb_frontline] == ["生益电子", "沪电股份"]
+    assert pcb_frontline[0].capital_strength == "强"
+    assert pcb_frontline[0].turnover_rate == pytest.approx(18.5)
     assert all((quote.pct_change or 0) >= 9.8 for quote in pcb_frontline)
 
 

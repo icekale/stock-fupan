@@ -146,6 +146,7 @@ def _build_actual_result(report: ReportDTO) -> str:
 
 
 def _build_market_overview(report: ReportDTO) -> MarketOverviewTable:
+    strongest_capital = _strongest_capital_sector(report)
     return MarketOverviewTable(
         index_rows=[
             {
@@ -166,7 +167,12 @@ def _build_market_overview(report: ReportDTO) -> MarketOverviewTable:
             f"强势方向集中在{report.sectors[0].name}，扩散质量仍需观察。" if report.sectors else "强势方向暂不明确。",
             "涨跌家数与涨跌停数量共同决定短线情绪温度。",
         ],
-        capital_flow_summary="资金不是简单流入流出，而是在强势板块之间做结构切换。",
+        capital_flow_summary=(
+            f"资金不是简单流入流出，当前更集中在{strongest_capital.name}，"
+            f"{strongest_capital.capital_evidence.summary}。"
+            if strongest_capital and strongest_capital.capital_evidence
+            else "资金不是简单流入流出，而是在强势板块之间做结构切换。"
+        ),
     )
 
 
@@ -208,7 +214,7 @@ def _build_capital_rotation(
     return CapitalRotationPath(
         actual_path=actual_path,
         path_summary=" → ".join(actual_path),
-        key_finding=f"资金仍围绕{leader_name}展开，但{runner_up_name}的轮动强度决定{next_session}扩散质量。",
+        key_finding=_capital_rotation_finding(leader, runner_up, leader_name, runner_up_name, next_session),
         next_path_watch=[
             f"观察{leader_name}分歧后的回流强度",
             f"观察{runner_up_name}是否从轮动转为持续",
@@ -330,6 +336,7 @@ def _build_sector_review(sector: SectorCandidate, next_session: str = "明日") 
     review_evidence = _compact_news_evidence(sector.review_notes, max_length=96)
     front_row_text = _front_row_stock_text(sector)
     source_text = "、".join(sector.review_sources) if sector.review_sources else "复盘源暂未确认"
+    capital_text = sector.capital_evidence.summary if sector.capital_evidence else "TickFlow资金/换手证据不足"
     return StructuredSectorReview(
         sector=sector.name,
         headline=f"{sector.name}：{_headline_suffix(rating)}",
@@ -337,6 +344,7 @@ def _build_sector_review(sector: SectorCandidate, next_session: str = "明日") 
         strengths=[
             f"涨跌幅{sector.pct_change:+.2f}%",
             f"综合评分{sector.score:.1f}",
+            capital_text,
             front_row_text or "前排个股仍待复盘源确认",
             review_evidence or news_evidence or sector.reason,
         ],
@@ -345,6 +353,7 @@ def _build_sector_review(sector: SectorCandidate, next_session: str = "明日") 
         logic_points=[
             f"价格强度：板块涨跌幅{sector.pct_change:+.2f}%。",
             f"评分结构：综合评分{sector.score:.1f}，排名第{sector.rank}。",
+            f"资金换手：{capital_text}。",
             f"复盘源确认：{source_text}。",
             f"前排个股：{front_row_text or '暂未解析到明确前排股'}。",
         ],
@@ -357,6 +366,8 @@ def _build_sector_review(sector: SectorCandidate, next_session: str = "明日") 
 
 
 def _sustainability_analysis(sector: SectorCandidate, rating: SustainabilityRating) -> str:
+    if sector.capital_evidence is not None and sector.capital_evidence.strength == "强":
+        return f"{sector.name}前排成交与换手共同活跃，持续性观察重点是放量后的分歧承接，而不是简单追高。"
     if rating == "high":
         return f"{sector.name}同时具备较高评分与消息确认度，次日更适合观察分歧承接。"
     if rating == "medium":
@@ -409,9 +420,45 @@ def _stage_for_rating(rating: SustainabilityRating) -> str:
 
 
 def _sustainability_reason(sector: SectorCandidate) -> str:
+    if sector.capital_evidence is not None:
+        return f"评分{sector.score:.1f}，{sector.capital_evidence.summary}。"
     if sector.news_summaries:
         return f"评分{sector.score:.1f}，且具备消息催化。"
     return f"评分{sector.score:.1f}，消息确认度仍需观察。"
+
+
+def _strongest_capital_sector(report: ReportDTO) -> SectorCandidate | None:
+    sectors = [sector for sector in report.sectors if sector.capital_evidence is not None]
+    if not sectors:
+        return None
+    return sorted(
+        sectors,
+        key=lambda sector: (
+            sector.capital_evidence.front_row_turnover_cny or 0,
+            sector.capital_evidence.avg_turnover_rate or 0,
+        ),
+        reverse=True,
+    )[0]
+
+
+def _capital_rotation_finding(
+    leader: SectorCandidate | None,
+    runner_up: SectorCandidate | None,
+    leader_name: str,
+    runner_up_name: str,
+    next_session: str,
+) -> str:
+    if leader and leader.capital_evidence:
+        runner_text = (
+            f"；{runner_up_name}{runner_up.capital_evidence.summary}"
+            if runner_up and runner_up.capital_evidence
+            else ""
+        )
+        return (
+            f"资金仍围绕{leader_name}展开，{leader.capital_evidence.summary}{runner_text}，"
+            f"{next_session}重点看前排换手后能否继续承接。"
+        )
+    return f"资金仍围绕{leader_name}展开，但{runner_up_name}的轮动强度决定{next_session}扩散质量。"
 
 
 def build_structured_review_seed(report: ReportDTO) -> dict[str, object]:

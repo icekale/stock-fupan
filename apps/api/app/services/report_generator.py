@@ -10,7 +10,7 @@ from app.renderers.html_renderer import render_mobile_report_html
 from app.renderers.png_exporter import export_png
 from app.rules.scoring import score_sectors
 from app.rules.validation import ValidationResult, validate_narrative_facts
-from app.schemas.report import ReportDTO, ReportKind, SectorCandidate, StockCandidate
+from app.schemas.report import CapitalEvidence, ReportDTO, ReportKind, SectorCandidate, StockCandidate
 from app.services.assets import AssetPaths, create_named_report_copies, create_report_asset_dir, report_kind_label, write_json
 from app.services.next_day_prediction import build_next_day_predictions
 from app.services.structured_review_generator import generate_structured_review
@@ -313,6 +313,7 @@ class ReportGenerator:
             factor_scores=getattr(scored, "factor_scores"),
             review_sources=_dedupe_strings(review_sources),
             review_notes=_dedupe_strings(review_notes),
+            capital_evidence=_build_capital_evidence(_dedupe_stock_candidates(top_stocks)),
         )
 
     def _get_sector_frontline_stocks(self, sector_name: str) -> list[object]:
@@ -360,13 +361,89 @@ def _review_stock_to_candidate(stock: object, source: str) -> StockCandidate:
 
 
 def _tickflow_quote_to_candidate(quote: object) -> StockCandidate:
+    turnover_cny = getattr(quote, "turnover_cny") or None
+    turnover_rate = getattr(quote, "turnover_rate") or None
+    pct_change = getattr(quote, "pct_change") or 0.0
     return StockCandidate(
         code=getattr(quote, "symbol") or "",
         name=getattr(quote, "name") or getattr(quote, "symbol") or "",
-        pct_change=getattr(quote, "pct_change") or 0.0,
-        turnover_cny=getattr(quote, "turnover_cny") or None,
+        pct_change=pct_change,
+        turnover_cny=turnover_cny,
+        turnover_rate=turnover_rate,
+        capital_strength=getattr(quote, "capital_strength") or _stock_capital_strength(
+            turnover_cny,
+            turnover_rate,
+            pct_change,
+        ),
         tags=["TickFlow前排"],
     )
+
+
+def _build_capital_evidence(stocks: list[StockCandidate]) -> CapitalEvidence | None:
+    tickflow_stocks = [stock for stock in stocks if "TickFlow前排" in stock.tags]
+    if not tickflow_stocks:
+        return None
+    turnover_values = [stock.turnover_cny for stock in tickflow_stocks if stock.turnover_cny is not None]
+    turnover_rate_values = [stock.turnover_rate for stock in tickflow_stocks if stock.turnover_rate is not None]
+    front_row_turnover = sum(turnover_values) if turnover_values else None
+    avg_turnover_rate = (
+        round(sum(turnover_rate_values) / len(turnover_rate_values), 2)
+        if turnover_rate_values
+        else None
+    )
+    active_count = sum(
+        1
+        for stock in tickflow_stocks
+        if (stock.turnover_cny or 0) >= 1_000_000_000 or (stock.turnover_rate or 0) >= 5
+    )
+    strength = _sector_capital_strength(front_row_turnover, avg_turnover_rate, active_count)
+    summary_parts = []
+    if front_row_turnover is not None:
+        summary_parts.append(f"前排成交额合计{front_row_turnover / 100_000_000:.2f}亿")
+    if avg_turnover_rate is not None:
+        summary_parts.append(f"平均换手{avg_turnover_rate:.2f}%")
+    summary_parts.append(f"活跃前排{active_count}只")
+    return CapitalEvidence(
+        front_row_turnover_cny=front_row_turnover,
+        avg_turnover_rate=avg_turnover_rate,
+        active_stock_count=active_count,
+        strength=strength,
+        summary="、".join(summary_parts),
+    )
+
+
+def _sector_capital_strength(
+    front_row_turnover: float | None,
+    avg_turnover_rate: float | None,
+    active_count: int,
+) -> str:
+    turnover_yi = (front_row_turnover or 0) / 100_000_000
+    rate = avg_turnover_rate or 0
+    if turnover_yi >= 80 and active_count >= 2 and rate >= 8:
+        return "强"
+    if turnover_yi >= 30 or active_count >= 2 or rate >= 6:
+        return "中"
+    return "弱"
+
+
+def _stock_capital_strength(
+    turnover_cny: float | None,
+    turnover_rate: float | None,
+    pct_change: float,
+) -> str | None:
+    if turnover_cny is None and turnover_rate is None:
+        return None
+    turnover_yi = (turnover_cny or 0) / 100_000_000
+    rate = turnover_rate or 0
+    if turnover_yi >= 30 and rate >= 20 and pct_change >= 5:
+        return "高换手强承接"
+    if turnover_yi >= 10 or (rate >= 8 and pct_change >= 5):
+        return "强"
+    if turnover_yi >= 3 or rate >= 5:
+        return "温和放量"
+    if rate >= 25 and pct_change < 5:
+        return "高换手分歧"
+    return "一般"
 
 
 def _dedupe_strings(values: list[str]) -> list[str]:

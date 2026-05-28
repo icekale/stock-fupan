@@ -38,7 +38,17 @@ class StockCandidate(BaseModel):
     name: str
     pct_change: float
     turnover_cny: float | None = None
+    turnover_rate: float | None = None
+    capital_strength: str | None = None
     tags: list[str] = Field(default_factory=list)
+
+
+class CapitalEvidence(BaseModel):
+    front_row_turnover_cny: float | None = None
+    avg_turnover_rate: float | None = None
+    active_stock_count: int = 0
+    strength: str
+    summary: str
 
 
 class NewsItem(BaseModel):
@@ -62,6 +72,9 @@ class PredictionStockFocus(BaseModel):
     code: str = ""
     name: str
     pct_change: float | None = None
+    turnover_cny: float | None = None
+    turnover_rate: float | None = None
+    capital_strength: str | None = None
     role: str
     source_tags: list[str] = Field(default_factory=list)
     observation: str
@@ -71,6 +84,7 @@ class PredictionScoreBreakdown(BaseModel):
     review_confirmation: int = 0
     market_strength: int = 0
     front_row_quality: int = 0
+    capital_strength: int = 0
     board_quality: int = 0
     catalyst: int = 0
     risk_penalty: int = 0
@@ -107,6 +121,7 @@ class SectorCandidate(BaseModel):
     confidence: str = "medium"
     review_sources: list[str] = Field(default_factory=list)
     review_notes: list[str] = Field(default_factory=list)
+    capital_evidence: CapitalEvidence | None = None
 
 
 class ReportNarrative(BaseModel):

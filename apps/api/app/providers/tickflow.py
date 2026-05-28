@@ -34,6 +34,8 @@ class WatchlistQuote(BaseModel):
     last_price: float | None = None
     pct_change: float | None = None
     turnover_cny: float | None = None
+    turnover_rate: float | None = None
+    capital_strength: str | None = None
     volume: float | None = None
     quote_time: str | None = None
 
@@ -394,12 +396,18 @@ def _quote_from_item(item: dict[str, Any]) -> WatchlistQuote:
     pct_change = _optional_float(change_pct)
     if pct_change is not None and abs(pct_change) <= 1:
         pct_change = pct_change * 100
+    turnover_rate = _optional_float(item.get("turnover_rate") or ext_item.get("turnover_rate"))
+    if turnover_rate is not None and abs(turnover_rate) <= 1:
+        turnover_rate = turnover_rate * 100
+    turnover_cny = _optional_float(item.get("turnover_cny") or item.get("turnover") or item.get("amount"))
     return WatchlistQuote(
         symbol=symbol,
         name=_optional_str(item.get("name") or ext_item.get("name")),
         last_price=_optional_float(item.get("last_price") or item.get("price") or item.get("last")),
         pct_change=pct_change,
-        turnover_cny=_optional_float(item.get("turnover_cny") or item.get("turnover") or item.get("amount")),
+        turnover_cny=turnover_cny,
+        turnover_rate=turnover_rate,
+        capital_strength=_capital_strength_label(turnover_cny, turnover_rate, pct_change),
         volume=_optional_float(item.get("volume")),
         quote_time=_optional_str(item.get("quote_time") or item.get("time") or item.get("timestamp")),
     )
@@ -509,7 +517,16 @@ def _rank_frontline_stocks(quotes: list[WatchlistQuote]) -> list[WatchlistQuote]
         key=lambda quote: ((quote.pct_change or 0), (quote.turnover_cny or 0)),
         reverse=True,
     )
-    return ranked[:8]
+    return [_with_capital_strength(quote) for quote in ranked[:8]]
+
+
+def _with_capital_strength(quote: WatchlistQuote) -> WatchlistQuote:
+    return quote.model_copy(
+        update={
+            "capital_strength": quote.capital_strength
+            or _capital_strength_label(quote.turnover_cny, quote.turnover_rate, quote.pct_change)
+        }
+    )
 
 
 def _theme_for_quote(quote: WatchlistQuote) -> str | None:
@@ -674,6 +691,27 @@ def _optional_float(value: object) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _capital_strength_label(
+    turnover_cny: float | None,
+    turnover_rate: float | None,
+    pct_change: float | None,
+) -> str | None:
+    if turnover_cny is None and turnover_rate is None:
+        return None
+    turnover_yi = (turnover_cny or 0) / 100_000_000
+    rate = turnover_rate or 0
+    change = pct_change or 0
+    if turnover_yi >= 30 and rate >= 20 and change >= 5:
+        return "高换手强承接"
+    if turnover_yi >= 10 or (rate >= 8 and change >= 5):
+        return "强"
+    if turnover_yi >= 3 or rate >= 5:
+        return "温和放量"
+    if rate >= 25 and change < 5:
+        return "高换手分歧"
+    return "一般"
 
 
 def _safe_status_error(status_code: object) -> str:

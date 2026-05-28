@@ -668,11 +668,18 @@
               {% if prediction.front_row_stocks %}
                 <div class="table-wrap prediction-stock-table" style="margin-top:12px;">
                   <table aria-label="{{ prediction_window }}前排观察股">
-                    <thead><tr><th style="width:28%;">前排个股</th><th>观察条件</th></tr></thead>
+                    <thead><tr><th style="width:26%;">前排个股</th><th style="width:18%;">资金/换手</th><th>观察条件</th></tr></thead>
                     <tbody>
                       {% for stock in prediction.front_row_stocks %}
                         <tr>
                           <td><strong>{{ stock.name }}</strong>{% if stock.code %}<br>{{ stock.code }}{% endif %}</td>
+                          <td>
+                            {% if stock.pct_change is not none %}<span class="{{ 'bearish' if stock.pct_change < 0 else 'bullish' }}">{{ "%+.2f"|format(stock.pct_change) }}%</span><br>{% endif %}
+                            {% if stock.turnover_cny %}成交 {{ "%.2f"|format(stock.turnover_cny / 100000000) }}亿<br>{% endif %}
+                            {% if stock.turnover_rate is not none %}换手 {{ "%.2f"|format(stock.turnover_rate) }}%<br>{% endif %}
+                            {% if stock.capital_strength %}<span class="tag tag-bull">{{ stock.capital_strength }}</span><br>{% endif %}
+                            {% if stock.source_tags %}<span class="tag tag-navy">{{ stock.source_tags|join("、") }}</span>{% endif %}
+                          </td>
                           <td class="observation-cell">{{ stock.observation }}</td>
                         </tr>
                       {% endfor %}
@@ -848,12 +855,14 @@
               {% if candidate and candidate.top_stocks %}
                 <div class="table-wrap">
                   <table aria-label="前排强势个股">
-                    <thead><tr><th style="width:24%;">个股</th><th style="width:16%;">涨跌幅</th><th>来源 / 标签</th></tr></thead>
+                    <thead><tr><th style="width:24%;">个股</th><th style="width:14%;">涨跌幅</th><th style="width:18%;">成交额</th><th style="width:16%;">换手率</th><th>来源 / 标签</th></tr></thead>
                     <tbody>
                       {% for stock in candidate.top_stocks %}
                         <tr>
                           <td><strong>{{ stock.name }}</strong>{% if stock.code %}<br>{{ stock.code }}{% endif %}</td>
                           <td><span class="{{ 'bearish' if stock.pct_change < 0 else 'bullish' }}">{{ "%+.2f"|format(stock.pct_change) }}%</span></td>
+                          <td>{% if stock.turnover_cny %}{{ "%.2f"|format(stock.turnover_cny / 100000000) }}亿{% else %}-{% endif %}</td>
+                          <td>{% if stock.turnover_rate is not none %}{{ "%.2f"|format(stock.turnover_rate) }}%{% else %}-{% endif %}</td>
                           <td style="text-align:left;">{{ stock.tags|join("、") }}</td>
                         </tr>
                       {% endfor %}
@@ -866,7 +875,20 @@
             </div>
 
             <div class="insight-card">
-              <div class="insight-label">02 板块逻辑分析</div>
+              <div class="insight-label">02 资金与换手证据</div>
+              {% if candidate and candidate.capital_evidence %}
+                <p><strong>资金强度：</strong><span class="tag tag-bull">{{ candidate.capital_evidence.strength }}</span></p>
+                <ul class="point-list" style="margin-top:10px;">
+                  <li>{{ candidate.capital_evidence.summary }}</li>
+                  <li>这不是主力净流入字段，而是基于 TickFlow 前排成交额、换手率和活跃股数量的结构证据。</li>
+                </ul>
+              {% else %}
+                <p>TickFlow 暂未提供足够的前排成交额/换手率，资金强度不参与本板块判断。</p>
+              {% endif %}
+            </div>
+
+            <div class="insight-card">
+              <div class="insight-label">03 板块逻辑分析</div>
               <p>{{ sector.logic }}</p>
               <ul class="point-list" style="margin-top:10px;">
                 {% for item in sector.logic_points %}
