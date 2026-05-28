@@ -13,11 +13,16 @@ from app.schemas.structured_review import (
     ActionDiscipline,
     AfterHoursNewsSummary,
     CapitalRotationPath,
+    CapitalRotationReviewV2,
     IndexMidTermOutlook,
+    MarketPhaseReview,
     MarketOverviewTable,
     NextDayOpportunityPlan,
+    NextSessionStrategy,
     PracticalConclusion,
+    PredictionVerificationItem,
     PredictionReview,
+    SectorDeepDive,
     StructuredReviewDTO,
     StructuredSectorReview,
     SustainabilityRank,
@@ -39,6 +44,7 @@ def build_structured_review(report: ReportDTO) -> StructuredReviewDTO:
 
     return StructuredReviewDTO(
         topic=_build_topic(report, leader, runner_up),
+        market_phase=_build_market_phase(report, leader, runner_up),
         prediction_review=PredictionReview(
             previous_prediction=_previous_prediction_text(report),
             actual_result=_build_actual_result(report),
@@ -51,6 +57,7 @@ def build_structured_review(report: ReportDTO) -> StructuredReviewDTO:
             revision=f"{next_session}预判重点观察{leader_name}与{runner_up_name}之间的资金切换。",
             source="previous_report" if report.previous_strong_themes else "manual_placeholder",
         ),
+        prediction_verifications=_build_prediction_verifications(report, leader, runner_up, next_session),
         tomorrow_judgement=TomorrowJudgement(
             most_likely_to_continue=leader_name,
             most_likely_to_diverge=diverge_name,
@@ -66,6 +73,7 @@ def build_structured_review(report: ReportDTO) -> StructuredReviewDTO:
         market_overview=_build_market_overview(report),
         after_hours_news=_build_after_hours_news(report, next_session),
         sector_reviews=[_build_sector_review(sector, next_session) for sector in report.sectors],
+        sector_deep_dives=_build_sector_deep_dives(report),
         sustainability_ranking=[
             SustainabilityRank(
                 rank=index + 1,
@@ -76,8 +84,10 @@ def build_structured_review(report: ReportDTO) -> StructuredReviewDTO:
             for index, sector in enumerate(report.sectors)
         ],
         capital_rotation=_build_capital_rotation(report, leader, runner_up, next_session),
+        capital_rotation_v2=_build_capital_rotation_v2(report, leader, runner_up),
         historical_theme_reviews=report.previous_strong_themes,
         next_day_opportunity=_build_next_day_opportunity(report, leader, next_session),
+        next_session_strategy=_build_next_session_strategy(report, leader, runner_up, next_session),
         practical_conclusion=_build_practical_conclusion(leader_name, runner_up_name, next_session),
         index_mid_term_outlook=_build_index_mid_term_outlook(report, next_session),
         action_discipline=ActionDiscipline(
@@ -143,6 +153,116 @@ def _build_actual_result(report: ReportDTO) -> str:
     sector_text = "、".join(sector.name for sector in report.sectors[:2]) or "暂无强势板块"
     market_state = "、".join(report.market_state_tags) or "结构性"
     return f"{report.trade_date}市场呈现{market_state}特征，{sector_text}相对靠前。"
+
+
+def _build_market_phase(
+    report: ReportDTO,
+    leader: SectorCandidate | None,
+    runner_up: SectorCandidate | None,
+) -> MarketPhaseReview:
+    up_count = report.breadth.up_count
+    down_count = report.breadth.down_count
+    limit_up = report.breadth.limit_up_count
+    limit_down = report.breadth.limit_down_count
+    leader_name = leader.name if leader else "暂无主线"
+    runner_up_name = runner_up.name if runner_up else "暂无轮动方向"
+    market_tags = "、".join(report.market_state_tags) or "结构不明"
+
+    if limit_down >= 20 or down_count > up_count * 1.4:
+        phase = "panic_decline"
+        headline = f"{leader_name}承压，市场处于退潮/风险释放阶段"
+    elif leader and runner_up and leader.score >= 75 and runner_up.score >= 65:
+        phase = "mainline_expansion"
+        headline = f"{leader_name}领涨，{runner_up_name}扩散，主线从集中走向扩散"
+    elif up_count > down_count and limit_up >= 60:
+        phase = "structural_rebound"
+        headline = f"{leader_name}带动结构性修复，短线情绪回暖"
+    elif up_count > down_count:
+        phase = "repair"
+        headline = f"{leader_name}修复，但资金仍需继续确认"
+    else:
+        phase = "mixed_divergence"
+        headline = f"{leader_name}相对靠前，但市场仍是分化震荡"
+
+    return MarketPhaseReview(
+        phase=phase,
+        headline=headline,
+        key_signal=f"涨停{limit_up}家、跌停{limit_down}家，上涨{up_count}只、下跌{down_count}只，市场标签：{market_tags}。",
+        yesterday_today_compare=_market_compare_points(report, leader, runner_up),
+    )
+
+
+def _market_compare_points(
+    report: ReportDTO,
+    leader: SectorCandidate | None,
+    runner_up: SectorCandidate | None,
+) -> list[str]:
+    points: list[str] = []
+    if report.previous_strong_themes:
+        previous_names = "、".join(item.theme for item in report.previous_strong_themes[:3])
+        points.append(f"昨日/历史强势方向：{previous_names}")
+    if leader:
+        points.append(f"今日最强方向：{leader.name}，强度{leader.score:.1f}，涨幅{leader.pct_change:+.2f}%")
+    if runner_up:
+        points.append(f"轮动扩散方向：{runner_up.name}，强度{runner_up.score:.1f}")
+    if not points:
+        points.append("缺少历史方向对比，仅保留今日结构观察。")
+    return points
+
+
+def _build_prediction_verifications(
+    report: ReportDTO,
+    leader: SectorCandidate | None,
+    runner_up: SectorCandidate | None,
+    next_session: str,
+) -> list[PredictionVerificationItem]:
+    items: list[PredictionVerificationItem] = []
+    if report.previous_strong_themes:
+        current_names = {sector.name for sector in report.sectors}
+        for theme in report.previous_strong_themes[:4]:
+            matched = theme.theme in current_names or any(
+                theme.theme in name or name in theme.theme for name in current_names
+            )
+            verdict = "正确" if matched else "部分正确" if theme.current_stock_checks else "错误"
+            evidence = [*theme.evidence[:2], *theme.current_stock_checks[:2]]
+            if not evidence:
+                evidence = [theme.current_status]
+            items.append(
+                PredictionVerificationItem(
+                    claim=f"昨日/历史关注{theme.theme}延续性",
+                    verdict=verdict,
+                    actual_result=theme.current_status,
+                    evidence=evidence,
+                    bias_reason=(
+                        "方向延续得到今日盘面确认。"
+                        if matched
+                        else "历史强势方向需要用今日前排和资金重新确认，不能机械延续。"
+                    ),
+                )
+            )
+    if leader is not None:
+        evidence = [f"{leader.name}今日排名第{leader.rank}，强度{leader.score:.1f}，涨幅{leader.pct_change:+.2f}%"]
+        items.insert(
+            0,
+            PredictionVerificationItem(
+                claim=f"{next_session}重点观察主线是否延续",
+                verdict="正确" if leader.score >= 70 else "部分正确",
+                actual_result=f"{leader.name}成为今日最强方向。",
+                evidence=evidence,
+                bias_reason="需要继续用前排承接和资金强度验证持续性。",
+            ),
+        )
+    if not items:
+        items.append(
+            PredictionVerificationItem(
+                claim="昨日预判验证",
+                verdict="证据不足",
+                actual_result="缺少上一日报告或历史预判快照。",
+                evidence=["当前仅能基于今日盘面生成复盘。"],
+                bias_reason="未读取到可验证的昨日判断，不做机械归因。",
+            )
+        )
+    return items[:5]
 
 
 def _build_market_overview(report: ReportDTO) -> MarketOverviewTable:
@@ -363,6 +483,183 @@ def _build_sector_review(sector: SectorCandidate, next_session: str = "明日") 
         watch_items=[f"{next_session}{sector.name}前排股承接", "板块内强弱切换是否温和"],
         avoid_items=["缩量冲高回落", "无复盘源确认的低位跟风"],
     )
+
+
+def _build_sector_deep_dives(report: ReportDTO) -> list[SectorDeepDive]:
+    return [_build_sector_deep_dive(sector, index) for index, sector in enumerate(report.sectors[:6])]
+
+
+def _build_sector_deep_dive(sector: SectorCandidate, index: int) -> SectorDeepDive:
+    stock_names = [stock.name for stock in sector.top_stocks if stock.name][:5]
+    catalysts = _distinct_compact([*sector.news_summaries[:3], *sector.review_notes[:3]])
+    capital_notes = _sector_capital_notes(sector)
+    stage = _sector_stage(sector, index)
+    rating = _rating_for_sector(sector)
+    if not stock_names:
+        stock_names = ["证据不足：缺少明确前排标的"]
+    if not catalysts:
+        catalysts = ["证据不足：未读取到明确催化，需等待复盘源或新闻确认。"]
+    return SectorDeepDive(
+        sector=sector.name,
+        stage=stage,
+        rating=rating,
+        catalysts=catalysts,
+        core_stocks=stock_names,
+        capital_evidence=capital_notes,
+        team_structure=_team_structure_text(sector),
+        conclusion=_sector_deep_conclusion(sector, stage, rating),
+        watch_signals=_sector_watch_signals(sector),
+        avoid_signals=_sector_avoid_signals(),
+    )
+
+
+def _distinct_compact(values: list[str], max_items: int = 4) -> list[str]:
+    seen: set[str] = set()
+    output: list[str] = []
+    for value in values:
+        text = " ".join(str(value).split())
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        output.append(text)
+        if len(output) >= max_items:
+            break
+    return output
+
+
+def _sector_capital_notes(sector: SectorCandidate) -> list[str]:
+    notes: list[str] = []
+    if sector.capital_evidence is not None:
+        notes.append(f"{sector.capital_evidence.summary}，资金强度{sector.capital_evidence.strength}")
+    for stock in sector.top_stocks[:3]:
+        parts = [stock.name]
+        if stock.turnover_cny:
+            parts.append(f"成交{stock.turnover_cny / 100_000_000:.2f}亿")
+        if stock.turnover_rate is not None:
+            parts.append(f"换手{stock.turnover_rate:.2f}%")
+        if len(parts) > 1:
+            notes.append("、".join(parts))
+    return notes or ["证据不足：缺少成交额/换手率数据，资金强度不做夸大判断。"]
+
+
+def _sector_stage(sector: SectorCandidate, index: int) -> str:
+    if sector.score >= 80 and index == 0:
+        return "leader"
+    if sector.score >= 75:
+        return "new_leader"
+    if sector.score >= 65 and len(sector.top_stocks) >= 2:
+        return "branch_expansion"
+    if sector.score >= 60:
+        return "repair_only"
+    if sector.pct_change <= 0:
+        return "weakening"
+    return "repair_only"
+
+
+def _team_structure_text(sector: SectorCandidate) -> str:
+    limit_like = [stock for stock in sector.top_stocks if stock.pct_change >= 9.5]
+    twenty_cm = [stock for stock in sector.top_stocks if stock.pct_change >= 19]
+    if twenty_cm and len(sector.top_stocks) >= 2:
+        return f"{len(twenty_cm)}只高弹性前排 + {len(sector.top_stocks)}只跟随，具备扩散队形。"
+    if limit_like:
+        return f"{len(limit_like)}只涨停/接近涨停前排，观察梯队是否补强。"
+    if sector.top_stocks:
+        return f"{len(sector.top_stocks)}只前排跟踪标的，尚未形成完整涨停梯队。"
+    return "缺少明确前排，不能判断梯队完整度。"
+
+
+def _sector_deep_conclusion(sector: SectorCandidate, stage: str, rating: str) -> str:
+    stage_text = {
+        "leader": "当前主线核心",
+        "new_leader": "可能接棒的新核心",
+        "branch_expansion": "主线扩散分支",
+        "independent_theme": "独立逻辑方向",
+        "repair_only": "修复观察方向",
+        "weakening": "走弱/失血方向",
+        "one_day": "一日游风险方向",
+        "avoid": "规避方向",
+    }.get(stage, "观察方向")
+    return f"{sector.name}属于{stage_text}，持续性评级{rating}；后续只看前排承接和资金是否继续确认。"
+
+
+def _sector_watch_signals(sector: SectorCandidate) -> list[str]:
+    stocks = [stock.name for stock in sector.top_stocks if stock.name][:3]
+    if stocks:
+        return [f"观察{'、'.join(stocks)}是否继续强于板块平均。", "观察分歧后是否有资金回流。"]
+    return [f"需要先确认{sector.name}是否出现明确前排股。"]
+
+
+def _sector_avoid_signals() -> list[str]:
+    return ["一致加速后不追高。", "后排无量补涨不作为主线依据。"]
+
+
+def _build_capital_rotation_v2(
+    report: ReportDTO,
+    leader: SectorCandidate | None,
+    runner_up: SectorCandidate | None,
+) -> CapitalRotationReviewV2:
+    path: list[str] = []
+    for theme in report.previous_strong_themes[:2]:
+        status = "延续" if theme.judgement == "延续确认" else "分歧/流出"
+        path.append(f"{theme.theme}{status}")
+    if leader:
+        path.append(f"{leader.name}承接")
+    if runner_up:
+        path.append(f"{runner_up.name}扩散")
+    if not path:
+        path = ["缺少历史路径", "今日等待主线确认"]
+    rotation_type = (
+        "主线内部扩散"
+        if leader and runner_up and leader.score >= 75 and runner_up.score >= 65
+        else "结构性轮动"
+    )
+    leader_name = leader.name if leader else "暂无主线"
+    runner_up_name = runner_up.name if runner_up else "暂无轮动"
+    return CapitalRotationReviewV2(
+        path=path,
+        rotation_type=rotation_type,
+        key_finding=_capital_rotation_finding(leader, runner_up, leader_name, runner_up_name, _next_session(report)),
+        next_watch=[
+            f"观察{leader.name}前排承接" if leader else "等待主线确认",
+            f"观察{runner_up.name}能否补强梯队" if runner_up else "观察轮动方向是否出现",
+        ],
+    )
+
+
+def _build_next_session_strategy(
+    report: ReportDTO,
+    leader: SectorCandidate | None,
+    runner_up: SectorCandidate | None,
+    next_session: str,
+) -> NextSessionStrategy:
+    return NextSessionStrategy(
+        focus=_strategy_focus_items(leader),
+        observe=_strategy_observe_items(runner_up),
+        avoid=_strategy_avoid_items(report),
+        trigger_conditions=[f"{next_session}指数不出现放量下杀", "前排股分歧后仍有主动承接", "成交额维持活跃区间"],
+        invalidation_conditions=["主线前排集体低开低走", "后排冲高回落且无资金回流", "跌停/大面数量明显增加"],
+    )
+
+
+def _strategy_focus_items(leader: SectorCandidate | None) -> list[str]:
+    if leader is None:
+        return ["缺少明确主线，先观察不预设机会。"]
+    stocks = [stock.name for stock in leader.top_stocks if stock.name][:3]
+    suffix = f"，重点看{'、'.join(stocks)}" if stocks else "，但缺少明确前排标的"
+    return [f"{leader.name}{suffix}的分歧承接。"]
+
+
+def _strategy_observe_items(runner_up: SectorCandidate | None) -> list[str]:
+    if runner_up is None:
+        return ["观察是否出现新的轮动方向。"]
+    return [f"{runner_up.name}能否从轮动补涨转为持续方向。"]
+
+
+def _strategy_avoid_items(report: ReportDTO) -> list[str]:
+    weak = [sector.name for sector in report.sectors if sector.score < 55 or sector.pct_change <= 0][:2]
+    items = [f"{name}证据不足或走弱，不做主线预设。" for name in weak]
+    items.append("一日游后排和无量补涨不追。")
+    return items
 
 
 def _sustainability_analysis(sector: SectorCandidate, rating: SustainabilityRating) -> str:

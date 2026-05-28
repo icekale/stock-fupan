@@ -5,6 +5,7 @@ from app.providers.market import FakeMarketDataProvider
 from app.providers.news import FakeNewsProvider
 from app.rules.scoring import score_sectors
 from app.schemas.report import (
+    MarketBreadth,
     NextDayPrediction,
     PredictionConfidence,
     PredictionStockFocus,
@@ -17,12 +18,17 @@ from app.schemas.structured_review import (
     ActionDiscipline,
     AfterHoursNewsSummary,
     CapitalRotationPath,
+    CapitalRotationReviewV2,
     HistoricalThemeReview,
     IndexMidTermOutlook,
+    MarketPhaseReview,
     MarketOverviewTable,
     NextDayOpportunityPlan,
+    NextSessionStrategy,
     PracticalConclusion,
+    PredictionVerificationItem,
     PredictionReview,
+    SectorDeepDive,
     StructuredReviewDTO,
     StructuredSectorReview,
     SustainabilityRank,
@@ -143,6 +149,87 @@ def test_structured_review_serializes_core_modules() -> None:
     assert payload["index_mid_term_outlook"]["scenario_table"][0]["scenario"] == "强势"
 
 
+def test_structured_review_serializes_v2_review_modules() -> None:
+    review = StructuredReviewDTO(
+        topic="V型反转 · 科技扩散",
+        market_phase=MarketPhaseReview(
+            phase="mainline_expansion",
+            headline="科技主线从集中走向扩散",
+            key_signal="电子方向资金从早盘净流出转为收盘净流入。",
+            yesterday_today_compare=["昨日封测单点承压", "今日CPO/MLCC/散热多点修复"],
+        ),
+        prediction_review=PredictionReview(
+            previous_prediction="昨日判断科技惯性下探后小幅修复。",
+            actual_result="创业板午后强修复，CPO前排创出新高。",
+            correct_items=["惯性下探方向正确"],
+            missed_items=["低估午后修复强度"],
+            bias_reasons=["被前一日恐慌情绪影响"],
+            revision="后续重点看科技内部分支轮动，而非全面退潮。",
+        ),
+        prediction_verifications=[
+            PredictionVerificationItem(
+                claim="科技惯性下探后小幅修复",
+                verdict="部分正确",
+                actual_result="下探后强修复，修复力度超预期。",
+                evidence=["创业板+1.96%", "CPO前排20cm涨停"],
+                bias_reason="低估主线资金回流速度。",
+            )
+        ],
+        tomorrow_judgement=TomorrowJudgement(
+            most_likely_to_continue="CPO/光模块",
+            most_likely_to_diverge="白酒/消费",
+            core_view="明日看科技前排分歧承接。",
+        ),
+        market_overview=MarketOverviewTable(capital_flow_summary="缩量修复，资金仍偏谨慎。"),
+        after_hours_news=AfterHoursNewsSummary(),
+        sector_reviews=[],
+        sector_deep_dives=[
+            SectorDeepDive(
+                sector="CPO/光模块",
+                stage="new_leader",
+                rating="high",
+                catalysts=["海外光互连指引上调"],
+                core_stocks=["联特科技", "中际旭创", "新易盛"],
+                capital_evidence=["机构净买入约39亿"],
+                team_structure="20cm领涨+中军创新高",
+                conclusion="接棒成为科技新核心。",
+                watch_signals=["前排分歧后继续承接"],
+                avoid_signals=["一致加速追高"],
+            )
+        ],
+        sustainability_ranking=[],
+        capital_rotation=CapitalRotationPath(
+            key_finding="科技资金从封测/存储扩散到CPO/MLCC。",
+        ),
+        capital_rotation_v2=CapitalRotationReviewV2(
+            path=["半导体封测流出", "CPO回流", "MLCC扩散"],
+            rotation_type="主线内部扩散",
+            key_finding="不是科技全面退潮，而是AI算力链内部重分配。",
+            next_watch=["CPO前排承接", "MLCC梯队完整度"],
+        ),
+        historical_theme_reviews=[],
+        next_day_opportunity=NextDayOpportunityPlan(),
+        next_session_strategy=NextSessionStrategy(
+            focus=["CPO前排分歧承接"],
+            observe=["MLCC是否从补涨转持续"],
+            avoid=["白酒一日游后排"],
+            trigger_conditions=["指数不放量下杀"],
+            invalidation_conditions=["科技前排集体低开低走"],
+        ),
+        practical_conclusion=PracticalConclusion(headline="明日看科技前排承接"),
+        index_mid_term_outlook=IndexMidTermOutlook(current_position="结构性修复"),
+        action_discipline=ActionDiscipline(final_view="不追一致加速。"),
+    )
+
+    payload = review.model_dump(mode="json")
+
+    assert payload["market_phase"]["phase"] == "mainline_expansion"
+    assert payload["prediction_verifications"][0]["verdict"] == "部分正确"
+    assert payload["sector_deep_dives"][0]["stage"] == "new_leader"
+    assert payload["capital_rotation_v2"]["rotation_type"] == "主线内部扩散"
+    assert payload["next_session_strategy"]["avoid"] == ["白酒一日游后排"]
+
+
 def _fake_report() -> ReportDTO:
     market = FakeMarketDataProvider()
     news = FakeNewsProvider()
@@ -209,6 +296,110 @@ def test_build_structured_review_derives_core_modules_from_report() -> None:
     assert "不追一致加速" in review.next_day_opportunity.position_discipline[0]
     assert review.practical_conclusion.headline.startswith("明日最实战")
     assert review.index_mid_term_outlook.scenario_table[0]["scenario"] == "强势延续"
+
+
+def test_build_structured_review_adds_market_phase_with_specific_signal() -> None:
+    report = _fake_report()
+    report.breadth = MarketBreadth(up_count=3200, down_count=1800, limit_up_count=86, limit_down_count=8)
+    report.market_state_tags = ["放量", "普涨"]
+    report.sectors[0] = report.sectors[0].model_copy(update={"name": "机器人", "score": 82, "pct_change": 5.88})
+    report.sectors[1] = report.sectors[1].model_copy(update={"name": "PCB", "score": 76, "pct_change": 3.60})
+
+    review = build_structured_review(report)
+
+    assert review.market_phase is not None
+    assert review.market_phase.phase in {"repair", "structural_rebound", "mainline_expansion"}
+    assert "机器人" in review.market_phase.headline
+    assert "涨停86" in review.market_phase.key_signal
+    assert review.market_phase.yesterday_today_compare
+
+
+def test_build_structured_review_adds_itemized_prediction_verification() -> None:
+    report = _fake_report()
+    report.previous_strong_themes = [
+        HistoricalThemeReview(
+            theme="先进封装",
+            previous_status="昨日强势前排",
+            current_status="今日跌出前排",
+            judgement="进入分歧",
+            evidence=["长电科技走弱", "存储芯片资金流出"],
+        )
+    ]
+
+    review = build_structured_review(report)
+
+    assert review.prediction_verifications
+    first = review.prediction_verifications[0]
+    assert first.claim
+    assert first.verdict in {"正确", "部分正确", "错误", "证据不足"}
+    assert first.actual_result
+    assert first.evidence
+
+
+def test_build_structured_review_adds_sector_deep_dives_with_real_stocks() -> None:
+    report = _fake_report()
+    report.sectors[0] = report.sectors[0].model_copy(
+        update={
+            "name": "CPO/光模块",
+            "score": 86,
+            "pct_change": 5.4,
+            "top_stocks": [
+                StockCandidate(
+                    code="300394.SZ",
+                    name="联特科技",
+                    pct_change=20.0,
+                    turnover_cny=2_100_000_000,
+                    turnover_rate=18.2,
+                    tags=["TickFlow前排"],
+                ),
+                StockCandidate(
+                    code="300308.SZ",
+                    name="中际旭创",
+                    pct_change=7.79,
+                    turnover_cny=9_500_000_000,
+                    turnover_rate=6.5,
+                    tags=["TickFlow前排"],
+                ),
+            ],
+            "news_summaries": ["海外光互连需求上调，带动CPO方向走强。"],
+            "review_notes": ["同花顺复盘确认CPO为科技扩散方向。"],
+        }
+    )
+
+    review = build_structured_review(report)
+
+    assert review.sector_deep_dives
+    cpo = review.sector_deep_dives[0]
+    assert cpo.sector == "CPO/光模块"
+    assert cpo.stage in {"leader", "new_leader", "branch_expansion"}
+    assert "联特科技" in cpo.core_stocks
+    assert cpo.capital_evidence
+    assert cpo.conclusion
+    assert cpo.watch_signals
+
+
+def test_build_structured_review_adds_v2_capital_rotation_and_strategy() -> None:
+    report = _fake_report()
+    report.sectors[0] = report.sectors[0].model_copy(update={"name": "CPO/光模块", "score": 86})
+    report.sectors[1] = report.sectors[1].model_copy(update={"name": "MLCC/被动元件", "score": 74})
+    report.previous_strong_themes = [
+        HistoricalThemeReview(
+            theme="半导体封测/存储",
+            previous_status="昨日强势",
+            current_status="今日跌出前排",
+            judgement="进入分歧",
+            evidence=["长电科技走弱"],
+        )
+    ]
+
+    review = build_structured_review(report)
+
+    assert review.capital_rotation_v2 is not None
+    assert review.capital_rotation_v2.path[0].startswith("半导体封测/存储")
+    assert "CPO/光模块" in " → ".join(review.capital_rotation_v2.path)
+    assert review.next_session_strategy is not None
+    assert any("CPO/光模块" in item for item in review.next_session_strategy.focus)
+    assert review.next_session_strategy.avoid
 
 
 def test_next_day_opportunity_lists_frontline_stock_codes_and_position_ranges() -> None:
