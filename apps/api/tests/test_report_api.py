@@ -24,15 +24,7 @@ from app.providers.tickflow import FakeTickFlowProvider, WatchlistQuote
 from app.renderers.html_renderer import render_mobile_report_html
 from app.rules.scoring import score_sectors
 from app.rules.validation import validate_narrative_facts
-from app.schemas.report import (
-    IndexSnapshot,
-    NextDayPrediction,
-    PredictionConfidence,
-    PredictionStockFocus,
-    ReportDTO,
-    ReportKind,
-    SectorCandidate,
-)
+from app.schemas.report import IndexSnapshot, ReportDTO, ReportKind, SectorCandidate
 from app.services import report_generator as report_generator_module
 from app.services.assets import write_json
 from app.services.report_generator import ReportGenerator
@@ -364,11 +356,9 @@ def test_midday_report_html_uses_afternoon_review_language(tmp_path: Path) -> No
 
     assert "2026-05-26-午间复盘" in html
     assert "午间参考" in html
-    assert "对下午的核心判断" in html
-    assert "下午强势概率与观察条件" in html
-    assert "下午至下一交易日可观察标的与仓位建议" in html
+    assert "明日操作思路" in html
     assert "下午最优策略（一句话）" in html
-    assert "明日可介入标的与仓位建议" not in html
+    assert "自选股观察" not in html
     assert "盘后 / 隔夜消息梳理" not in html
 
 
@@ -471,25 +461,14 @@ def test_mobile_report_renderer_contains_core_sections(tmp_path: Path) -> None:
     )
 
     expected_titles = [
+        "核心结论",
+        "指数与市场情绪",
         "昨日预判验证",
-        "偏差原因",
-        "先给结论",
-        "对明日的核心判断",
-        "盘面总览",
-        "指数数据",
-        "市场情绪",
-        "市场结构特征",
-        "各板块详细分析",
-        "资金与换手证据",
-        "板块逻辑分析",
-        "持续性分析",
-        "明日看法",
-        "盘后 / 隔夜消息梳理",
+        "板块详细分析",
+        "资金轮动路径",
         "板块持续性排序",
-        "资金轮动路径分析",
-        "实际轮动路径",
-        "关键发现",
-        "明日可观察标的与仓位建议",
+        "明日操作思路",
+        "盘后 / 隔夜消息梳理",
         "去弱留强排序",
         "最实战的结论",
         "上证指数中期走势研判",
@@ -566,6 +545,40 @@ def test_mobile_report_renderer_uses_responsive_wide_article_layout(tmp_path: Pa
     assert "max-width: 640px;" not in html
 
 
+def test_mobile_report_renderer_uses_review_analysis_v2_article_order(tmp_path: Path) -> None:
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=FakeMarketDataProvider(),
+        news_provider=FakeNewsProvider(),
+        llm_provider=FakeLLMProvider(),
+    )
+
+    result = generator.generate_close_report("2026-05-26")
+    html = render_mobile_report_html(result.report)
+
+    expected_order = [
+        "核心结论",
+        "指数与市场情绪",
+        "昨日预判验证",
+        "板块详细分析",
+        "资金轮动路径",
+        "板块持续性排序",
+        "明日操作思路",
+        "盘后 / 隔夜消息梳理",
+        "去弱留强排序",
+        "最实战的结论",
+        "上证指数中期走势研判",
+    ]
+    positions = [html.index(text) for text in expected_order]
+
+    assert positions == sorted(positions)
+    assert html.count("指数与市场情绪") == 1
+    assert html.count("昨日预判验证") == 1
+    assert "市场阶段" in html
+    assert "资金轮动路径" in html
+    assert "明日操作思路" in html
+
+
 def test_mobile_report_renderer_groups_sector_detail_into_scannable_blocks(
     tmp_path: Path,
 ) -> None:
@@ -612,7 +625,7 @@ def test_mobile_report_renderer_uses_daily_summary_board(tmp_path: Path) -> None
     assert "结构标签" in html
 
 
-def test_mobile_report_html_renders_next_day_prediction_section(tmp_path: Path) -> None:
+def test_mobile_report_html_does_not_render_old_next_day_prediction_section(tmp_path: Path) -> None:
     generator = ReportGenerator(
         reports_root=tmp_path,
         market_provider=FakeMarketDataProvider(),
@@ -621,50 +634,12 @@ def test_mobile_report_html_renders_next_day_prediction_section(tmp_path: Path) 
     )
 
     result = generator.generate_close_report("2026-05-26")
-    result.report.next_day_predictions = [
-        NextDayPrediction(
-            sector="PCB",
-            rank=1,
-            continuation_probability=76,
-            confidence=PredictionConfidence.HIGH,
-            headline="PCB延续概率较高，重点观察前排分歧承接。",
-            front_row_stocks=[
-                PredictionStockFocus(
-                    code="300476.SZ",
-                    name="胜宏科技",
-                    pct_change=20.0,
-                    role="前排强势股",
-                    source_tags=["同花顺复盘", "东方财富涨停复盘"],
-                    observation="观察胜宏科技竞价是否强于板块平均。",
-                )
-            ],
-            trigger_conditions=["观察胜宏科技竞价是否强于板块平均。"],
-            invalidation_conditions=["胜宏科技低开低走。"],
-            risk_labels=["高位加速", "单源确认"],
-            source_basis=["同花顺复盘"],
-            primary_basis=["TickFlow行情：强度82.0、排名1、板块涨幅+4.50%", "Anspire新闻：1条催化"],
-            secondary_basis=["辅助复盘：同花顺复盘"],
-            market_quality_basis=["东方财富涨停复盘：封板率64.21%"],
-        )
-    ]
 
     html = render_mobile_report_html(result.report)
 
-    assert "次日强势概率与观察条件" in html
-    assert "PCB" in html
-    assert "76%" in html
-    assert "观察胜宏科技竞价是否强于板块平均" in html
-    assert "同花顺复盘" in html
-    assert "市场质量" in html
-    assert "东方财富涨停复盘：封板率64.21%" in html
-    assert "主源" in html
-    assert "TickFlow行情" in html
-    assert "Anspire新闻" in html
-    assert "辅助源" in html
-    assert "辅助复盘：同花顺复盘" in html
-    assert "未形成板块双源确认" in html
-    assert "prediction-stock-table" in html
-    assert "observation-cell" in html
+    assert "次日强势概率与观察条件" not in html
+    assert "主源" not in html
+    assert "辅助源" not in html
 
 
 def test_mobile_report_renderer_unifies_component_polish_and_sources(tmp_path: Path) -> None:
