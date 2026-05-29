@@ -574,6 +574,30 @@
 {% set opportunity_window = "下午至下一交易日" if is_midday else "明日" %}
 {% set news_reference_label = "午间参考" if is_midday else "盘后 / 隔夜参考" %}
 {% set news_section_title = "午间消息 / 盘中催化梳理" if is_midday else "盘后 / 隔夜消息梳理" %}
+{% set market_phase_labels = {
+  "panic_decline": "退潮/风险释放",
+  "repair": "修复",
+  "structural_rebound": "结构性反弹",
+  "mainline_expansion": "主线扩散",
+  "internal_rotation": "主线内部轮动",
+  "defensive_rotation": "防御轮动",
+  "mixed_divergence": "分化震荡"
+} %}
+{% set sector_stage_labels = {
+  "leader": "主线核心",
+  "new_leader": "新核心",
+  "branch_expansion": "分支扩散",
+  "independent_theme": "独立题材",
+  "repair_only": "修复观察",
+  "weakening": "走弱",
+  "one_day": "一日游",
+  "avoid": "回避"
+} %}
+{% set rating_labels = {
+  "high": "高",
+  "medium": "中",
+  "low": "低"
+} %}
 <div class="article-wrap">
 <div class="article-card">
 
@@ -600,7 +624,7 @@
     <h2 class="section-title">核心结论</h2>
     {% if structured.market_phase %}
       <div class="key-insight">
-        <div class="ki-title">市场阶段 · {{ structured.market_phase.phase }}</div>
+        <div class="ki-title">市场阶段 · {{ market_phase_labels.get(structured.market_phase.phase, structured.market_phase.phase) }}</div>
         <p>{{ structured.market_phase.headline }}</p>
         <p style="margin-top:10px;"><strong>最关键的信号：</strong>{{ structured.market_phase.key_signal }}</p>
         {% if structured.market_phase.yesterday_today_compare %}
@@ -702,9 +726,9 @@
     <h2 class="section-title">板块详细分析</h2>
     {% for sector in structured.sector_deep_dives %}
       <article class="sector-block">
-        <h3 class="section-subtitle">{{ loop.index }}. {{ sector.sector }} <span class="tag tag-gold">{{ sector.rating }}</span></h3>
+        <h3 class="section-subtitle">{{ loop.index }}. {{ sector.sector }} <span class="tag tag-gold">{{ rating_labels.get(sector.rating, sector.rating) }}</span></h3>
         <div class="sector-meta">
-          <span><strong>阶段：</strong>{{ sector.stage }}</span>
+          <span><strong>阶段：</strong>{{ sector_stage_labels.get(sector.stage, sector.stage) }}</span>
           <span><strong>梯队：</strong>{{ sector.team_structure }}</span>
         </div>
         <div class="sector-grid">

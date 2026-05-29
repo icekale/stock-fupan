@@ -575,6 +575,8 @@ def test_mobile_report_renderer_uses_review_analysis_v2_article_order(tmp_path: 
     assert html.count("指数与市场情绪") == 1
     assert html.count("昨日预判验证") == 1
     assert "市场阶段" in html
+    assert "主线扩散" in html
+    assert "市场阶段 · mainline_expansion" not in html
     assert "资金轮动路径" in html
     assert "明日操作思路" in html
 
@@ -596,11 +598,13 @@ def test_mobile_report_renderer_groups_sector_detail_into_scannable_blocks(
     assert 'class="sector-meta"' in html
     assert 'class="sector-grid"' in html
     assert 'class="insight-card"' in html
-    assert 'class="insight-card action-card"' in html
-    assert "01 前排个股" in html
-    assert "02 资金与换手证据" in html
-    assert "03 板块逻辑" in html
-    assert "动作 · 明日看法" in html
+    assert "催化与逻辑" in html
+    assert "核心标的" in html
+    assert "资金证据" in html
+    assert "结论与条件" in html
+    assert "阶段：</strong>新核心" in html
+    assert "阶段：</strong>leader" not in html
+    assert "new_leader" not in html
 
 
 def test_mobile_report_renderer_uses_daily_summary_board(tmp_path: Path) -> None:
