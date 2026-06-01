@@ -69,6 +69,13 @@ def test_evidence_save_and_query_endpoints() -> None:
     assert list_response.json()["items"][0]["source"] == "新浪财经"
 
 
+def test_evidence_query_rejects_invalid_status() -> None:
+    with TestClient(app) as client:
+        response = client.get("/api/evidence?trade_date=2026-06-01&status=bad")
+
+    assert response.status_code == 422
+
+
 def test_evidence_save_rejects_invalid_verified_capital_flow_without_numeric_numbers() -> None:
     with TestClient(app) as client:
         response = client.post(

@@ -230,10 +230,9 @@ def parse_evidence(request: EvidenceParsePreviewRequest) -> dict[str, object]:
 
 
 @app.get("/api/evidence")
-def list_evidence(trade_date: str, status: str | None = None) -> dict[str, object]:
-    parsed_status = EvidenceStatus(status) if status else None
+def list_evidence(trade_date: str, status: EvidenceStatus | None = None) -> dict[str, object]:
     return EvidenceListResponse(
-        items=_evidence_store().list_items(trade_date, status=parsed_status)
+        items=_evidence_store().list_items(trade_date, status=status)
     ).model_dump(mode="json")
 
 
