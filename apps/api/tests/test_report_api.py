@@ -33,8 +33,9 @@ from app.watchlist.service import WatchlistImportResult
 
 
 @pytest.fixture(autouse=True)
-def isolate_settings_and_png_export(monkeypatch: pytest.MonkeyPatch):
+def isolate_settings_and_png_export(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     get_settings.cache_clear()
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'test.db'}")
     monkeypatch.setenv("MARKET_PROVIDER", "fake")
     monkeypatch.setenv("NEWS_PROVIDER", "fake")
     monkeypatch.setenv("REVIEW_SOURCES_ENABLED", "false")
