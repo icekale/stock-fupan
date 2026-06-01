@@ -15,6 +15,9 @@ test("evidence panel is wired to API helpers and homepage", () => {
   assert.match(apiSource, /searchEvidenceCandidates/);
   assert.match(panelSource, /日报证据/);
   assert.match(panelSource, /解析预览/);
+  assert.match(panelSource, /保存有效证据/);
+  assert.match(panelSource, /status === "verified"/);
+  assert.match(panelSource, /候选证据需要手工确认为 verified 后才能保存为日报证据/);
   assert.match(panelSource, /Anspire 候选/);
   assert.match(pageSource, /EvidencePanel/);
 });

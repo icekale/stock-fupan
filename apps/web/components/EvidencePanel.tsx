@@ -58,11 +58,16 @@ export function EvidencePanel({ tradeDate }: EvidencePanelProps) {
       setError("没有可保存的有效证据");
       return;
     }
+    const verifiedItems = validItems.filter((item) => item.status === "verified");
+    if (verifiedItems.length === 0) {
+      setError("候选证据需要手工确认为 verified 后才能保存为日报证据");
+      return;
+    }
     setRunning(true);
     setError(null);
     setMessage(null);
     try {
-      const response = await saveEvidenceItems(validItems);
+      const response = await saveEvidenceItems(verifiedItems);
       setMessage(`已保存 ${response.items.length} 条证据`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "保存证据失败");
