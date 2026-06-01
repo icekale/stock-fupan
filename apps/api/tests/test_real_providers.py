@@ -115,6 +115,19 @@ def test_news_fallback_returns_fake_items_and_reason() -> None:
     assert result.status.reason == "ANSPIRE_API_KEY 未配置"
 
 
+def test_generic_news_fallback_does_not_set_query_as_matched_sector() -> None:
+    provider = FallbackNewsProvider(
+        primary=BrokenNewsProvider(),
+        fallback=FakeNewsProvider(),
+        fallback_enabled=True,
+    )
+
+    result = provider.search_news_with_status("金融界 主力资金 连续 净流出", "2026-06-01")
+
+    assert result.items[0].matched_sector is None
+    assert result.status.status == "fallback"
+
+
 
 class FakeResponse:
     def __init__(self, status_code: int, payload: dict[str, object]) -> None:

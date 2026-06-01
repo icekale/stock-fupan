@@ -264,6 +264,8 @@ def search_evidence_candidates(request: EvidenceCandidateRequest) -> dict[str, o
             result = providers.news_provider.search_news_with_status(query, request.trade_date)
         except Exception as exc:
             raise HTTPException(status_code=502, detail=_safe_provider_error(exc, settings)) from exc
+    if result.status.fallback_used or result.status.status != "success":
+        raise HTTPException(status_code=502, detail=result.status.reason or "候选证据搜索失败")
     preview = build_candidate_preview_from_news(
         trade_date=request.trade_date,
         query=query,

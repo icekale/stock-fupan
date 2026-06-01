@@ -175,3 +175,50 @@ def test_evidence_anspire_candidates_returns_clear_provider_error(monkeypatch: p
 
     assert response.status_code == 502
     assert response.json()["detail"] == "ANSPIRE_API_KEY 未配置"
+
+
+def test_evidence_anspire_candidates_rejects_fallback_status(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FallbackSearchProvider:
+        def search_news_with_status(self, query: str, trade_date: str):
+            from app.providers.market import ProviderStatus
+            from app.providers.news import NewsSearchResult
+            from app.schemas.report import NewsItem
+
+            return NewsSearchResult(
+                query=query,
+                items=[
+                    NewsItem(
+                        title="示例候选",
+                        url="https://example.com/fallback",
+                        source="示例财经",
+                        summary="示例候选。",
+                        published_at="2026-06-01T15:00:00+08:00",
+                    )
+                ],
+                status=ProviderStatus(
+                    provider="anspire",
+                    status="fallback",
+                    fallback_used=True,
+                    reason="ANSPIRE_API_KEY 未配置",
+                ),
+            )
+
+    class FakeBundle:
+        news_provider = FallbackSearchProvider()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return None
+
+    monkeypatch.setattr("app.main.create_provider_bundle", lambda settings, runtime_config=None: FakeBundle())
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/evidence/anspire-candidates",
+            json={"trade_date": "2026-06-01", "task": "jrj_continuous_outflow"},
+        )
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "ANSPIRE_API_KEY 未配置"

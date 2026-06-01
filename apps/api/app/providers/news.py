@@ -44,6 +44,12 @@ class FakeNewsProvider:
             )
         ]
 
+    def search_news(self, query: str, trade_date: str) -> list[NewsItem]:
+        return [
+            item.model_copy(update={"matched_sector": None})
+            for item in self.search_sector_news(query, trade_date)
+        ]
+
 
 class AnspireNewsProvider:
     provider_name = "anspire"
@@ -231,9 +237,17 @@ class FallbackNewsProvider:
             reason = str(exc) or exc.__class__.__name__
             if not self.fallback_enabled:
                 raise
+            fallback_search_news = getattr(self.fallback, "search_news", None)
+            if callable(fallback_search_news):
+                fallback_items = fallback_search_news(query, trade_date)
+            else:
+                fallback_items = [
+                    item.model_copy(update={"matched_sector": None})
+                    for item in self.fallback.search_sector_news(query, trade_date)
+                ]
             return NewsSearchResult(
                 query=query,
-                items=self.fallback.search_sector_news(query, trade_date),
+                items=fallback_items,
                 status=ProviderStatus(
                     provider=provider,
                     status="fallback",
