@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from app.providers.llm import FakeLLMProvider, LLMFallbackError
@@ -585,6 +587,29 @@ def test_build_structured_review_keeps_news_evidence_compact() -> None:
     assert "\n" not in evidence
     assert len(evidence) <= 72
     assert "联系电话" not in evidence
+
+
+def test_mobile_template_contains_reference_section_labels() -> None:
+    template = Path("app/renderers/templates/mobile_report.html.j2").read_text(encoding="utf-8")
+
+    assert "ZERO" in template
+    assert "今日核心结论" in template
+    assert "ONE" in template
+    assert "指数与市场情绪" in template
+    assert "TWO" in template
+    assert "昨日预判验证" in template
+    assert "THREE" in template
+    assert "板块深度分析" in template
+    assert "FOUR" in template
+    assert "资金轮动全景" in template
+    assert "FIVE" in template
+    assert "板块持续性排序" in template
+    assert "SIX" in template
+    assert "明日操作思路" in template
+    assert "SEVEN" in template
+    assert "中期研判" in template
+    assert "evidence_ids" in template
+    assert "证据不足" in template
 class SuccessfulStructuredLLM:
     provider_name = "openai"
 
