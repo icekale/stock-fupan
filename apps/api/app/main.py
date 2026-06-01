@@ -23,7 +23,14 @@ from app.providers.runtime_config import (
     get_runtime_provider_config,
     save_runtime_provider_config,
 )
+from app.schemas.evidence import (
+    EvidenceListResponse,
+    EvidenceParsePreviewRequest,
+    EvidenceSaveRequest,
+    EvidenceStatus,
+)
 from app.services.assets import report_kind_label
+from app.services.evidence_service import EvidenceStore, parse_evidence_preview
 from app.services.report_generator import ReportGenerator
 from app.watchlist.ocr_service import (
     OcrPreviewNotFoundError,
@@ -109,6 +116,10 @@ def _watchlist_ocr_service() -> WatchlistOcrService:
         ocr_provider=providers.ocr_provider,
         import_service=_watchlist_service(),
     )
+
+
+def _evidence_store() -> EvidenceStore:
+    return EvidenceStore(app.state.engine)
 
 
 @app.post("/api/watchlists/import-text")
@@ -211,6 +222,28 @@ def _external_status(enabled: bool, configured: bool) -> str:
     if not configured:
         return "missing_key"
     return "ready"
+
+
+@app.post("/api/evidence/parse-preview")
+def parse_evidence(request: EvidenceParsePreviewRequest) -> dict[str, object]:
+    return parse_evidence_preview(request.content).model_dump(mode="json")
+
+
+@app.get("/api/evidence")
+def list_evidence(trade_date: str, status: str | None = None) -> dict[str, object]:
+    parsed_status = EvidenceStatus(status) if status else None
+    return EvidenceListResponse(
+        items=_evidence_store().list_items(trade_date, status=parsed_status)
+    ).model_dump(mode="json")
+
+
+@app.post("/api/evidence")
+def save_evidence(request: EvidenceSaveRequest) -> dict[str, object]:
+    try:
+        items = _evidence_store().save_items(request.items)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return EvidenceListResponse(items=items).model_dump(mode="json")
 
 
 @app.get("/api/reports")
