@@ -103,6 +103,34 @@ def candidate_from_news_item(news_item: NewsItem, trade_date: str, query: str) -
     )
 
 
+def query_for_candidate_task(task: str, custom_query: str) -> str:
+    if custom_query.strip():
+        return custom_query.strip()
+    return ANISPIRE_TASK_QUERIES.get(task, task)
+
+
+def build_candidate_preview_from_news(
+    trade_date: str,
+    query: str,
+    items: list[NewsItem],
+) -> EvidenceParsePreview:
+    preview_items: list[EvidencePreviewItem] = []
+    for news_item in items:
+        item = candidate_from_news_item(news_item, trade_date=trade_date, query=query)
+        preview_items.append(
+            EvidencePreviewItem(
+                raw=news_item.model_dump(mode="json"),
+                item=item,
+                errors=validate_evidence_item(item),
+            )
+        )
+    return EvidenceParsePreview(
+        items=preview_items,
+        valid_count=sum(1 for item in preview_items if not item.errors),
+        invalid_count=sum(1 for item in preview_items if item.errors),
+    )
+
+
 class EvidenceStore:
     def __init__(self, engine: Engine):
         self.engine = engine
@@ -277,6 +305,9 @@ def _infer_category(query: str, title: str) -> EvidenceCategory:
 
 def _extract_numbers(text: str) -> dict[str, float]:
     numbers: dict[str, float] = {}
+    continuous_outflow = re.search(r"连续\s*(\d+)\s*天\s*净流出", text)
+    if continuous_outflow:
+        numbers["continuous_outflow_days"] = float(continuous_outflow.group(1))
     for index, match in enumerate(re.finditer(r"-?\d+(?:\.\d+)?", text), start=1):
         numbers[f"value_{index}"] = float(match.group(0))
     return numbers

@@ -24,13 +24,20 @@ from app.providers.runtime_config import (
     save_runtime_provider_config,
 )
 from app.schemas.evidence import (
+    EvidenceCandidateRequest,
+    EvidenceCandidateResponse,
     EvidenceListResponse,
     EvidenceParsePreviewRequest,
     EvidenceSaveRequest,
     EvidenceStatus,
 )
 from app.services.assets import report_kind_label
-from app.services.evidence_service import EvidenceStore, parse_evidence_preview
+from app.services.evidence_service import (
+    EvidenceStore,
+    build_candidate_preview_from_news,
+    parse_evidence_preview,
+    query_for_candidate_task,
+)
 from app.services.report_generator import ReportGenerator
 from app.watchlist.ocr_service import (
     OcrPreviewNotFoundError,
@@ -243,6 +250,26 @@ def save_evidence(request: EvidenceSaveRequest) -> dict[str, object]:
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return EvidenceListResponse(items=items).model_dump(mode="json")
+
+
+@app.post("/api/evidence/anspire-candidates")
+def search_evidence_candidates(request: EvidenceCandidateRequest) -> dict[str, object]:
+    settings = get_settings()
+    runtime_config = get_runtime_provider_config(app.state.engine, settings)
+    query = query_for_candidate_task(request.task, request.query)
+    with create_provider_bundle(settings, runtime_config=runtime_config) as providers:
+        if not hasattr(providers.news_provider, "search_news_with_status"):
+            raise HTTPException(status_code=422, detail="当前新闻源不支持候选搜索")
+        result = providers.news_provider.search_news_with_status(query, request.trade_date)
+    preview = build_candidate_preview_from_news(
+        trade_date=request.trade_date,
+        query=query,
+        items=result.items,
+    )
+    return EvidenceCandidateResponse(
+        items=preview.items,
+        provider_status=result.status.model_dump(mode="json"),
+    ).model_dump(mode="json")
 
 
 @app.get("/api/reports")

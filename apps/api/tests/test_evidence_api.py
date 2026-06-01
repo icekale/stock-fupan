@@ -100,3 +100,52 @@ def test_evidence_save_rejects_invalid_verified_capital_flow_without_numeric_num
 
     assert response.status_code == 422
     assert "capital_flow high evidence requires numeric numbers" in response.text
+
+
+def test_evidence_anspire_candidates_uses_news_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    class FakeSearchProvider:
+        def search_news_with_status(self, query: str, trade_date: str):
+            from app.providers.market import ProviderStatus
+            from app.providers.news import NewsSearchResult
+            from app.schemas.report import NewsItem
+
+            return NewsSearchResult(
+                query=query,
+                items=[
+                    NewsItem(
+                        title="主力资金连续6天净流出",
+                        url="https://example.com/jrj/outflow",
+                        source="金融界",
+                        summary="主力资金连续6天净流出。",
+                        published_at="2026-06-01T18:00:00+08:00",
+                    )
+                ],
+                status=ProviderStatus(
+                    provider="anspire",
+                    status="success",
+                    fallback_used=False,
+                    reason=None,
+                ),
+            )
+
+    class FakeBundle:
+        news_provider = FakeSearchProvider()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return None
+
+    monkeypatch.setattr("app.main.create_provider_bundle", lambda settings, runtime_config=None: FakeBundle())
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/evidence/anspire-candidates",
+            json={"trade_date": "2026-06-01", "task": "jrj_continuous_outflow"},
+        )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["provider_status"]["status"] == "success"
+    assert payload["items"][0]["item"]["status"] == "candidate"

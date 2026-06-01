@@ -2,8 +2,10 @@ from sqlalchemy import create_engine
 
 from app.db.models import Base
 from app.schemas.evidence import EvidenceCategory, EvidenceConfidence, EvidenceStatus
+from app.schemas.report import NewsItem
 from app.services.evidence_service import (
     EvidenceStore,
+    build_candidate_preview_from_news,
     parse_evidence_preview,
     validate_evidence_item,
 )
@@ -368,3 +370,28 @@ def test_store_rejects_duplicate_explicit_ids_in_batch() -> None:
 
 def test_validate_evidence_item_is_importable() -> None:
     assert callable(validate_evidence_item)
+
+
+def test_candidate_preview_from_news_defaults_to_candidate_status() -> None:
+    preview = build_candidate_preview_from_news(
+        trade_date="2026-06-01",
+        query="金融界 主力资金 连续6天 净流出",
+        items=[
+            NewsItem(
+                title="主力资金连续6天净流出",
+                url="https://example.com/jrj/outflow",
+                source=None,
+                summary="主力资金连续6天净流出。",
+                published_at="2026-06-01T18:00:00+08:00",
+                matched_sector=None,
+                weight=0.6,
+            )
+        ],
+    )
+
+    assert preview.valid_count == 1
+    item = preview.items[0].item
+    assert item is not None
+    assert item.status == EvidenceStatus.CANDIDATE
+    assert item.category == EvidenceCategory.CAPITAL_FLOW
+    assert item.numbers["continuous_outflow_days"] == 6
