@@ -16,6 +16,13 @@ from app.db.models import Report, ReportKindModel, ReportStatusModel
 from app.db.session import get_engine, init_db, session_scope
 from app.providers.factory import create_provider_bundle
 from app.providers.ocr import OcrExtractError
+from app.providers.runtime_config import (
+    RuntimeProviderConfigInput,
+    build_data_source_options_payload,
+    config_status_items,
+    get_runtime_provider_config,
+    save_runtime_provider_config,
+)
 from app.services.assets import report_kind_label
 from app.services.report_generator import ReportGenerator
 from app.watchlist.ocr_service import (
@@ -155,45 +162,13 @@ def get_latest_watchlist() -> dict[str, object]:
 @app.get("/api/config/status")
 def get_config_status() -> dict[str, object]:
     settings = get_settings()
-    tickflow_enabled = settings.market_provider == "tickflow" or settings.tickflow_provider == "tickflow"
-    anspire_enabled = settings.news_provider == "anspire"
-    review_sources_enabled = settings.review_sources_enabled
+    config = get_runtime_provider_config(app.state.engine, settings)
+    base_items = config_status_items(config, settings)
     watchlist_enabled = settings.report_watchlist_enabled
     ocr_is_fake = settings.ocr_provider == "fake"
     return {
         "items": [
-            _status_item(
-                name="TickFlow",
-                role="主源 · 行情",
-                configured=bool(settings.tickflow_api_key),
-                enabled=tickflow_enabled,
-                status=_external_status(tickflow_enabled, bool(settings.tickflow_api_key)),
-                detail=f"MARKET_PROVIDER={settings.market_provider} · TICKFLOW_PROVIDER={settings.tickflow_provider}",
-            ),
-            _status_item(
-                name="Anspire",
-                role="主源 · 新闻",
-                configured=bool(settings.anspire_api_key),
-                enabled=anspire_enabled,
-                status=_external_status(anspire_enabled, bool(settings.anspire_api_key)),
-                detail=f"NEWS_PROVIDER={settings.news_provider}",
-            ),
-            _status_item(
-                name="同花顺复盘",
-                role="辅助源 · 题材复盘",
-                configured=bool(settings.ths_fupan_url),
-                enabled=review_sources_enabled,
-                status="ready" if review_sources_enabled else "disabled",
-                detail="REVIEW_SOURCES_ENABLED=true" if review_sources_enabled else "REVIEW_SOURCES_ENABLED=false",
-            ),
-            _status_item(
-                name="东方财富涨停复盘",
-                role="辅助源 · 涨停质量",
-                configured=bool(settings.eastmoney_ztfp_url),
-                enabled=review_sources_enabled,
-                status="ready" if review_sources_enabled else "disabled",
-                detail="REVIEW_SOURCES_ENABLED=true" if review_sources_enabled else "REVIEW_SOURCES_ENABLED=false",
-            ),
+            *base_items,
             _status_item(
                 name="自选股模块",
                 role="本地 · 自选股观察",
@@ -212,6 +187,22 @@ def get_config_status() -> dict[str, object]:
             ),
         ]
     }
+
+
+@app.get("/api/data-sources/options")
+def get_data_source_options() -> dict[str, object]:
+    settings = get_settings()
+    config = get_runtime_provider_config(app.state.engine, settings)
+    return build_data_source_options_payload(config, settings)
+
+
+@app.put("/api/data-sources/options")
+def update_data_source_options(request: RuntimeProviderConfigInput) -> dict[str, object]:
+    try:
+        config = save_runtime_provider_config(app.state.engine, request)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return build_data_source_options_payload(config, get_settings())
 
 
 def _external_status(enabled: bool, configured: bool) -> str:
@@ -289,7 +280,8 @@ def create_midday_report(request: CreateCloseReportRequest) -> dict[str, object]
 
 def _create_report_response(request: CreateCloseReportRequest, report_kind: str) -> dict[str, object]:
     settings = get_settings()
-    with create_provider_bundle(settings) as providers:
+    runtime_config = get_runtime_provider_config(app.state.engine, settings)
+    with create_provider_bundle(settings, runtime_config=runtime_config) as providers:
         generator = ReportGenerator(
             reports_root=Path(settings.reports_root),
             market_provider=providers.market_provider,

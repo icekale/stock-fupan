@@ -146,6 +146,125 @@ def test_config_status_api_returns_sanitized_provider_state(monkeypatch) -> None
     assert "sk-secret-should-not-leak" not in response.text
 
 
+def test_data_source_options_api_returns_current_options(monkeypatch) -> None:
+    monkeypatch.setenv("MARKET_PROVIDER", "tickflow")
+    monkeypatch.setenv("NEWS_PROVIDER", "anspire")
+    monkeypatch.setenv("TICKFLOW_API_KEY", "tk_secret_should_not_leak")
+    monkeypatch.setenv("ANSPIRE_API_KEY", "")
+    get_settings.cache_clear()
+
+    with TestClient(app) as client:
+        response = client.get("/api/data-sources/options")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["current"]["market_provider"] == "tickflow"
+    assert payload["current"]["news_provider"] == "anspire"
+    categories = {category["key"]: category for category in payload["categories"]}
+    assert categories["market_provider"]["selection"] == "single"
+    assert categories["news_provider"]["selection"] == "single"
+    assert categories["review_sources"]["selection"] == "multiple"
+    news_options = {item["key"]: item for item in categories["news_provider"]["options"]}
+    assert news_options["anspire"]["status"] == "missing_key"
+    assert news_options["eastmoney_global"]["status"] == "ready"
+    assert "tk_secret_should_not_leak" not in response.text
+
+
+def test_data_source_options_api_saves_runtime_config(monkeypatch) -> None:
+    monkeypatch.setenv("MARKET_PROVIDER", "tickflow")
+    monkeypatch.setenv("NEWS_PROVIDER", "anspire")
+    get_settings.cache_clear()
+
+    with TestClient(app) as client:
+        save_response = client.put(
+            "/api/data-sources/options",
+            json={
+                "market_provider": "tickflow",
+                "news_provider": "eastmoney_global",
+                "review_sources": ["a_stock_ths_hot", "a_stock_industry_rank"],
+                "fallback_enabled": False,
+            },
+        )
+        read_response = client.get("/api/data-sources/options")
+
+    assert save_response.status_code == 200
+    assert read_response.status_code == 200
+    current = read_response.json()["current"]
+    assert current["news_provider"] == "eastmoney_global"
+    assert current["review_sources"] == ["a_stock_ths_hot", "a_stock_industry_rank"]
+    assert current["fallback_enabled"] is False
+    assert current["updated_at"] is not None
+
+
+def test_data_source_options_api_rejects_unknown_provider() -> None:
+    with TestClient(app) as client:
+        response = client.put(
+            "/api/data-sources/options",
+            json={
+                "market_provider": "tickflow",
+                "news_provider": "unknown",
+                "review_sources": [],
+                "fallback_enabled": True,
+            },
+        )
+
+    assert response.status_code == 422
+    assert "Unsupported NEWS_PROVIDER" in response.text
+
+
+def test_create_report_uses_runtime_data_source_options(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("REPORTS_ROOT", str(tmp_path))
+    monkeypatch.setenv("MARKET_PROVIDER", "fake")
+    monkeypatch.setenv("NEWS_PROVIDER", "fake")
+    get_settings.cache_clear()
+
+    from app.providers import a_stock_data
+
+    class FakeAStockResponse:
+        def raise_for_status(self) -> None:
+            return None
+
+        def json(self) -> object:
+            return {
+                "errocode": 0,
+                "data": [
+                    {
+                        "code": "300476",
+                        "name": "胜宏科技",
+                        "reason": "PCB+AI服务器",
+                        "zhangfu": "12.34",
+                    }
+                ],
+            }
+
+    class FakeAStockClient:
+        def get(self, *_args: object, **_kwargs: object) -> FakeAStockResponse:
+            return FakeAStockResponse()
+
+        def close(self) -> None:
+            return None
+
+    monkeypatch.setattr(a_stock_data.httpx, "Client", lambda: FakeAStockClient())
+
+    with TestClient(app) as client:
+        save_response = client.put(
+            "/api/data-sources/options",
+            json={
+                "market_provider": "fake",
+                "news_provider": "fake",
+                "review_sources": ["a_stock_ths_hot"],
+                "fallback_enabled": True,
+            },
+        )
+        report_response = client.post("/api/reports/close", json={"trade_date": "2026-05-26"})
+
+    assert save_response.status_code == 200
+    assert report_response.status_code == 200
+    review_sources = report_response.json()["provider_status"]["review_sources"]
+    assert review_sources[0]["source"] == "a-stock-data 同花顺热点"
+    assert review_sources[0]["status"] == "success"
+
+
 def test_create_close_report_api_returns_provider_status(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("REPORTS_ROOT", str(tmp_path))
     monkeypatch.setenv("MARKET_PROVIDER", "fake")
