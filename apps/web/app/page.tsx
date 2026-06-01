@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { AdminShell } from "../components/AdminShell";
 import { DataSourceStatusPanel } from "../components/DataSourceStatusPanel";
+import { EvidencePanel } from "../components/EvidencePanel";
 import { ReportPreview } from "../components/ReportPreview";
 import { TaskProgress } from "../components/TaskProgress";
 import { WatchlistImportPanel } from "../components/WatchlistImportPanel";
@@ -234,6 +235,7 @@ export default function HomePage() {
               options={dataSourceOptions}
               saving={savingDataSources}
             />
+            <EvidencePanel tradeDate={tradeDate} />
 
             <section id="reports" className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">

@@ -258,6 +258,55 @@ export type ConfigStatusResponse = {
   items: ConfigStatusItem[];
 };
 
+export type EvidenceCategory =
+  | "capital_flow"
+  | "catalyst"
+  | "market_sentiment"
+  | "limit_up"
+  | "risk"
+  | "policy"
+  | "earnings";
+
+export type EvidenceConfidence = "high" | "medium" | "low";
+export type EvidenceStatus = "candidate" | "draft" | "verified";
+
+export type EvidenceItem = {
+  id?: string;
+  trade_date: string;
+  source: string;
+  title: string;
+  url: string;
+  published_at: string;
+  category: EvidenceCategory;
+  claim: string;
+  numbers: Record<string, unknown>;
+  related_sectors: string[];
+  confidence: EvidenceConfidence;
+  status: EvidenceStatus;
+  manual_confirmed: boolean;
+};
+
+export type EvidencePreviewItem = {
+  raw: Record<string, unknown> | string;
+  item: EvidenceItem | null;
+  errors: string[];
+};
+
+export type EvidenceParsePreview = {
+  items: EvidencePreviewItem[];
+  valid_count: number;
+  invalid_count: number;
+};
+
+export type EvidenceListResponse = {
+  items: EvidenceItem[];
+};
+
+export type EvidenceCandidateResponse = {
+  items: EvidencePreviewItem[];
+  provider_status: ProviderStatus;
+};
+
 export type DataSourceSelectionMode = "single" | "multiple";
 
 export type DataSourceOptionItem = {
