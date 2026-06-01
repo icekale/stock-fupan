@@ -818,7 +818,8 @@ def test_mobile_report_renderer_unifies_component_polish_and_sources(tmp_path: P
     assert 'class="source-grid"' in html
     assert 'class="source-item"' in html
     assert 'class="source-name"' in html
-    assert "主要来源" in html
+    assert "主要信息来源" in html
+    assert "主要信息来源（主要来源）" not in html
 
 
 class BrokenStructuredReviewLLM(FakeLLMProvider):
