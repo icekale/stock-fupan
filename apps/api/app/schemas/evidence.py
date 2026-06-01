@@ -37,7 +37,7 @@ class EvidenceInput(BaseModel):
     claim: str
     numbers: dict[str, Any] = Field(default_factory=dict)
     related_sectors: list[str] = Field(default_factory=list)
-    confidence: EvidenceConfidence = EvidenceConfidence.MEDIUM
+    confidence: EvidenceConfidence
     status: EvidenceStatus = EvidenceStatus.DRAFT
     manual_confirmed: bool = False
 

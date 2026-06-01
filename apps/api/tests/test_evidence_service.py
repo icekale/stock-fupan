@@ -80,6 +80,43 @@ def test_parse_table_text_preview() -> None:
     assert preview.items[0].item.related_sectors == ["AI PC", "AI应用"]
 
 
+def test_parse_comma_table_preserves_extra_related_sectors_columns() -> None:
+    preview = parse_evidence_preview(
+        ",".join(
+            [
+                "trade_date",
+                "source",
+                "title",
+                "url",
+                "published_at",
+                "category",
+                "claim",
+                "confidence",
+                "related_sectors",
+            ]
+        )
+        + "\n"
+        + ",".join(
+            [
+                "2026-06-01",
+                "36氪",
+                "全球首个Agent原生电脑问世",
+                "https://example.com/36kr/pc",
+                "2026-06-01T12:00:00+08:00",
+                "catalyst",
+                "英伟达与微软推动Agent原生电脑方向。",
+                "medium",
+                "AI PC",
+                "AI应用",
+            ]
+        )
+    )
+
+    assert preview.valid_count == 1
+    assert preview.items[0].item is not None
+    assert preview.items[0].item.related_sectors == ["AI PC", "AI应用"]
+
+
 def test_parse_json_related_sectors_string_normalizes_to_list() -> None:
     preview = parse_evidence_preview(
         """
@@ -143,6 +180,49 @@ def test_high_capital_flow_without_numbers_is_invalid() -> None:
     assert preview.valid_count == 0
     assert preview.invalid_count == 1
     assert "capital_flow high evidence requires numbers" in preview.items[0].errors
+
+
+def test_high_capital_flow_requires_numeric_numbers_value() -> None:
+    preview = parse_evidence_preview(
+        """
+        [{
+          "trade_date": "2026-06-01",
+          "source": "证券时报",
+          "title": "行业资金流向",
+          "url": "https://example.com/fund",
+          "published_at": "2026-06-01T18:00:00+08:00",
+          "category": "capital_flow",
+          "claim": "煤炭行业净流入。",
+          "numbers": {"note": "净流入明显"},
+          "confidence": "high",
+          "status": "verified"
+        }]
+        """
+    )
+
+    assert preview.valid_count == 0
+    assert preview.invalid_count == 1
+    assert "capital_flow high evidence requires numeric numbers" in preview.items[0].errors
+
+
+def test_confidence_is_required() -> None:
+    preview = parse_evidence_preview(
+        """
+        [{
+          "trade_date": "2026-06-01",
+          "source": "36氪",
+          "title": "全球首个Agent原生电脑问世",
+          "url": "https://example.com/36kr/pc",
+          "published_at": "2026-06-01T12:00:00+08:00",
+          "category": "catalyst",
+          "claim": "英伟达与微软推动Agent原生电脑方向。"
+        }]
+        """
+    )
+
+    assert preview.valid_count == 0
+    assert preview.invalid_count == 1
+    assert "confidence" in preview.items[0].errors[0]
 
 
 def test_high_evidence_requires_trade_date_or_previous_day() -> None:

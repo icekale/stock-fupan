@@ -80,6 +80,8 @@ def validate_evidence_item(item: EvidenceInput) -> list[str]:
     if item.category == EvidenceCategory.CAPITAL_FLOW and item.confidence == EvidenceConfidence.HIGH:
         if not item.numbers:
             errors.append("capital_flow high evidence requires numbers")
+        elif not _has_numeric_value(item.numbers):
+            errors.append("capital_flow high evidence requires numeric numbers")
 
     return errors
 
@@ -187,6 +189,11 @@ def _parse_table_rows(content: str) -> list[dict[str, Any] | str]:
     rows: list[dict[str, Any] | str] = []
     for row in reader:
         cleaned = {str(key).strip(): _clean_table_value(value) for key, value in row.items() if key}
+        extras = row.get(None)
+        if extras and isinstance(cleaned.get("related_sectors"), str):
+            cleaned["related_sectors"] = ",".join(
+                [cleaned["related_sectors"], *(str(extra).strip() for extra in extras)]
+            )
         if "related_sectors" in cleaned and isinstance(cleaned["related_sectors"], str):
             cleaned["related_sectors"] = _split_related_sectors(cleaned["related_sectors"])
         rows.append(cleaned)
@@ -226,6 +233,18 @@ def _normalize_row(row: dict[str, Any]) -> dict[str, Any]:
 
 def _split_related_sectors(value: str) -> list[str]:
     return [part.strip() for part in value.replace("，", ",").split(",") if part.strip()]
+
+
+def _has_numeric_value(value: object) -> bool:
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int | float):
+        return True
+    if isinstance(value, dict):
+        return any(_has_numeric_value(child) for child in value.values())
+    if isinstance(value, list):
+        return any(_has_numeric_value(child) for child in value)
+    return False
 
 
 def _date_matches_trade_window(trade_date: str, published_at: str) -> bool:
