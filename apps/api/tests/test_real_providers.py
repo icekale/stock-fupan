@@ -14,6 +14,7 @@ from app.providers.news import AnspireNewsProvider, FakeNewsProvider, FallbackNe
 from app.providers.tickflow import FallbackTickFlowProvider
 from app.providers.tickflow import TickFlowMarketDataProvider
 from app.schemas.report import NewsItem
+from app.services.evidence_service import build_candidate_preview_from_news
 
 
 def test_provider_status_serializes_for_snapshot() -> None:
@@ -72,6 +73,22 @@ class BrokenNewsProvider:
         raise ProviderFallbackError("ANSPIRE_API_KEY 未配置")
 
 
+class SectorOnlyNewsProvider:
+    provider_name = "sector_only"
+
+    def search_sector_news(self, sector_name: str, trade_date: str) -> list[NewsItem]:
+        return [
+            NewsItem(
+                title="主力资金连续6天净流出",
+                url="https://example.com/sector-only",
+                source="金融界",
+                summary="主力资金连续6天净流出。",
+                published_at=f"{trade_date}T18:00:00+08:00",
+                matched_sector=sector_name,
+            )
+        ]
+
+
 def test_market_fallback_returns_fake_snapshot_and_reason() -> None:
     provider = FallbackMarketDataProvider(
         primary=BrokenMarketProvider(),
@@ -126,6 +143,23 @@ def test_generic_news_fallback_does_not_set_query_as_matched_sector() -> None:
 
     assert result.items[0].matched_sector is None
     assert result.status.status == "fallback"
+
+
+def test_generic_search_sanitizes_sector_only_primary_matched_sector() -> None:
+    query = "金融界 主力资金 连续 净流出"
+    provider = FallbackNewsProvider(
+        primary=SectorOnlyNewsProvider(),
+        fallback=FakeNewsProvider(),
+        fallback_enabled=True,
+    )
+
+    result = provider.search_news_with_status(query, "2026-06-01")
+    preview = build_candidate_preview_from_news("2026-06-01", query, result.items)
+
+    assert result.status.status == "success"
+    assert result.items[0].matched_sector is None
+    assert preview.items[0].item is not None
+    assert preview.items[0].item.related_sectors == []
 
 
 

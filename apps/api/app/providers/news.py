@@ -232,7 +232,10 @@ class FallbackNewsProvider:
             if callable(search_news):
                 items = search_news(query, trade_date)
             else:
-                items = self.primary.search_sector_news(query, trade_date)
+                items = [
+                    item.model_copy(update={"matched_sector": None})
+                    for item in self.primary.search_sector_news(query, trade_date)
+                ]
         except Exception as exc:
             reason = str(exc) or exc.__class__.__name__
             if not self.fallback_enabled:
