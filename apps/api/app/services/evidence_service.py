@@ -114,22 +114,14 @@ class EvidenceStore:
                 errors = validate_evidence_item(item)
                 if errors:
                     raise ValueError("; ".join(errors))
-                record = EvidenceRecord(
-                    evidence_id=item.id or self._next_evidence_id(item.trade_date, len(saved) + 1),
-                    trade_date=item.trade_date,
-                    source=item.source,
-                    title=item.title,
-                    url=item.url,
-                    published_at=item.published_at,
-                    category=item.category.value,
-                    claim=item.claim,
-                    numbers=item.numbers,
-                    related_sectors=item.related_sectors,
-                    confidence=item.confidence.value,
-                    status=item.status.value,
-                    manual_confirmed=item.manual_confirmed,
+                evidence_id = item.id or self._next_evidence_id(item.trade_date, len(saved) + 1)
+                record = session.scalar(
+                    select(EvidenceRecord).where(EvidenceRecord.evidence_id == evidence_id)
                 )
-                session.merge(record)
+                if record is None:
+                    record = EvidenceRecord(evidence_id=evidence_id)
+                    session.add(record)
+                _apply_item_to_record(record, item)
                 saved.append(_record_to_item(record))
             return saved
 
@@ -305,3 +297,18 @@ def _record_to_item(record: EvidenceRecord) -> EvidenceItem:
         status=EvidenceStatus(record.status),
         manual_confirmed=record.manual_confirmed,
     )
+
+
+def _apply_item_to_record(record: EvidenceRecord, item: EvidenceInput) -> None:
+    record.trade_date = item.trade_date
+    record.source = item.source
+    record.title = item.title
+    record.url = item.url
+    record.published_at = item.published_at
+    record.category = item.category.value
+    record.claim = item.claim
+    record.numbers = item.numbers
+    record.related_sectors = item.related_sectors
+    record.confidence = item.confidence.value
+    record.status = item.status.value
+    record.manual_confirmed = item.manual_confirmed

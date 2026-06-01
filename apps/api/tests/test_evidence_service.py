@@ -278,5 +278,45 @@ def test_store_saves_and_lists_verified_evidence() -> None:
     assert loaded[0].claim == "主力资金连续6天净流出。"
 
 
+def test_store_updates_existing_evidence_by_public_id() -> None:
+    engine = _engine()
+    preview = parse_evidence_preview(
+        """
+        [{
+          "trade_date": "2026-06-01",
+          "source": "金融界",
+          "title": "主力资金连续6天净流出",
+          "url": "https://example.com/jrj/outflow",
+          "published_at": "2026-06-01T18:00:00+08:00",
+          "category": "risk",
+          "claim": "主力资金连续6天净流出。",
+          "numbers": {"continuous_outflow_days": 6},
+          "related_sectors": ["全市场"],
+          "confidence": "high",
+          "status": "verified"
+        }]
+        """
+    )
+    item = preview.items[0].item
+    assert item is not None
+
+    store = EvidenceStore(engine)
+    saved = store.save_items([item])
+    updated = saved[0].model_copy(
+        update={
+            "claim": "主力资金连续6天净流出，风险延续。",
+            "confidence": EvidenceConfidence.MEDIUM,
+        }
+    )
+
+    store.save_items([updated])
+    loaded = store.list_items("2026-06-01", status=EvidenceStatus.VERIFIED)
+
+    assert len(loaded) == 1
+    assert loaded[0].id == saved[0].id
+    assert loaded[0].claim == "主力资金连续6天净流出，风险延续。"
+    assert loaded[0].confidence == EvidenceConfidence.MEDIUM
+
+
 def test_validate_evidence_item_is_importable() -> None:
     assert callable(validate_evidence_item)
