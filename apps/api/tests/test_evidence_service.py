@@ -80,6 +80,49 @@ def test_parse_table_text_preview() -> None:
     assert preview.items[0].item.related_sectors == ["AI PC", "AI应用"]
 
 
+def test_parse_json_related_sectors_string_normalizes_to_list() -> None:
+    preview = parse_evidence_preview(
+        """
+        [{
+          "trade_date": "2026-06-01",
+          "source": "36氪",
+          "title": "全球首个Agent原生电脑问世",
+          "url": "https://example.com/36kr/pc",
+          "published_at": "2026-06-01T12:00:00+08:00",
+          "category": "catalyst",
+          "claim": "英伟达与微软推动Agent原生电脑方向。",
+          "confidence": "medium",
+          "related_sectors": "AI PC，AI应用"
+        }]
+        """
+    )
+
+    assert preview.valid_count == 1
+    assert preview.items[0].item is not None
+    assert preview.items[0].item.related_sectors == ["AI PC", "AI应用"]
+
+
+def test_blank_trade_date_is_invalid_for_non_high_evidence() -> None:
+    preview = parse_evidence_preview(
+        """
+        [{
+          "trade_date": "",
+          "source": "36氪",
+          "title": "全球首个Agent原生电脑问世",
+          "url": "https://example.com/36kr/pc",
+          "published_at": "2026-06-01T12:00:00+08:00",
+          "category": "catalyst",
+          "claim": "英伟达与微软推动Agent原生电脑方向。",
+          "confidence": "medium"
+        }]
+        """
+    )
+
+    assert preview.valid_count == 0
+    assert preview.invalid_count == 1
+    assert "trade_date is required" in preview.items[0].errors
+
+
 def test_high_capital_flow_without_numbers_is_invalid() -> None:
     preview = parse_evidence_preview(
         """

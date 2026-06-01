@@ -57,7 +57,16 @@ def parse_evidence_preview(content: str) -> EvidenceParsePreview:
 
 def validate_evidence_item(item: EvidenceInput) -> list[str]:
     errors: list[str] = []
-    for field_name in ("source", "title", "url", "published_at", "category", "claim", "confidence"):
+    for field_name in (
+        "trade_date",
+        "source",
+        "title",
+        "url",
+        "published_at",
+        "category",
+        "claim",
+        "confidence",
+    ):
         value = getattr(item, field_name)
         if isinstance(value, str) and not value.strip():
             errors.append(f"{field_name} is required")
@@ -179,11 +188,7 @@ def _parse_table_rows(content: str) -> list[dict[str, Any] | str]:
     for row in reader:
         cleaned = {str(key).strip(): _clean_table_value(value) for key, value in row.items() if key}
         if "related_sectors" in cleaned and isinstance(cleaned["related_sectors"], str):
-            cleaned["related_sectors"] = [
-                part.strip()
-                for part in cleaned["related_sectors"].replace("，", ",").split(",")
-                if part.strip()
-            ]
+            cleaned["related_sectors"] = _split_related_sectors(cleaned["related_sectors"])
         rows.append(cleaned)
     return rows
 
@@ -191,6 +196,7 @@ def _parse_table_rows(content: str) -> list[dict[str, Any] | str]:
 def _preview_row(row: dict[str, Any] | str) -> EvidencePreviewItem:
     if not isinstance(row, dict):
         return EvidencePreviewItem(raw=row, item=None, errors=["row must be an object"])
+    row = _normalize_row(row)
     try:
         item = EvidenceInput.model_validate(row)
     except Exception as exc:
@@ -209,6 +215,17 @@ def _clean_table_value(value: object) -> object:
         except json.JSONDecodeError:
             return text
     return text
+
+
+def _normalize_row(row: dict[str, Any]) -> dict[str, Any]:
+    normalized = dict(row)
+    if isinstance(normalized.get("related_sectors"), str):
+        normalized["related_sectors"] = _split_related_sectors(normalized["related_sectors"])
+    return normalized
+
+
+def _split_related_sectors(value: str) -> list[str]:
+    return [part.strip() for part in value.replace("，", ",").split(",") if part.strip()]
 
 
 def _date_matches_trade_window(trade_date: str, published_at: str) -> bool:
