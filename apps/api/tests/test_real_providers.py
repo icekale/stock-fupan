@@ -188,6 +188,31 @@ def test_anspire_provider_maps_results_to_news_items() -> None:
     assert items[0].weight == 0.9
 
 
+def test_anspire_generic_search_does_not_set_matched_sector() -> None:
+    client = FakeHttpClient(
+        FakeResponse(
+            200,
+            {
+                "data": [
+                    {
+                        "title": "主力资金连续6天净流出",
+                        "url": "https://example.com/jrj/outflow",
+                        "source": "金融界",
+                        "summary": "主力资金连续6天净流出。",
+                        "published_at": "2026-06-01T18:00:00+08:00",
+                    }
+                ]
+            },
+        )
+    )
+    provider = AnspireNewsProvider(api_key="secret-key", http_client=client)
+
+    items = provider.search_news("金融界 主力资金 连续 净流出", "2026-06-01")
+
+    assert client.last_params["query"] == "金融界 主力资金 连续 净流出"
+    assert items[0].matched_sector is None
+
+
 def test_anspire_provider_rejects_missing_key() -> None:
     provider = AnspireNewsProvider(api_key="")
 

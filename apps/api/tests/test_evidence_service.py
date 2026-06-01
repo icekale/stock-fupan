@@ -395,3 +395,25 @@ def test_candidate_preview_from_news_defaults_to_candidate_status() -> None:
     assert item.status == EvidenceStatus.CANDIDATE
     assert item.category == EvidenceCategory.RISK
     assert item.numbers["continuous_outflow_days"] == 6
+
+
+def test_candidate_preview_does_not_copy_query_to_related_sectors() -> None:
+    preview = build_candidate_preview_from_news(
+        trade_date="2026-06-01",
+        query="金融界 主力资金 连续 净流出",
+        items=[
+            NewsItem(
+                title="主力资金连续6天净流出",
+                url="https://example.com/jrj/outflow",
+                source="金融界",
+                summary="主力资金连续6天净流出。",
+                published_at="2026-06-01T18:00:00+08:00",
+                matched_sector=None,
+                weight=0.6,
+            )
+        ],
+    )
+
+    item = preview.items[0].item
+    assert item is not None
+    assert item.related_sectors == []

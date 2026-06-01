@@ -117,7 +117,7 @@ class AnspireNewsProvider:
         if not raw_items:
             raise ProviderFallbackError("Anspire 无结果")
 
-        return [self._to_news_item(raw_item, query) for raw_item in raw_items[: self.top_k]]
+        return [self._to_news_item(raw_item, None) for raw_item in raw_items[: self.top_k]]
 
     def _extract_items(self, payload: object) -> list[dict[str, Any]]:
         if not isinstance(payload, dict):
@@ -138,7 +138,7 @@ class AnspireNewsProvider:
             raise ProviderFallbackError("Anspire 响应结构异常")
         return [item for item in data if isinstance(item, dict)]
 
-    def _to_news_item(self, raw_item: dict[str, Any], sector_name: str) -> NewsItem:
+    def _to_news_item(self, raw_item: dict[str, Any], sector_name: str | None) -> NewsItem:
         title = str(raw_item.get("title") or raw_item.get("name") or "未命名新闻")
         url = str(raw_item.get("url") or raw_item.get("link") or "")
         summary = str(raw_item.get("summary") or raw_item.get("snippet") or raw_item.get("content") or title)
