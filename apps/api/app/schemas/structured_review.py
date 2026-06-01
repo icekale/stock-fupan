@@ -25,6 +25,20 @@ SectorStage = Literal[
     "avoid",
 ]
 ReviewVerdict = Literal["正确", "部分正确", "错误", "证据不足"]
+EvidenceSignalStatus = Literal["supported", "pending_confirmation", "insufficient"]
+
+
+class EvidenceBackedSignal(BaseModel):
+    label: str
+    summary: str
+    evidence_ids: list[str] = Field(default_factory=list)
+    confidence: str = "insufficient"
+    status: EvidenceSignalStatus = "insufficient"
+
+
+class EvidenceBackedConclusion(BaseModel):
+    summary: str
+    signals: list[EvidenceBackedSignal] = Field(default_factory=list)
 
 
 class PredictionReview(BaseModel):
@@ -56,6 +70,7 @@ class SectorDeepDive(BaseModel):
     sector: str
     stage: SectorStage
     rating: SustainabilityRating
+    evidence_ids: list[str] = Field(default_factory=list)
     catalysts: list[str] = Field(default_factory=list)
     core_stocks: list[str] = Field(default_factory=list)
     capital_evidence: list[str] = Field(default_factory=list)
@@ -73,6 +88,7 @@ class CapitalRotationReviewV2(BaseModel):
 
 
 class NextSessionStrategy(BaseModel):
+    evidence_ids: list[str] = Field(default_factory=list)
     focus: list[str] = Field(default_factory=list)
     observe: list[str] = Field(default_factory=list)
     avoid: list[str] = Field(default_factory=list)
@@ -158,6 +174,7 @@ class SustainabilityRank(BaseModel):
     rank: int
     sector: str
     rating: SustainabilityRating
+    evidence_ids: list[str] = Field(default_factory=list)
     reason: str
 
 
@@ -169,6 +186,7 @@ class ActionDiscipline(BaseModel):
 
 class StructuredReviewDTO(BaseModel):
     topic: str
+    evidence_conclusion: EvidenceBackedConclusion | None = None
     market_phase: MarketPhaseReview | None = None
     prediction_review: PredictionReview
     prediction_verifications: list[PredictionVerificationItem] = Field(default_factory=list)

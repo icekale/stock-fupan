@@ -3,6 +3,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from app.schemas.evidence import EvidenceItem
 from app.schemas.structured_review import StructuredReviewDTO
 from app.schemas.structured_review import HistoricalThemeReview
 
@@ -178,6 +179,7 @@ class ReportDTO(BaseModel):
     sectors: list[SectorCandidate]
     narrative: ReportNarrative
     news: list[NewsItem] = Field(default_factory=list)
+    evidence: list[EvidenceItem] = Field(default_factory=list)
     previous_strong_themes: list[HistoricalThemeReview] = Field(default_factory=list)
     structured_review: StructuredReviewDTO | None = None
     watchlist_observation: WatchlistObservation | None = None
@@ -188,6 +190,7 @@ class ReportDTO(BaseModel):
             "news_weight": "news_weight_v1",
             "fact_validation": "fact_validation_v1",
             "next_day_prediction": "next_day_prediction_v0_5",
+            "evidence_contract": "evidence_contract_v1",
         }
     )
     next_day_predictions: list[NextDayPrediction] = Field(default_factory=list)
