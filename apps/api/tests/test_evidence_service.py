@@ -318,5 +318,53 @@ def test_store_updates_existing_evidence_by_public_id() -> None:
     assert loaded[0].confidence == EvidenceConfidence.MEDIUM
 
 
+def test_store_rejects_duplicate_explicit_ids_in_batch() -> None:
+    engine = _engine()
+    preview = parse_evidence_preview(
+        """
+        [
+          {
+            "id": "ev_20260601_001",
+            "trade_date": "2026-06-01",
+            "source": "金融界",
+            "title": "主力资金连续6天净流出",
+            "url": "https://example.com/jrj/outflow",
+            "published_at": "2026-06-01T18:00:00+08:00",
+            "category": "risk",
+            "claim": "主力资金连续6天净流出。",
+            "numbers": {"continuous_outflow_days": 6},
+            "related_sectors": ["全市场"],
+            "confidence": "high",
+            "status": "verified"
+          },
+          {
+            "id": "ev_20260601_001",
+            "trade_date": "2026-06-01",
+            "source": "金融界",
+            "title": "主力资金连续6天净流出更新",
+            "url": "https://example.com/jrj/outflow-2",
+            "published_at": "2026-06-01T18:05:00+08:00",
+            "category": "risk",
+            "claim": "主力资金连续6天净流出，风险延续。",
+            "numbers": {"continuous_outflow_days": 6},
+            "related_sectors": ["全市场"],
+            "confidence": "medium",
+            "status": "verified"
+          }
+        ]
+        """
+    )
+    items = [preview_item.item for preview_item in preview.items]
+    assert all(item is not None for item in items)
+
+    store = EvidenceStore(engine)
+    try:
+        store.save_items([item for item in items if item is not None])
+    except ValueError as exc:
+        assert str(exc) == "duplicate evidence id in batch: ev_20260601_001"
+    else:
+        raise AssertionError("expected ValueError")
+
+
 def test_validate_evidence_item_is_importable() -> None:
     assert callable(validate_evidence_item)

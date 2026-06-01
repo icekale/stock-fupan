@@ -108,6 +108,7 @@ class EvidenceStore:
         self.engine = engine
 
     def save_items(self, items: list[EvidenceInput]) -> list[EvidenceItem]:
+        _reject_duplicate_explicit_ids(items)
         with session_scope(self.engine) as session:
             saved: list[EvidenceItem] = []
             for item in items:
@@ -312,3 +313,13 @@ def _apply_item_to_record(record: EvidenceRecord, item: EvidenceInput) -> None:
     record.confidence = item.confidence.value
     record.status = item.status.value
     record.manual_confirmed = item.manual_confirmed
+
+
+def _reject_duplicate_explicit_ids(items: list[EvidenceInput]) -> None:
+    seen: set[str] = set()
+    for item in items:
+        if item.id is None:
+            continue
+        if item.id in seen:
+            raise ValueError(f"duplicate evidence id in batch: {item.id}")
+        seen.add(item.id)
