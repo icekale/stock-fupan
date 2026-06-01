@@ -149,3 +149,29 @@ def test_evidence_anspire_candidates_uses_news_provider(monkeypatch: pytest.Monk
     payload = response.json()
     assert payload["provider_status"]["status"] == "success"
     assert payload["items"][0]["item"]["status"] == "candidate"
+
+
+def test_evidence_anspire_candidates_returns_clear_provider_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    class BrokenSearchProvider:
+        def search_news_with_status(self, query: str, trade_date: str):
+            raise RuntimeError("ANSPIRE_API_KEY 未配置")
+
+    class FakeBundle:
+        news_provider = BrokenSearchProvider()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return None
+
+    monkeypatch.setattr("app.main.create_provider_bundle", lambda settings, runtime_config=None: FakeBundle())
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/evidence/anspire-candidates",
+            json={"trade_date": "2026-06-01", "task": "jrj_continuous_outflow"},
+        )
+
+    assert response.status_code == 502
+    assert response.json()["detail"] == "ANSPIRE_API_KEY 未配置"

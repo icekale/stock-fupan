@@ -393,5 +393,5 @@ def test_candidate_preview_from_news_defaults_to_candidate_status() -> None:
     item = preview.items[0].item
     assert item is not None
     assert item.status == EvidenceStatus.CANDIDATE
-    assert item.category == EvidenceCategory.CAPITAL_FLOW
+    assert item.category == EvidenceCategory.RISK
     assert item.numbers["continuous_outflow_days"] == 6

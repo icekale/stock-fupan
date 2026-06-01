@@ -260,7 +260,10 @@ def search_evidence_candidates(request: EvidenceCandidateRequest) -> dict[str, o
     with create_provider_bundle(settings, runtime_config=runtime_config) as providers:
         if not hasattr(providers.news_provider, "search_news_with_status"):
             raise HTTPException(status_code=422, detail="当前新闻源不支持候选搜索")
-        result = providers.news_provider.search_news_with_status(query, request.trade_date)
+        try:
+            result = providers.news_provider.search_news_with_status(query, request.trade_date)
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=_safe_provider_error(exc, settings)) from exc
     preview = build_candidate_preview_from_news(
         trade_date=request.trade_date,
         query=query,
@@ -270,6 +273,18 @@ def search_evidence_candidates(request: EvidenceCandidateRequest) -> dict[str, o
         items=preview.items,
         provider_status=result.status.model_dump(mode="json"),
     ).model_dump(mode="json")
+
+
+def _safe_provider_error(exc: Exception, settings: object) -> str:
+    message = str(exc) or exc.__class__.__name__
+    for secret in (
+        getattr(settings, "anspire_api_key", ""),
+        getattr(settings, "tickflow_api_key", ""),
+        getattr(settings, "openai_api_key", ""),
+    ):
+        if secret:
+            message = message.replace(str(secret), "[redacted]")
+    return message
 
 
 @app.get("/api/reports")

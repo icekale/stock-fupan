@@ -290,6 +290,8 @@ def _infer_source_from_title(title: str) -> str | None:
 
 def _infer_category(query: str, title: str) -> EvidenceCategory:
     text = f"{query} {title}"
+    if "连续" in text and "净流出" in text:
+        return EvidenceCategory.RISK
     if any(keyword in text for keyword in ("资金", "净流入", "净流出", "主力")):
         return EvidenceCategory.CAPITAL_FLOW
     if any(keyword in text for keyword in ("涨停", "连板")):
