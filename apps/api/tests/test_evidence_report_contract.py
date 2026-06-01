@@ -8,6 +8,7 @@ from app.schemas.structured_review import (
     ActionDiscipline,
     AfterHoursNewsSummary,
     CapitalRotationPath,
+    CapitalRotationReviewV2,
     IndexMidTermOutlook,
     MarketOverviewTable,
     NextDayOpportunityPlan,
@@ -152,3 +153,26 @@ def test_missing_capital_flow_evidence_adds_gap_message() -> None:
     )
 
     assert "缺少已验证资金证据" in review.capital_rotation.key_finding
+
+
+def test_missing_capital_flow_gap_message_is_idempotent_for_v1_and_v2() -> None:
+    review = _review()
+    review.capital_rotation_v2 = CapitalRotationReviewV2(
+        rotation_type="观察",
+        key_finding="资金集中。",
+    )
+    evidence = [
+        _evidence(
+            category=EvidenceCategory.CATALYST,
+            claim="宇树科技科创板IPO过会。",
+            related_sectors=["机器人"],
+            numbers={},
+        )
+    ]
+
+    apply_evidence_contract(review, evidence)
+    apply_evidence_contract(review, evidence)
+
+    assert review.capital_rotation.key_finding.count("缺少已验证资金证据") == 1
+    assert review.capital_rotation_v2 is not None
+    assert review.capital_rotation_v2.key_finding.count("缺少已验证资金证据") == 1

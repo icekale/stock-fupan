@@ -90,7 +90,11 @@ def _enforce_capital_flow_gap(review: StructuredReviewDTO, evidence: list[Eviden
         review.capital_rotation.key_finding = (
             f"{review.capital_rotation.key_finding} 缺少已验证资金证据，资金轮动结论保持保守。"
         )
-    if review.capital_rotation_v2 and not has_capital_flow:
+    if (
+        review.capital_rotation_v2
+        and not has_capital_flow
+        and "缺少已验证资金证据" not in review.capital_rotation_v2.key_finding
+    ):
         review.capital_rotation_v2.key_finding = (
             f"{review.capital_rotation_v2.key_finding} 缺少已验证资金证据，资金轮动结论保持保守。"
         )
