@@ -12,6 +12,7 @@ from app.rules.scoring import score_sectors
 from app.rules.validation import ValidationResult, validate_narrative_facts
 from app.schemas.report import CapitalEvidence, ReportDTO, ReportKind, SectorCandidate, StockCandidate
 from app.services.assets import AssetPaths, create_named_report_copies, create_report_asset_dir, report_kind_label, write_json
+from app.services.evidence_judgment import apply_evidence_contract
 from app.services.next_day_prediction import build_next_day_predictions
 from app.services.structured_review_generator import generate_structured_review
 from app.services.theme_history import load_previous_strong_themes
@@ -51,6 +52,7 @@ class ReportGenerator:
         watchlist_enabled: bool = False,
         review_source_provider: object | None = None,
         previous_review_html_path: Path | None = None,
+        evidence_store: object | None = None,
     ) -> None:
         self.reports_root = reports_root
         self.market_provider = market_provider
@@ -63,6 +65,7 @@ class ReportGenerator:
         self.watchlist_enabled = watchlist_enabled
         self.review_source_provider = review_source_provider
         self.previous_review_html_path = previous_review_html_path
+        self.evidence_store = evidence_store
 
     def generate_close_report(self, trade_date: str) -> GeneratedReport:
         return self._generate_report(trade_date, ReportKind.CLOSE)
@@ -148,6 +151,9 @@ class ReportGenerator:
             )
             for scored in scored_sectors
         ]
+        verified_evidence = []
+        if self.evidence_store is not None and hasattr(self.evidence_store, "list_verified"):
+            verified_evidence = self.evidence_store.list_verified(trade_date)
 
         report = ReportDTO(
             trade_date=trade_date,
@@ -160,6 +166,7 @@ class ReportGenerator:
             sectors=sector_candidates,
             narrative=narrative,
             news=news_items,
+            evidence=verified_evidence,
         )
         report.next_day_predictions = build_next_day_predictions(
             report=report,
@@ -178,6 +185,7 @@ class ReportGenerator:
             provider_mode=self.structured_review_provider,
             fallback_enabled=self.structured_review_fallback_enabled,
         )
+        structured_review = apply_evidence_contract(structured_review, report.evidence)
         report.structured_review = structured_review
         watchlist_tickflow_status = ProviderStatus(
             provider="tickflow",
@@ -214,6 +222,12 @@ class ReportGenerator:
             "tickflow": watchlist_tickflow_status.model_dump(mode="json"),
             "watchlist_tickflow": watchlist_tickflow_status.model_dump(mode="json"),
             "review_sources": [_review_source_status(result) for result in review_source_results],
+            "evidence": {
+                "provider": "local_evidence_store",
+                "status": "success",
+                "fallback_used": False,
+                "reason": f"{len(verified_evidence)} verified evidence items",
+            },
         }
         structured_review_status_payload = structured_review_status.model_dump(mode="json")
 

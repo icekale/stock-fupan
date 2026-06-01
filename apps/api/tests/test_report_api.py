@@ -288,6 +288,40 @@ def test_create_close_report_api_returns_provider_status(tmp_path: Path, monkeyp
     assert snapshot["provider_status"] == payload["provider_status"]
 
 
+def test_generated_report_includes_verified_evidence(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("REPORTS_ROOT", str(tmp_path / "reports"))
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'api.db'}")
+    evidence = {
+        "trade_date": "2026-05-26",
+        "source": "证券时报",
+        "title": "机器人行业资金流入",
+        "url": "https://example.com/stcn/robot",
+        "published_at": "2026-05-26T18:00:00+08:00",
+        "category": "capital_flow",
+        "claim": "机器人行业资金净流入。",
+        "numbers": {"industry": "机器人", "net_inflow_yi": 12.3},
+        "related_sectors": ["机器人"],
+        "confidence": "high",
+        "status": "verified",
+    }
+
+    with TestClient(app) as client:
+        save_response = client.post("/api/evidence", json={"items": [evidence]})
+        report_response = client.post("/api/reports/close", json={"trade_date": "2026-05-26"})
+
+    assert save_response.status_code == 200
+    assert report_response.status_code == 200
+    report = report_response.json()["report"]
+    assert report["evidence"][0]["source"] == "证券时报"
+    assert report["structured_review"]["evidence_conclusion"]["signals"][0]["evidence_ids"]
+    assert report_response.json()["provider_status"]["evidence"] == {
+        "provider": "local_evidence_store",
+        "status": "success",
+        "fallback_used": False,
+        "reason": "1 verified evidence items",
+    }
+
+
 def test_create_close_report_api_persists_report_metadata(
     tmp_path: Path, monkeypatch
 ) -> None:

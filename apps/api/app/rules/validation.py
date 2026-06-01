@@ -226,6 +226,20 @@ def _validate_fact_numbers(text: str, report: ReportDTO, errors: list[str], seen
             _add_error(errors, seen_errors, f"unknown number: {_number_for_error(match.group('number'))}")
 
 
+def validate_evidence_contract(report: ReportDTO) -> list[str]:
+    errors: list[str] = []
+    structured = report.structured_review
+    if structured is None or structured.evidence_conclusion is None:
+        return errors
+    for signal in structured.evidence_conclusion.signals:
+        if signal.status == "supported" and not signal.evidence_ids:
+            errors.append(f"supported signal lacks evidence ids: {signal.label}")
+    for sector in structured.sector_deep_dives:
+        if sector.rating == "high" and not sector.evidence_ids:
+            errors.append(f"high sector rating lacks evidence ids: {sector.sector}")
+    return errors
+
+
 def validate_narrative_facts(report: ReportDTO) -> ValidationResult:
     text = _narrative_text(report)
     errors: list[str] = []
@@ -237,5 +251,6 @@ def validate_narrative_facts(report: ReportDTO) -> ValidationResult:
     _validate_security_codes(text, report, errors, seen_errors)
     _validate_index_mentions(text, report, errors, seen_errors)
     _validate_stock_mentions(text, report, known_sector_names, errors, seen_errors)
+    errors.extend(validate_evidence_contract(report))
 
     return ValidationResult(is_valid=not errors, errors=errors)

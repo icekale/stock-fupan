@@ -370,6 +370,7 @@ def _create_report_response(request: CreateCloseReportRequest, report_kind: str)
             watchlist_enabled=settings.report_watchlist_enabled,
             review_source_provider=providers.review_source_provider,
             previous_review_html_path=settings.previous_review_html_path,
+            evidence_store=_evidence_store(),
         )
         if report_kind == "midday":
             result = generator.generate_midday_report(request.trade_date)

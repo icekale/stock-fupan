@@ -4,6 +4,15 @@ from app.schemas.evidence import (
     EvidenceItem,
     EvidenceStatus,
 )
+from app.rules.validation import validate_evidence_contract
+from app.schemas.report import (
+    IndexSnapshot,
+    MarketBreadth,
+    ReportDTO,
+    ReportKind,
+    ReportNarrative,
+    SectorCandidate,
+)
 from app.schemas.structured_review import (
     ActionDiscipline,
     AfterHoursNewsSummary,
@@ -176,3 +185,44 @@ def test_missing_capital_flow_gap_message_is_idempotent_for_v1_and_v2() -> None:
     assert review.capital_rotation.key_finding.count("缺少已验证资金证据") == 1
     assert review.capital_rotation_v2 is not None
     assert review.capital_rotation_v2.key_finding.count("缺少已验证资金证据") == 1
+
+
+def test_validate_evidence_contract_flags_supported_outputs_without_evidence_ids() -> None:
+    review = apply_evidence_contract(_review(), [_evidence()])
+    assert review.evidence_conclusion is not None
+    review.evidence_conclusion.signals[0].evidence_ids = []
+    coal = next(item for item in review.sector_deep_dives if item.sector == "煤炭")
+    coal.evidence_ids = []
+
+    report = ReportDTO(
+        trade_date="2026-06-01",
+        kind=ReportKind.CLOSE,
+        title="2026-06-01-收盘复盘",
+        indices=[IndexSnapshot(name="上证指数", code="000001", close=3100.0, pct_change=0.1)],
+        breadth=MarketBreadth(up_count=1, down_count=1, limit_up_count=1, limit_down_count=0),
+        turnover_cny=100_000_000_000,
+        market_state_tags=["震荡"],
+        sectors=[
+            SectorCandidate(
+                name="煤炭",
+                score=90,
+                rank=1,
+                pct_change=2.0,
+                reason="资金强。",
+            )
+        ],
+        narrative=ReportNarrative(
+            conclusion="煤炭占优。",
+            overview="市场震荡。",
+            sector_commentary=[],
+            watchlist=[],
+            tomorrow="继续观察。",
+            risks=[],
+        ),
+        structured_review=review,
+    )
+
+    assert validate_evidence_contract(report) == [
+        "supported signal lacks evidence ids: 资金信号",
+        "high sector rating lacks evidence ids: 煤炭",
+    ]
