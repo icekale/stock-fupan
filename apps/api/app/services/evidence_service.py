@@ -1,0 +1,271 @@
+from __future__ import annotations
+
+import csv
+import io
+import json
+import re
+from datetime import date, datetime, timedelta
+from typing import Any
+
+from sqlalchemy import Engine, func, select
+
+from app.db.models import EvidenceRecord
+from app.db.session import session_scope
+from app.schemas.evidence import (
+    EvidenceCategory,
+    EvidenceConfidence,
+    EvidenceInput,
+    EvidenceItem,
+    EvidenceParsePreview,
+    EvidencePreviewItem,
+    EvidenceStatus,
+)
+from app.schemas.report import NewsItem
+
+
+TRUSTED_EVIDENCE_SOURCES = (
+    "财联社",
+    "东方财富",
+    "证券时报",
+    "上海证券报",
+    "上证报",
+    "新浪财经",
+    "36氪",
+    "搜狐财经",
+    "快科技",
+    "金融界",
+    "交易所",
+)
+
+
+ANISPIRE_TASK_QUERIES = {
+    "stcn_capital_flow": "证券时报 行业资金 净流入 净流出 A股",
+    "jrj_continuous_outflow": "金融界 主力资金 连续 净流出",
+    "catalysts": "搜狐财经 36氪 快科技 新浪财经 催化 A股",
+}
+
+
+def parse_evidence_preview(content: str) -> EvidenceParsePreview:
+    rows = _parse_rows(content)
+    preview_items = [_preview_row(row) for row in rows]
+    return EvidenceParsePreview(
+        items=preview_items,
+        valid_count=sum(1 for item in preview_items if item.item is not None and not item.errors),
+        invalid_count=sum(1 for item in preview_items if item.errors),
+    )
+
+
+def validate_evidence_item(item: EvidenceInput) -> list[str]:
+    errors: list[str] = []
+    for field_name in ("source", "title", "url", "published_at", "category", "claim", "confidence"):
+        value = getattr(item, field_name)
+        if isinstance(value, str) and not value.strip():
+            errors.append(f"{field_name} is required")
+
+    if item.confidence == EvidenceConfidence.HIGH:
+        if not _date_matches_trade_window(item.trade_date, item.published_at):
+            errors.append("high evidence requires trade date or previous-day date match")
+        if not item.manual_confirmed and not _is_trusted_source(item.source):
+            errors.append("high evidence requires trusted source or manual confirmation")
+
+    if item.category == EvidenceCategory.CAPITAL_FLOW and item.confidence == EvidenceConfidence.HIGH:
+        if not item.numbers:
+            errors.append("capital_flow high evidence requires numbers")
+
+    return errors
+
+
+def candidate_from_news_item(news_item: NewsItem, trade_date: str, query: str) -> EvidenceInput:
+    source = news_item.source or _infer_source_from_title(news_item.title) or "Anspire"
+    return EvidenceInput(
+        trade_date=trade_date,
+        source=source,
+        title=news_item.title,
+        url=news_item.url,
+        published_at=news_item.published_at or f"{trade_date}T00:00:00+08:00",
+        category=_infer_category(query, news_item.title),
+        claim=news_item.summary or news_item.title,
+        numbers=_extract_numbers(f"{news_item.title} {news_item.summary}"),
+        related_sectors=[news_item.matched_sector] if news_item.matched_sector else [],
+        confidence=EvidenceConfidence.MEDIUM,
+        status=EvidenceStatus.CANDIDATE,
+    )
+
+
+class EvidenceStore:
+    def __init__(self, engine: Engine):
+        self.engine = engine
+
+    def save_items(self, items: list[EvidenceInput]) -> list[EvidenceItem]:
+        with session_scope(self.engine) as session:
+            saved: list[EvidenceItem] = []
+            for item in items:
+                errors = validate_evidence_item(item)
+                if errors:
+                    raise ValueError("; ".join(errors))
+                record = EvidenceRecord(
+                    evidence_id=item.id or self._next_evidence_id(item.trade_date, len(saved) + 1),
+                    trade_date=item.trade_date,
+                    source=item.source,
+                    title=item.title,
+                    url=item.url,
+                    published_at=item.published_at,
+                    category=item.category.value,
+                    claim=item.claim,
+                    numbers=item.numbers,
+                    related_sectors=item.related_sectors,
+                    confidence=item.confidence.value,
+                    status=item.status.value,
+                    manual_confirmed=item.manual_confirmed,
+                )
+                session.merge(record)
+                saved.append(_record_to_item(record))
+            return saved
+
+    def list_items(
+        self,
+        trade_date: str,
+        *,
+        status: EvidenceStatus | None = None,
+        category: EvidenceCategory | None = None,
+    ) -> list[EvidenceItem]:
+        statement = select(EvidenceRecord).where(EvidenceRecord.trade_date == trade_date)
+        if status is not None:
+            statement = statement.where(EvidenceRecord.status == status.value)
+        if category is not None:
+            statement = statement.where(EvidenceRecord.category == category.value)
+        statement = statement.order_by(EvidenceRecord.id)
+        with session_scope(self.engine) as session:
+            return [_record_to_item(record) for record in session.scalars(statement).all()]
+
+    def list_verified(
+        self,
+        trade_date: str,
+        *,
+        category: EvidenceCategory | None = None,
+    ) -> list[EvidenceItem]:
+        return self.list_items(trade_date, status=EvidenceStatus.VERIFIED, category=category)
+
+    def _next_evidence_id(self, trade_date: str, sequence: int) -> str:
+        prefix = f"ev_{trade_date.replace('-', '')}_"
+        statement = select(func.count()).select_from(EvidenceRecord).where(
+            EvidenceRecord.evidence_id.like(f"{prefix}%")
+        )
+        with session_scope(self.engine) as session:
+            count = session.execute(statement).scalar_one()
+        return f"{prefix}{count + sequence:03d}"
+
+
+def _parse_rows(content: str) -> list[dict[str, Any] | str]:
+    stripped = content.strip()
+    if not stripped:
+        return []
+    try:
+        payload = json.loads(stripped)
+    except json.JSONDecodeError:
+        return _parse_table_rows(stripped)
+    if isinstance(payload, list):
+        return [row if isinstance(row, dict) else str(row) for row in payload]
+    if isinstance(payload, dict):
+        return [payload]
+    return [stripped]
+
+
+def _parse_table_rows(content: str) -> list[dict[str, Any] | str]:
+    first_line = content.splitlines()[0]
+    delimiter = "\t" if "\t" in first_line else "|" if "|" in first_line else ","
+    reader = csv.DictReader(io.StringIO(content), delimiter=delimiter)
+    rows: list[dict[str, Any] | str] = []
+    for row in reader:
+        cleaned = {str(key).strip(): _clean_table_value(value) for key, value in row.items() if key}
+        if "related_sectors" in cleaned and isinstance(cleaned["related_sectors"], str):
+            cleaned["related_sectors"] = [
+                part.strip()
+                for part in cleaned["related_sectors"].replace("，", ",").split(",")
+                if part.strip()
+            ]
+        rows.append(cleaned)
+    return rows
+
+
+def _preview_row(row: dict[str, Any] | str) -> EvidencePreviewItem:
+    if not isinstance(row, dict):
+        return EvidencePreviewItem(raw=row, item=None, errors=["row must be an object"])
+    try:
+        item = EvidenceInput.model_validate(row)
+    except Exception as exc:
+        return EvidencePreviewItem(raw=row, item=None, errors=[str(exc)])
+    errors = validate_evidence_item(item)
+    return EvidencePreviewItem(raw=row, item=item if not errors else item, errors=errors)
+
+
+def _clean_table_value(value: object) -> object:
+    if value is None:
+        return ""
+    text = str(value).strip()
+    if text.startswith("{") and text.endswith("}"):
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            return text
+    return text
+
+
+def _date_matches_trade_window(trade_date: str, published_at: str) -> bool:
+    try:
+        trade_day = date.fromisoformat(trade_date)
+        published_day = datetime.fromisoformat(published_at).date()
+    except ValueError:
+        return False
+    return published_day in {trade_day, trade_day - timedelta(days=1)}
+
+
+def _is_trusted_source(source: str) -> bool:
+    return any(trusted in source for trusted in TRUSTED_EVIDENCE_SOURCES)
+
+
+def _infer_source_from_title(title: str) -> str | None:
+    for source in TRUSTED_EVIDENCE_SOURCES:
+        if source in title:
+            return source
+    return None
+
+
+def _infer_category(query: str, title: str) -> EvidenceCategory:
+    text = f"{query} {title}"
+    if any(keyword in text for keyword in ("资金", "净流入", "净流出", "主力")):
+        return EvidenceCategory.CAPITAL_FLOW
+    if any(keyword in text for keyword in ("涨停", "连板")):
+        return EvidenceCategory.LIMIT_UP
+    if any(keyword in text for keyword in ("风险", "退市", "减持", "净流出")):
+        return EvidenceCategory.RISK
+    if any(keyword in text for keyword in ("政策", "会议", "监管")):
+        return EvidenceCategory.POLICY
+    if any(keyword in text for keyword in ("业绩", "盈利", "财报")):
+        return EvidenceCategory.EARNINGS
+    return EvidenceCategory.CATALYST
+
+
+def _extract_numbers(text: str) -> dict[str, float]:
+    numbers: dict[str, float] = {}
+    for index, match in enumerate(re.finditer(r"-?\d+(?:\.\d+)?", text), start=1):
+        numbers[f"value_{index}"] = float(match.group(0))
+    return numbers
+
+
+def _record_to_item(record: EvidenceRecord) -> EvidenceItem:
+    return EvidenceItem(
+        id=record.evidence_id,
+        trade_date=record.trade_date,
+        source=record.source,
+        title=record.title,
+        url=record.url,
+        published_at=record.published_at,
+        category=EvidenceCategory(record.category),
+        claim=record.claim,
+        numbers=record.numbers or {},
+        related_sectors=record.related_sectors or [],
+        confidence=EvidenceConfidence(record.confidence),
+        status=EvidenceStatus(record.status),
+        manual_confirmed=record.manual_confirmed,
+    )
