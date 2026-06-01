@@ -610,6 +610,8 @@ def test_mobile_template_contains_reference_section_labels() -> None:
     assert "中期研判" in template
     assert "evidence_ids" in template
     assert "证据不足" in template
+    assert "主要信息来源" in template
+    assert "主要信息来源（主要来源）" not in template
 class SuccessfulStructuredLLM:
     provider_name = "openai"
 
