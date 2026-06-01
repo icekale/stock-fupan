@@ -52,13 +52,7 @@ def _build_evidence_conclusion(evidence: list[EvidenceItem]) -> EvidenceBackedCo
 
 def _attach_sector_evidence(review: StructuredReviewDTO, evidence: list[EvidenceItem]) -> None:
     for sector in review.sector_deep_dives:
-        matched = [
-            item
-            for item in evidence
-            if sector.sector in item.related_sectors
-            or sector.sector in item.claim
-            or sector.sector in item.title
-        ]
+        matched = _matching_sector_evidence(sector.sector, evidence)
         sector.evidence_ids = [item.id for item in matched]
         if matched:
             claims = [item.claim for item in matched[:2]]
@@ -70,22 +64,24 @@ def _attach_sector_evidence(review: StructuredReviewDTO, evidence: list[Evidence
 def _downgrade_unsupported_high_ratings(
     review: StructuredReviewDTO, evidence: list[EvidenceItem]
 ) -> None:
-    sectors_with_high = {sector for item in evidence for sector in item.related_sectors}
     for sector in review.sector_deep_dives:
-        if sector.rating == "high" and sector.sector not in sectors_with_high:
+        if sector.rating == "high" and not _matching_sector_evidence(sector.sector, evidence):
             sector.rating = "medium"
             sector.conclusion = f"{sector.conclusion} 证据不足，评级降为观察。"
     for rank in review.sustainability_ranking:
-        if rank.rating == "high" and rank.sector not in sectors_with_high:
+        matched = _matching_sector_evidence(rank.sector, evidence)
+        if rank.rating == "high" and not matched:
             rank.rating = "medium"
             rank.reason = f"{rank.reason} 证据不足，降为观察。"
-        rank.evidence_ids = [
-            item.id
-            for item in evidence
-            if rank.sector in item.related_sectors
-            or rank.sector in item.claim
-            or rank.sector in item.title
-        ]
+        rank.evidence_ids = [item.id for item in matched]
+
+
+def _matching_sector_evidence(sector: str, evidence: list[EvidenceItem]) -> list[EvidenceItem]:
+    return [item for item in evidence if _evidence_matches_sector(sector, item)]
+
+
+def _evidence_matches_sector(sector: str, item: EvidenceItem) -> bool:
+    return sector in item.related_sectors or sector in item.claim or sector in item.title
 
 
 def _enforce_capital_flow_gap(review: StructuredReviewDTO, evidence: list[EvidenceItem]) -> None:

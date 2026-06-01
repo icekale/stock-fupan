@@ -115,6 +115,29 @@ def test_sector_without_high_evidence_is_downgraded_from_high() -> None:
     assert "证据不足" in robot.conclusion
 
 
+def test_sector_claim_or_title_match_supports_high_rating_without_related_sector() -> None:
+    review = apply_evidence_contract(
+        _review(),
+        [
+            _evidence(
+                id="ev_20260601_010",
+                category=EvidenceCategory.CATALYST,
+                title="机器人板块催化持续",
+                claim="机器人产业链出现新增催化。",
+                related_sectors=[],
+                numbers={},
+            )
+        ],
+    )
+
+    robot = next(item for item in review.sector_deep_dives if item.sector == "机器人")
+    robot_rank = next(item for item in review.sustainability_ranking if item.sector == "机器人")
+    assert robot.rating == "high"
+    assert robot.evidence_ids == ["ev_20260601_010"]
+    assert robot_rank.rating == "high"
+    assert robot_rank.evidence_ids == ["ev_20260601_010"]
+
+
 def test_missing_capital_flow_evidence_adds_gap_message() -> None:
     review = apply_evidence_contract(
         _review(),
