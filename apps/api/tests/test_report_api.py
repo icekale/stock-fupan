@@ -98,6 +98,45 @@ def test_report_api_lists_reports_and_serves_assets(tmp_path: Path, monkeypatch)
         assert "2026-05-26-午间复盘" in asset_response.text
 
 
+def test_report_schedule_status_defaults_to_disabled(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("REPORTS_ROOT", str(tmp_path))
+    monkeypatch.setenv("REPORT_SCHEDULE_ENABLED", "false")
+    get_settings.cache_clear()
+
+    with TestClient(app) as client:
+        response = client.get("/api/report-schedule/status")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["enabled"] is False
+    assert payload["kind"] == "close"
+    assert payload["time"] == "19:00"
+    assert payload["timezone"] == "Asia/Shanghai"
+    assert payload["next_run_at"] is None
+    assert payload["last_result"] is None
+
+
+def test_report_schedule_can_be_enabled_from_api(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("REPORTS_ROOT", str(tmp_path))
+    monkeypatch.setenv("REPORT_SCHEDULE_ENABLED", "false")
+    get_settings.cache_clear()
+
+    with TestClient(app) as client:
+        update_response = client.put(
+            "/api/report-schedule/status",
+            json={"enabled": True, "time": "19:00", "timezone": "Asia/Shanghai"},
+        )
+        status_response = client.get("/api/report-schedule/status")
+
+    assert update_response.status_code == 200
+    update_payload = update_response.json()
+    assert update_payload["enabled"] is True
+    assert update_payload["time"] == "19:00"
+    assert update_payload["timezone"] == "Asia/Shanghai"
+    assert update_payload["next_run_at"] is not None
+    assert status_response.json()["enabled"] is True
+
+
 def test_report_api_deletes_report_row_and_asset_dir(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("REPORTS_ROOT", str(tmp_path))
 

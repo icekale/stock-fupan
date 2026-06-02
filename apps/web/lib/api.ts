@@ -8,6 +8,8 @@ import type {
   EvidenceItem,
   EvidenceListResponse,
   EvidenceParsePreview,
+  ReportScheduleStatus,
+  ReportScheduleUpdate,
   ReportKind,
   ReportListResponse,
   WatchlistImportResult,
@@ -75,6 +77,28 @@ export async function getConfigStatus(): Promise<ConfigStatusResponse> {
     throw new Error(`读取数据源状态失败：${response.status} ${await response.text()}`);
   }
   return response.json() as Promise<ConfigStatusResponse>;
+}
+
+export async function getReportScheduleStatus(): Promise<ReportScheduleStatus> {
+  const response = await fetch(`${API_BASE_URL}/api/report-schedule/status`);
+  if (!response.ok) {
+    throw new Error(`读取定时生成状态失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<ReportScheduleStatus>;
+}
+
+export async function updateReportScheduleStatus(
+  payload: ReportScheduleUpdate,
+): Promise<ReportScheduleStatus> {
+  const response = await fetch(`${API_BASE_URL}/api/report-schedule/status`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(`保存定时生成状态失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<ReportScheduleStatus>;
 }
 
 export async function getDataSourceOptions(): Promise<DataSourceOptionsResponse> {

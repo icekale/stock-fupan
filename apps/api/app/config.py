@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     ths_fupan_url: str = "https://stock.10jqka.com.cn/fupan/"
     eastmoney_ztfp_url: str = "https://stock.eastmoney.com/a/cztfp.html"
     previous_review_html_path: Path | None = None
+    report_schedule_enabled: bool = False
+    report_schedule_close_time: str = "19:00"
+    report_schedule_timezone: str = "Asia/Shanghai"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { AdminShell } from "../components/AdminShell";
 import { DataSourceStatusPanel } from "../components/DataSourceStatusPanel";
 import { EvidencePanel } from "../components/EvidencePanel";
+import { ReportSchedulePanel } from "../components/ReportSchedulePanel";
 import { ReportPreview } from "../components/ReportPreview";
 import { TaskProgress } from "../components/TaskProgress";
 import { WatchlistImportPanel } from "../components/WatchlistImportPanel";
@@ -12,9 +13,11 @@ import {
   deleteReport,
   getConfigStatus,
   getDataSourceOptions,
+  getReportScheduleStatus,
   listReports,
   reportAssetUrl,
   updateDataSourceOptions,
+  updateReportScheduleStatus,
 } from "../lib/api";
 import { getLatestTradeDate } from "../lib/tradeDate";
 import type {
@@ -24,6 +27,7 @@ import type {
   DataSourceOptionsResponse,
   ReportKind,
   ReportListItem,
+  ReportScheduleStatus,
 } from "../lib/types";
 
 export default function HomePage() {
@@ -41,6 +45,9 @@ export default function HomePage() {
   const [dataSourceDraft, setDataSourceDraft] = useState<DataSourceOptionsCurrent | null>(null);
   const [savingDataSources, setSavingDataSources] = useState(false);
   const [dataSourceError, setDataSourceError] = useState<string | null>(null);
+  const [reportSchedule, setReportSchedule] = useState<ReportScheduleStatus | null>(null);
+  const [savingReportSchedule, setSavingReportSchedule] = useState(false);
+  const [reportScheduleError, setReportScheduleError] = useState<string | null>(null);
 
   const latestReport = reports[0];
   const selectedReport = reports.find((item) => item.id === selectedReportId) ?? null;
@@ -57,6 +64,7 @@ export default function HomePage() {
     void refreshReports();
     void refreshConfigStatus();
     void refreshDataSourceOptions();
+    void refreshReportSchedule();
   }, []);
 
   async function refreshReports() {
@@ -94,6 +102,17 @@ export default function HomePage() {
       setDataSourceOptions(null);
       setDataSourceDraft(null);
       setDataSourceError(err instanceof Error ? err.message : "读取数据源选项失败");
+    }
+  }
+
+  async function refreshReportSchedule() {
+    try {
+      const response = await getReportScheduleStatus();
+      setReportSchedule(response);
+      setReportScheduleError(null);
+    } catch (err) {
+      setReportSchedule(null);
+      setReportScheduleError(err instanceof Error ? err.message : "读取定时生成状态失败");
     }
   }
 
@@ -159,6 +178,26 @@ export default function HomePage() {
     }
   }
 
+  async function handleSaveReportSchedule() {
+    if (!reportSchedule) {
+      return;
+    }
+    setSavingReportSchedule(true);
+    setReportScheduleError(null);
+    try {
+      const response = await updateReportScheduleStatus({
+        enabled: reportSchedule.enabled,
+        time: reportSchedule.time,
+        timezone: reportSchedule.timezone,
+      });
+      setReportSchedule(response);
+    } catch (err) {
+      setReportScheduleError(err instanceof Error ? err.message : "保存定时生成状态失败");
+    } finally {
+      setSavingReportSchedule(false);
+    }
+  }
+
   return (
     <AdminShell>
       <div className="space-y-6">
@@ -216,6 +255,13 @@ export default function HomePage() {
               {error && <p className="mt-3 rounded-2xl bg-red-50 p-3 text-sm leading-6 text-red-700">{error}</p>}
             </section>
 
+            <ReportSchedulePanel
+              error={reportScheduleError}
+              onChange={setReportSchedule}
+              onSave={() => void handleSaveReportSchedule()}
+              saving={savingReportSchedule}
+              status={reportSchedule}
+            />
             <TaskProgress running={running} completed={Boolean(result)} />
             <WatchlistImportPanel onImported={() => setWatchlistImported(true)} />
             {watchlistImported && (
