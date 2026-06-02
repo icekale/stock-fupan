@@ -2,6 +2,7 @@ import pytest
 
 from app.config import Settings
 from app.providers.factory import create_provider_bundle
+from app.providers.easy_tdx import EasyTdxMarketDataProvider
 from app.providers.llm import OpenAILLMProvider
 from app.providers.market import (
     FakeMarketDataProvider,
@@ -330,6 +331,15 @@ def test_provider_factory_uses_tickflow_market_without_market_fallback() -> None
     assert isinstance(bundle.market_provider, TickFlowMarketDataProvider)
     assert isinstance(bundle.news_provider, FallbackNewsProvider)
     assert isinstance(bundle.news_provider.primary, AnspireNewsProvider)
+
+
+def test_provider_factory_uses_easy_tdx_market_provider(monkeypatch) -> None:
+    monkeypatch.setattr("app.providers.easy_tdx._create_easy_tdx_client", lambda timeout: object())
+    settings = Settings(market_provider="easy_tdx", news_provider="fake")
+
+    bundle = create_provider_bundle(settings)
+
+    assert isinstance(bundle.market_provider, EasyTdxMarketDataProvider)
 
 
 def test_provider_factory_can_force_fake_providers() -> None:

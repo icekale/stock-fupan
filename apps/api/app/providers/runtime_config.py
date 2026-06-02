@@ -12,7 +12,7 @@ from app.db.models import RuntimeProviderConfig
 from app.db.session import session_scope
 
 
-MarketProviderKey = Literal["tickflow", "fake"]
+MarketProviderKey = Literal["tickflow", "easy_tdx", "fake"]
 NewsProviderKey = Literal["anspire", "eastmoney_global", "fake"]
 ReviewSourceKey = Literal[
     "ths_fupan",
@@ -21,7 +21,7 @@ ReviewSourceKey = Literal[
     "a_stock_industry_rank",
 ]
 
-MARKET_PROVIDER_KEYS = {"tickflow", "fake"}
+MARKET_PROVIDER_KEYS = {"tickflow", "easy_tdx", "fake"}
 NEWS_PROVIDER_KEYS = {"anspire", "eastmoney_global", "fake"}
 REVIEW_SOURCE_KEYS = {
     "ths_fupan",
@@ -144,6 +144,7 @@ class ProviderOption:
 
 PROVIDER_OPTIONS: tuple[ProviderOption, ...] = (
     ProviderOption("tickflow", "market_provider", "TickFlow", "主源 · 行情", True, "tickflow_api_key"),
+    ProviderOption("easy_tdx", "market_provider", "Easy TDX", "公开源 · 通达信行情"),
     ProviderOption("fake", "market_provider", "Fake", "本地 · 行情占位", False, None, False, True),
     ProviderOption("anspire", "news_provider", "Anspire", "主源 · 新闻", True, "anspire_api_key"),
     ProviderOption("eastmoney_global", "news_provider", "东财全球资讯", "增强源 · 7x24 新闻"),

@@ -6,6 +6,7 @@ from app.providers.a_stock_data import (
     AStockThsHotProvider,
     EastmoneyGlobalNewsProvider,
 )
+from app.providers.easy_tdx import EasyTdxMarketDataProvider
 from app.providers.llm import FakeLLMProvider, LLMProvider, OpenAILLMProvider
 from app.providers.market import (
     FakeMarketDataProvider,
@@ -94,6 +95,10 @@ def _create_market_provider(
         return TickFlowMarketDataProvider(
             api_key=settings.tickflow_api_key,
             base_url=settings.tickflow_base_url,
+            timeout_seconds=settings.provider_timeout_seconds,
+        )
+    if market_provider == "easy_tdx":
+        return EasyTdxMarketDataProvider(
             timeout_seconds=settings.provider_timeout_seconds,
         )
     raise ValueError(f"Unsupported MARKET_PROVIDER: {market_provider}")

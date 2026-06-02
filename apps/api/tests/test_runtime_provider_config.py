@@ -5,6 +5,7 @@ from app.db.models import Base
 from app.db.session import session_scope
 from app.providers.runtime_config import (
     RuntimeProviderConfigInput,
+    build_data_source_options_payload,
     get_runtime_provider_config,
     save_runtime_provider_config,
 )
@@ -55,6 +56,39 @@ def test_runtime_config_save_and_read_back() -> None:
     assert loaded.review_sources == ["a_stock_ths_hot", "ths_fupan"]
     assert loaded.fallback_enabled is True
     assert loaded.updated_at is not None
+
+
+def test_runtime_config_accepts_easy_tdx_market_provider() -> None:
+    engine = _engine()
+    settings = Settings()
+
+    save_runtime_provider_config(
+        engine,
+        RuntimeProviderConfigInput(
+            market_provider="easy_tdx",
+            news_provider="eastmoney_global",
+            review_sources=["a_stock_industry_rank"],
+            fallback_enabled=True,
+        ),
+    )
+    loaded = get_runtime_provider_config(engine, settings)
+
+    assert loaded.market_provider == "easy_tdx"
+
+
+def test_data_source_options_include_easy_tdx_market_provider() -> None:
+    settings = Settings()
+    config = get_runtime_provider_config(_engine(), settings)
+
+    payload = build_data_source_options_payload(config, settings)
+    market_category = next(
+        category for category in payload["categories"] if category["key"] == "market_provider"
+    )
+    easy_tdx = next(option for option in market_category["options"] if option["key"] == "easy_tdx")
+
+    assert easy_tdx["label"] == "Easy TDX"
+    assert easy_tdx["status"] == "ready"
+    assert easy_tdx["requires_key"] is False
 
 
 def test_runtime_config_rejects_unknown_provider() -> None:
