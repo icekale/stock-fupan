@@ -491,7 +491,7 @@ def _build_sector_deep_dives(report: ReportDTO) -> list[SectorDeepDive]:
 
 def _build_sector_deep_dive(sector: SectorCandidate, index: int) -> SectorDeepDive:
     stock_names = [stock.name for stock in sector.top_stocks if stock.name][:5]
-    catalysts = _distinct_compact([*sector.news_summaries[:3], *sector.review_notes[:3]])
+    catalysts = _brief_deep_dive_catalysts(sector)
     capital_notes = _sector_capital_notes(sector)
     stage = _sector_stage(sector, index)
     rating = _rating_for_sector(sector)
@@ -511,6 +511,21 @@ def _build_sector_deep_dive(sector: SectorCandidate, index: int) -> SectorDeepDi
         watch_signals=_sector_watch_signals(sector),
         avoid_signals=_sector_avoid_signals(),
     )
+
+
+def _brief_deep_dive_catalysts(sector: SectorCandidate, max_items: int = 2, max_length: int = 48) -> list[str]:
+    candidates = [*sector.news_summaries[:3], *sector.review_notes[:3]]
+    output: list[str] = []
+    seen: set[str] = set()
+    for value in candidates:
+        text = _compact_news_evidence([value], max_length=max_length)
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        output.append(text)
+        if len(output) >= max_items:
+            break
+    return output
 
 
 def _distinct_compact(values: list[str], max_items: int = 4) -> list[str]:

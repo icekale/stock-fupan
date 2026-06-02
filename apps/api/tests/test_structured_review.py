@@ -589,6 +589,35 @@ def test_build_structured_review_keeps_news_evidence_compact() -> None:
     assert "联系电话" not in evidence
 
 
+def test_build_structured_review_keeps_deep_dive_catalysts_brief() -> None:
+    report = _fake_report()
+    long_news = (
+        "英伟达N1X AI PC芯片进展带动AI PC、消费电子、端侧算力方向继续发酵，"
+        "产业链资金围绕核心标的扩散。 基本资料 公司全称 某科技股份有限公司 联系电话 010-12345678"
+    )
+    report.sectors[0] = report.sectors[0].model_copy(
+        update={
+            "news_summaries": [
+                long_news,
+                "36氪报道称AI终端订单继续改善，催化消费电子方向。 新浪财经称机构继续关注端侧AI。",
+                "快科技报道新品密集发布，AI硬件链条热度延续。",
+            ],
+            "review_notes": [
+                "同花顺复盘确认AI PC为今日科技扩散主线，前排个股强势。",
+                "东方财富涨停复盘显示AI硬件方向梯队完整。",
+            ],
+        }
+    )
+
+    review = build_structured_review(report)
+
+    catalysts = review.sector_deep_dives[0].catalysts
+    assert len(catalysts) <= 2
+    assert all(len(item) <= 48 for item in catalysts)
+    assert "联系电话" not in "\n".join(catalysts)
+    assert "基本资料" not in "\n".join(catalysts)
+
+
 def test_mobile_template_contains_reference_section_labels() -> None:
     template = Path("app/renderers/templates/mobile_report.html.j2").read_text(encoding="utf-8")
 
