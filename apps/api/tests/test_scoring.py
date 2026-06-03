@@ -2,6 +2,10 @@ import math
 
 from app.rules.scoring import RawSectorInput, score_sectors
 from app.schemas.report import (
+    CapitalEvidence,
+    DragonTigerSeat,
+    DragonTigerStock,
+    DragonTigerSummary,
     IndexSnapshot,
     MarketBreadth,
     ReportDTO,
@@ -57,6 +61,78 @@ def test_report_dto_serializes_core_fields() -> None:
     assert dumped["kind"] == "close"
     assert dumped["sectors"][0]["top_stocks"][0]["name"] == "示例股份"
     assert dumped["narrative"]["risks"] == ["高位分歧加大。"]
+
+
+def test_report_dto_serializes_dragon_tiger_summary() -> None:
+    report = ReportDTO(
+        trade_date="2026-06-03",
+        kind=ReportKind.CLOSE,
+        title="2026-06-03-全日盘后复盘",
+        indices=[IndexSnapshot(name="上证指数", code="000001", close=3100.5, pct_change=1.2)],
+        breadth=MarketBreadth(up_count=3000, down_count=1800, limit_up_count=60, limit_down_count=3),
+        turnover_cny=12000,
+        market_state_tags=["结构性修复"],
+        sectors=[],
+        narrative=ReportNarrative(
+            conclusion="短线情绪回暖。",
+            overview="指数修复。",
+            sector_commentary=[],
+            watchlist=[],
+            tomorrow="观察承接。",
+            risks=[],
+        ),
+        news=[],
+        dragon_tiger=DragonTigerSummary(
+            trade_date="2026-06-03",
+            source="a-stock-data 东财龙虎榜",
+            source_url="https://data.eastmoney.com/stock/lhb.html",
+            status="success",
+            total_records=91,
+            positive_net_count=55,
+            negative_net_count=36,
+            net_buy_total_wan=268081.1,
+            institution_net_buy_wan=19867.4,
+            connect_net_buy_wan=82845.9,
+            mainline_match_count=2,
+            mainline_match_names=["通富微电", "亨通光电"],
+            sentiment="strong",
+            strength="high",
+            conclusion="龙虎榜净买集中在核心方向。",
+            risk_notes=["若次日前排高开低走，说明分歧扩大。"],
+            top_net_buy=[
+                DragonTigerStock(
+                    code="002156",
+                    name="通富微电",
+                    reason="日涨幅偏离值达到7%的前5只证券",
+                    close=70.22,
+                    change_pct=9.9937,
+                    turnover_pct=11.6315,
+                    net_buy_wan=162241.5,
+                    buy_wan=250982.5,
+                    sell_wan=88740.9,
+                    seats_buy=[
+                        DragonTigerSeat(
+                            name="深股通专用",
+                            buy_wan=123598.9,
+                            sell_wan=40753.0,
+                            net_wan=82845.9,
+                            role="northbound",
+                        )
+                    ],
+                    seats_sell=[],
+                    tags=["净买额Top"],
+                )
+            ],
+            top_net_sell=[],
+            highlighted_stocks=[],
+        ),
+    )
+
+    dumped = report.model_dump(mode="json")
+
+    assert dumped["dragon_tiger"]["status"] == "success"
+    assert dumped["dragon_tiger"]["top_net_buy"][0]["name"] == "通富微电"
+    assert dumped["dragon_tiger"]["top_net_buy"][0]["seats_buy"][0]["role"] == "northbound"
 
 
 def test_score_sectors_ranks_by_short_term_strength() -> None:
