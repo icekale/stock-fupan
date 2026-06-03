@@ -1,5 +1,7 @@
 from app.providers.review_sources import ReviewSourceResult
 from app.schemas.report import (
+    DragonTigerStock,
+    DragonTigerSummary,
     IndexSnapshot,
     MarketBreadth,
     NextDayPrediction,
@@ -297,6 +299,91 @@ def test_capital_strength_boosts_prediction_and_adds_primary_basis() -> None:
     assert prediction.score_breakdown.capital_strength > 0
     assert any("前排成交额合计222.00亿" in item for item in prediction.primary_basis)
     assert any("平均换手13.00%" in item for item in prediction.primary_basis)
+
+
+def test_dragon_tiger_match_boosts_prediction_basis_and_score() -> None:
+    sector = _sector(
+        name="半导体",
+        score=72.0,
+        pct_change=4.2,
+        top_stocks=[
+            StockCandidate(
+                code="002156.SZ",
+                name="通富微电",
+                pct_change=10.0,
+                turnover_cny=3_200_000_000,
+                turnover_rate=12.6,
+                tags=["TickFlow前排"],
+            )
+        ],
+        review_sources=["同花顺复盘"],
+        review_notes=["同花顺复盘确认半导体前排扩散。"],
+    )
+    report = _prediction_report([sector])
+    report.dragon_tiger = DragonTigerSummary(
+        trade_date=report.trade_date,
+        total_records=91,
+        positive_net_count=55,
+        negative_net_count=36,
+        net_buy_total_wan=268081.1,
+        institution_net_buy_wan=4924.3,
+        connect_net_buy_wan=80845.9,
+        sentiment="strong",
+        strength="high",
+        top_net_buy=[DragonTigerStock(code="002156", name="通富微电", net_buy_wan=162241.5)],
+    )
+    base_report = _prediction_report([sector])
+
+    prediction = build_next_day_predictions(report)[0]
+    base_prediction = build_next_day_predictions(base_report)[0]
+
+    assert prediction.sector == "半导体"
+    assert any("龙虎榜" in item for item in [*prediction.primary_basis, *prediction.evidence_notes])
+    assert any("通富微电" in item for item in prediction.trigger_conditions)
+    assert prediction.score_breakdown is not None
+    assert base_prediction.score_breakdown is not None
+    assert prediction.score_breakdown.capital_strength >= 12
+    assert prediction.score_breakdown.capital_strength > base_prediction.score_breakdown.capital_strength
+    assert not any("龙虎榜分散" in label or "龙虎榜净卖出" in label for label in prediction.risk_labels)
+
+
+def test_dragon_tiger_negative_match_does_not_boost_prediction() -> None:
+    sector = _sector(
+        name="半导体",
+        score=72.0,
+        pct_change=4.2,
+        top_stocks=[
+            StockCandidate(
+                code="002156.SZ",
+                name="通富微电",
+                pct_change=10.0,
+                turnover_cny=3_200_000_000,
+                turnover_rate=12.6,
+                tags=["TickFlow前排"],
+            )
+        ],
+        review_sources=["同花顺复盘"],
+        review_notes=["同花顺复盘确认半导体前排扩散。"],
+    )
+    report = _prediction_report([sector])
+    report.dragon_tiger = DragonTigerSummary(
+        trade_date=report.trade_date,
+        sentiment="weak",
+        strength="low",
+        top_net_buy=[DragonTigerStock(code="002156", name="通富微电", net_buy_wan=-100.0)],
+    )
+    base_report = _prediction_report([sector])
+
+    prediction = build_next_day_predictions(report)[0]
+    base_prediction = build_next_day_predictions(base_report)[0]
+
+    assert prediction.score_breakdown is not None
+    assert base_prediction.score_breakdown is not None
+    assert prediction.score_breakdown.capital_strength == base_prediction.score_breakdown.capital_strength
+    assert prediction.score_breakdown.total == base_prediction.score_breakdown.total
+    assert prediction.continuation_probability == base_prediction.continuation_probability
+    assert not any("龙虎榜" in item for item in prediction.primary_basis)
+    assert not any("龙虎榜" in item for item in prediction.trigger_conditions)
 
 
 def test_limit_up_front_row_observations_include_position_context() -> None:
