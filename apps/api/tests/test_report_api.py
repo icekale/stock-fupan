@@ -355,10 +355,10 @@ def test_generated_report_includes_verified_evidence(tmp_path: Path, monkeypatch
     assert report["evidence"][0]["source"] == "证券时报"
     assert report["structured_review"]["evidence_conclusion"]["signals"][0]["evidence_ids"]
     assert report_response.json()["provider_status"]["evidence"] == {
-        "provider": "local_evidence_store",
+        "provider": "report_evidence",
         "status": "success",
         "fallback_used": False,
-        "reason": "1 verified evidence items",
+        "reason": "1 verified + 0 automatic report evidence items",
     }
 
 
@@ -1021,6 +1021,37 @@ def test_report_generator_merges_tickflow_frontline_stocks_into_strong_sectors(
     )
     assert snapshot_sector["top_stocks"][0]["name"] == "中芯国际"
     assert snapshot_sector["capital_evidence"]["avg_turnover_rate"] == 13.0
+
+
+def test_report_generator_promotes_structured_market_data_to_report_evidence(
+    tmp_path: Path,
+) -> None:
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=FrontlineStockMarketProvider(),
+        news_provider=FakeNewsProvider(),
+        llm_provider=FakeLLMProvider(),
+    )
+
+    result = generator.generate_close_report("2026-05-26")
+
+    assert result.report.evidence
+    auto_evidence = {item.id: item for item in result.report.evidence}
+    assert "auto_20260526_capital_001" in auto_evidence
+    assert auto_evidence["auto_20260526_capital_001"].category == "capital_flow"
+    assert auto_evidence["auto_20260526_capital_001"].related_sectors == ["半导体"]
+    assert result.report.structured_review is not None
+    semiconductor = next(
+        item for item in result.report.structured_review.sector_deep_dives if item.sector == "半导体"
+    )
+    assert semiconductor.evidence_ids
+    assert "证据不足" not in semiconductor.conclusion
+    assert result.provider_status["evidence"] == {
+        "provider": "report_evidence",
+        "status": "success",
+        "fallback_used": False,
+        "reason": "0 verified + 1 automatic report evidence items",
+    }
 
 
 def test_report_generator_reads_frontline_stocks_through_market_fallback_wrapper(

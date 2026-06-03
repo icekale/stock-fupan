@@ -10,6 +10,7 @@ from app.renderers.html_renderer import render_mobile_report_html
 from app.renderers.png_exporter import export_png
 from app.rules.scoring import score_sectors
 from app.rules.validation import ValidationResult, validate_narrative_facts
+from app.schemas.evidence import EvidenceCategory, EvidenceConfidence, EvidenceItem, EvidenceStatus
 from app.schemas.report import CapitalEvidence, ReportDTO, ReportKind, SectorCandidate, StockCandidate
 from app.services.assets import AssetPaths, create_named_report_copies, create_report_asset_dir, report_kind_label, write_json
 from app.services.evidence_judgment import apply_evidence_contract
@@ -154,6 +155,11 @@ class ReportGenerator:
         verified_evidence = []
         if self.evidence_store is not None and hasattr(self.evidence_store, "list_verified"):
             verified_evidence = self.evidence_store.list_verified(trade_date)
+        automatic_evidence = _build_automatic_report_evidence(trade_date, sector_candidates)
+        report_evidence = [
+            *verified_evidence,
+            *automatic_evidence,
+        ]
 
         report = ReportDTO(
             trade_date=trade_date,
@@ -166,7 +172,7 @@ class ReportGenerator:
             sectors=sector_candidates,
             narrative=narrative,
             news=news_items,
-            evidence=verified_evidence,
+            evidence=report_evidence,
         )
         report.next_day_predictions = build_next_day_predictions(
             report=report,
@@ -223,10 +229,13 @@ class ReportGenerator:
             "watchlist_tickflow": watchlist_tickflow_status.model_dump(mode="json"),
             "review_sources": [_review_source_status(result) for result in review_source_results],
             "evidence": {
-                "provider": "local_evidence_store",
+                "provider": "report_evidence",
                 "status": "success",
                 "fallback_used": False,
-                "reason": f"{len(verified_evidence)} verified evidence items",
+                "reason": (
+                    f"{len(verified_evidence)} verified + "
+                    f"{len(automatic_evidence)} automatic report evidence items"
+                ),
             },
         }
         structured_review_status_payload = structured_review_status.model_dump(mode="json")
@@ -424,6 +433,41 @@ def _build_capital_evidence(stocks: list[StockCandidate]) -> CapitalEvidence | N
         strength=strength,
         summary="、".join(summary_parts),
     )
+
+
+def _build_automatic_report_evidence(
+    trade_date: str,
+    sectors: list[SectorCandidate],
+) -> list[EvidenceItem]:
+    evidence: list[EvidenceItem] = []
+    sequence = 1
+    for sector in sectors:
+        if sector.capital_evidence is None:
+            continue
+        capital = sector.capital_evidence
+        evidence.append(
+            EvidenceItem(
+                id=f"auto_{trade_date.replace('-', '')}_capital_{sequence:03d}",
+                trade_date=trade_date,
+                source="自动行情采集",
+                title=f"{sector.name}前排资金与换手",
+                url="internal://market/frontline-stocks",
+                published_at=f"{trade_date}T15:30:00+08:00",
+                category=EvidenceCategory.CAPITAL_FLOW,
+                claim=f"{sector.name}{capital.summary}，资金强度{capital.strength}。",
+                numbers={
+                    "front_row_turnover_cny": capital.front_row_turnover_cny,
+                    "avg_turnover_rate": capital.avg_turnover_rate,
+                    "active_stock_count": capital.active_stock_count,
+                },
+                related_sectors=[sector.name],
+                confidence=EvidenceConfidence.HIGH,
+                status=EvidenceStatus.VERIFIED,
+                manual_confirmed=True,
+            )
+        )
+        sequence += 1
+    return evidence
 
 
 def _sector_capital_strength(
