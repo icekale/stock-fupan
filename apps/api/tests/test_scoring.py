@@ -2,7 +2,6 @@ import math
 
 from app.rules.scoring import RawSectorInput, score_sectors
 from app.schemas.report import (
-    CapitalEvidence,
     DragonTigerSeat,
     DragonTigerStock,
     DragonTigerSummary,
