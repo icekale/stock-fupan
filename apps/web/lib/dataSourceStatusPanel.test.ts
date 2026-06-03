@@ -8,6 +8,7 @@ test("data source panel supports experimental provider status", () => {
   const panelSource = readFileSync(new URL("../components/DataSourceStatusPanel.tsx", import.meta.url), "utf8");
 
   assert.match(typesSource, /"experimental"/);
+  assert.match(typesSource, /DataSourceOption/);
   assert.match(typesSource, /DataSourceOptionsResponse/);
   assert.match(typesSource, /DataSourceOptionsUpdate/);
   assert.match(apiSource, /getDataSourceOptions/);
@@ -22,4 +23,9 @@ test("data source panel supports experimental provider status", () => {
   assert.match(panelSource, /border-l-4/);
   assert.match(panelSource, /key=\{`\$\{item\.name\}-\$\{item\.role\}`\}/);
   assert.doesNotMatch(panelSource, /key=\{item\.name\}/);
+  assert.doesNotMatch(panelSource, /a_stock_dragon_tiger/);
+  assert.match(panelSource, /category\.options\.map/);
+  assert.match(panelSource, /option\.key/);
+  assert.match(panelSource, /option\.label/);
+  assert.match(panelSource, /option\.role/);
 });

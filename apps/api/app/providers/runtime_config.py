@@ -20,6 +20,7 @@ ReviewSourceKey = Literal[
     "thsdk",
     "a_stock_ths_hot",
     "a_stock_industry_rank",
+    "a_stock_dragon_tiger",
 ]
 
 MARKET_PROVIDER_KEYS = {"tickflow", "fake"}
@@ -30,6 +31,7 @@ REVIEW_SOURCE_KEYS = {
     "thsdk",
     "a_stock_ths_hot",
     "a_stock_industry_rank",
+    "a_stock_dragon_tiger",
 }
 
 
@@ -157,6 +159,7 @@ PROVIDER_OPTIONS: tuple[ProviderOption, ...] = (
     ProviderOption("thsdk", "review_sources", "THSDK", "实验源 · 同花顺问财/概念", False, None, True),
     ProviderOption("a_stock_ths_hot", "review_sources", "a-stock 同花顺热点", "增强源 · 强势股归因"),
     ProviderOption("a_stock_industry_rank", "review_sources", "a-stock 东财板块排名", "增强源 · 行业/概念轮动"),
+    ProviderOption("a_stock_dragon_tiger", "review_sources", "a-stock 东财龙虎榜", "增强源 · 龙虎榜情绪资金"),
 )
 
 

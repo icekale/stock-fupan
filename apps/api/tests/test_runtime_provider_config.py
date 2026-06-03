@@ -5,6 +5,7 @@ from app.db.models import Base
 from app.db.session import session_scope
 from app.providers.runtime_config import (
     RuntimeProviderConfigInput,
+    build_data_source_options_payload,
     get_runtime_provider_config,
     save_runtime_provider_config,
 )
@@ -109,3 +110,30 @@ def test_runtime_config_replaces_singleton_row() -> None:
     assert loaded.news_provider == "eastmoney_global"
     assert loaded.review_sources == ["a_stock_industry_rank"]
     assert loaded.fallback_enabled is False
+
+
+def test_runtime_config_accepts_dragon_tiger_review_source() -> None:
+    engine = _engine()
+    settings = Settings()
+
+    saved = save_runtime_provider_config(
+        engine,
+        RuntimeProviderConfigInput(
+            market_provider="tickflow",
+            news_provider="anspire",
+            review_sources=["a_stock_dragon_tiger"],
+            fallback_enabled=False,
+        ),
+    )
+    payload = build_data_source_options_payload(saved, settings)
+    review_category = next(
+        category for category in payload["categories"] if category["key"] == "review_sources"
+    )
+    dragon_option = next(
+        option for option in review_category["options"] if option["key"] == "a_stock_dragon_tiger"
+    )
+
+    assert saved.review_sources == ["a_stock_dragon_tiger"]
+    assert dragon_option["label"] == "a-stock 东财龙虎榜"
+    assert dragon_option["role"] == "增强源 · 龙虎榜情绪资金"
+    assert dragon_option["enabled"] is True

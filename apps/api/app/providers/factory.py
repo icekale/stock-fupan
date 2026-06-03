@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 from app.config import Settings
 from app.providers.a_stock_data import (
+    AStockDragonTigerProvider,
     AStockIndustryRankProvider,
     AStockThsHotProvider,
     EastmoneyGlobalNewsProvider,
@@ -212,6 +213,8 @@ def _create_review_source_provider(
         providers.append(AStockThsHotProvider(timeout_seconds=settings.provider_timeout_seconds))
     if "a_stock_industry_rank" in review_sources:
         providers.append(AStockIndustryRankProvider(timeout_seconds=settings.provider_timeout_seconds))
+    if "a_stock_dragon_tiger" in review_sources:
+        providers.append(AStockDragonTigerProvider(timeout_seconds=settings.provider_timeout_seconds))
     return ReviewSourceAggregator(providers=providers) if providers else None
 
 
