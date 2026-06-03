@@ -11,6 +11,7 @@ from app.db.models import Report, ReportKindModel, ReportStatusModel
 from app.db.session import create_sqlite_engine, init_db
 from app.db.session import session_scope
 from app.providers.factory import create_provider_bundle
+from app.providers.runtime_config import get_runtime_provider_config
 from app.services.report_generator import GeneratedReport, ReportGenerator
 from app.services.weekly_report_generator import (
     TickFlowWeeklyDataClient,
@@ -45,7 +46,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     watchlist_service = _create_watchlist_service(settings)
 
-    with create_provider_bundle(settings) as providers:
+    engine = create_sqlite_engine(str(settings.database_url))
+    init_db(engine)
+    runtime_config = get_runtime_provider_config(engine, settings)
+    with create_provider_bundle(settings, runtime_config=runtime_config) as providers:
         generator = ReportGenerator(
             reports_root=reports_root,
             market_provider=providers.market_provider,
