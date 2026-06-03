@@ -277,6 +277,21 @@ class AStockDragonTigerProvider:
 
         stocks = [_dragon_tiger_stock(row) for row in rows if isinstance(row, dict)]
         stocks = [stock for stock in stocks if stock.code and stock.name]
+        if not stocks:
+            summary = DragonTigerSummary(
+                trade_date=trade_date,
+                status="failed",
+                reason="未解析到东财龙虎榜股票",
+                conclusion="龙虎榜数据未取得。",
+            )
+            return ReviewSourceResult(
+                source=self.source_name,
+                source_url=self.source_url,
+                status="failed",
+                reason="未解析到东财龙虎榜股票",
+                trade_date=trade_date,
+                dragon_tiger=summary,
+            )
         top_net_buy = sorted(stocks, key=lambda stock: stock.net_buy_wan, reverse=True)[:5]
         top_net_sell = sorted(stocks, key=lambda stock: stock.net_buy_wan)[:5]
         detail_failed = False
@@ -496,7 +511,7 @@ def _seat_net_by_role(stocks: list[DragonTigerStock], role: str) -> float:
     value = sum(
         seat.net_wan
         for stock in stocks
-        for seat in stock.seats_buy
+        for seat in [*stock.seats_buy, *stock.seats_sell]
         if seat.role == role
     )
     return round(value, 1)
