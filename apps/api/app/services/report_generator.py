@@ -8,6 +8,7 @@ from app.providers.review_sources import ReviewSourceResult
 from app.providers.tickflow import TickFlowQuoteProvider
 from app.renderers.html_renderer import render_mobile_report_html
 from app.renderers.png_exporter import export_pdf, export_png
+from app.rules.quality_gate import evaluate_quality_gate
 from app.rules.scoring import score_sectors
 from app.rules.validation import ValidationResult, validate_narrative_facts
 from app.schemas.report import CapitalEvidence, ReportDTO, ReportKind, SectorCandidate, StockCandidate
@@ -216,6 +217,13 @@ class ReportGenerator:
             "review_sources": [_review_source_status(result) for result in review_source_results],
         }
         structured_review_status_payload = structured_review_status.model_dump(mode="json")
+        report.quality_gate = evaluate_quality_gate(
+            report=report,
+            validation=validation,
+            provider_status=provider_status,
+            structured_review_status=structured_review_status_payload,
+        )
+        quality_gate_payload = report.quality_gate.model_dump(mode="json")
 
         write_json(assets.facts, market_snapshot.to_report_seed(news=[]))
         write_json(assets.news_raw, [item.model_dump() for item in news_items])
@@ -248,6 +256,7 @@ class ReportGenerator:
                 "validation": {"is_valid": validation.is_valid, "errors": validation.errors},
                 "provider_status": provider_status,
                 "structured_review_status": structured_review_status_payload,
+                "quality_gate": quality_gate_payload,
             },
         )
         assets.report_html.write_text(render_mobile_report_html(report), encoding="utf-8")

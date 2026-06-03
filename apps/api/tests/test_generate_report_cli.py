@@ -76,6 +76,7 @@ def test_generate_report_cli_writes_report_and_prints_paths(
     assert f"PDF: {report_pdf}" in captured.out
     assert f"Snapshot: {snapshot}" in captured.out
     assert "Validation: ok" in captured.out
+    assert "Quality gate: blocked" in captured.out
     assert "Provider market: success" in captured.out
     assert "sk-" not in captured.out
     assert "tk_" not in captured.out
@@ -196,6 +197,11 @@ def test_generate_report_cli_persists_report_metadata(
     assert persisted.kind == ReportKindModel.CLOSE
     assert persisted.status == ReportStatusModel.READY_FOR_REVIEW
     assert persisted.asset_dir == str(reports_root / "2026-05-26" / "close" / "v001")
+    assert persisted.quality_score is not None
+    assert persisted.quality_score < 70
+    assert persisted.publish_status == "blocked"
+    assert persisted.quality_summary.startswith("不可发布草稿")
+    assert persisted.quality_gate["publish_status"] == "blocked"
 
 
 def test_load_local_env_files_prefers_api_env_over_root_env(

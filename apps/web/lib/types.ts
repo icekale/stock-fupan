@@ -159,6 +159,25 @@ export type WatchlistObservation = {
 
 export type ReportKind = "close" | "midday" | "weekly";
 
+export type QualityGateIssue = {
+  code: string;
+  severity: string;
+  message: string;
+  details: Record<string, unknown>;
+};
+
+export type PublishStatus = "publishable" | "degraded" | "blocked" | "not_applicable" | "not_scored";
+
+export type QualityGateResult = {
+  score: number | null;
+  publish_status: PublishStatus;
+  label: string;
+  summary: string;
+  hard_failures: QualityGateIssue[];
+  warnings: QualityGateIssue[];
+  provider_summary: Record<string, unknown>;
+};
+
 export type ReportDTO = {
   trade_date: string;
   kind: ReportKind;
@@ -177,6 +196,7 @@ export type ReportDTO = {
   news: NewsItem[];
   structured_review?: StructuredReviewDTO | null;
   watchlist_observation?: WatchlistObservation | null;
+  quality_gate?: QualityGateResult | null;
   algorithm_versions: Record<string, string>;
 };
 
@@ -237,6 +257,10 @@ export type ReportListItem = {
   png_url: string;
   pdf_url: string | null;
   created_at: string | null;
+  quality_score: number | null;
+  publish_status: PublishStatus | null;
+  quality_summary: string | null;
+  quality_gate?: QualityGateResult | null;
 };
 
 export type ReportListResponse = {
@@ -268,6 +292,9 @@ export type ReportScheduleLastResult = {
   trade_date: string;
   kind: ReportKind;
   reason?: string;
+  publish_status?: PublishStatus;
+  quality_score?: number | null;
+  quality_summary?: string | null;
 };
 
 export type ReportScheduleStatus = {

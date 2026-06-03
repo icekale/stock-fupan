@@ -121,6 +121,7 @@ def _persist_report_metadata(settings: object, result: GeneratedReport, is_valid
                 status=status,
                 asset_dir=str(result.assets.root),
                 algorithm_versions=result.report.algorithm_versions,
+                **_quality_gate_db_fields(result.report.quality_gate),
             )
         )
 
@@ -142,6 +143,7 @@ def _persist_weekly_report_metadata(
                 status=status,
                 asset_dir=str(result.assets.root),
                 algorithm_versions={"weekly_report": WEEKLY_REPORT_ALGORITHM_VERSION},
+                **_quality_gate_db_fields(_not_applicable_quality_gate()),
             )
         )
 
@@ -170,6 +172,7 @@ def _print_result(result: GeneratedReport, is_valid: bool, errors: list[str]) ->
     print(f"Validation: {'ok' if is_valid else 'failed'}")
     for error in errors:
         print(f"- {error}")
+    _print_quality_gate(result.report.quality_gate)
     _print_provider_status(result.provider_status)
     print(f"Structured review: {result.structured_review_status.get('provider')}")
 
@@ -181,6 +184,58 @@ def _print_weekly_result(result: WeeklyGeneratedReport) -> None:
     print(f"Validation: {'ok' if not result.validation_errors else 'failed'}")
     for error in result.validation_errors:
         print(f"- {error}")
+    _print_quality_gate(_not_applicable_quality_gate())
+
+
+def _quality_gate_db_fields(quality_gate: object | None) -> dict[str, object]:
+    payload = _quality_gate_payload(quality_gate)
+    return {
+        "quality_score": payload.get("score") if payload else None,
+        "publish_status": payload.get("publish_status") if payload else None,
+        "quality_summary": payload.get("summary") if payload else None,
+        "quality_gate": payload,
+    }
+
+
+def _quality_gate_payload(quality_gate: object | None) -> dict[str, object] | None:
+    if quality_gate is None:
+        return None
+    if isinstance(quality_gate, dict):
+        return quality_gate
+    model_dump = getattr(quality_gate, "model_dump", None)
+    if callable(model_dump):
+        return model_dump(mode="json")
+    return None
+
+
+def _not_applicable_quality_gate() -> dict[str, object]:
+    return {
+        "score": None,
+        "publish_status": "not_applicable",
+        "label": "暂不评分",
+        "summary": "该报告类型暂不接入质量门禁",
+        "hard_failures": [],
+        "warnings": [],
+        "provider_summary": {},
+    }
+
+
+def _print_quality_gate(quality_gate: object | None) -> None:
+    payload = _quality_gate_payload(quality_gate)
+    if not payload:
+        print("Quality gate: not_scored")
+        return
+    status = payload.get("publish_status")
+    score = payload.get("score")
+    label = payload.get("label") or payload.get("summary") or ""
+    score_text = "unscored" if score is None else f"{score}/100"
+    print(f"Quality gate: {status} {score_text} - {label}")
+    for issue in payload.get("hard_failures") or []:
+        if isinstance(issue, dict):
+            print(f"- hard: {issue.get('code')} {issue.get('message')}")
+    for issue in payload.get("warnings") or []:
+        if isinstance(issue, dict):
+            print(f"- warning: {issue.get('code')} {issue.get('message')}")
 
 
 def _print_provider_status(provider_status: dict[str, object]) -> None:

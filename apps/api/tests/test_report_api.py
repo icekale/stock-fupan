@@ -73,6 +73,16 @@ def test_create_close_report_api_returns_generated_report(
     assert payload["assets"]["pdf"].endswith("/report.pdf")
     assert payload["assets"]["named_pdf"].endswith("/2026-05-26-全日盘后复盘.pdf")
     assert payload["assets"]["pdf_url"].startswith("/api/reports/asset?path=")
+    quality_gate = payload["report"]["quality_gate"]
+    assert quality_gate["publish_status"] == "blocked"
+    assert quality_gate["score"] < 70
+    assert quality_gate["label"] == "不可发布草稿"
+    assert quality_gate["hard_failures"][0]["code"] == "market_source_untrusted"
+
+    snapshot_path = Path(payload["assets"]["root"]) / "snapshot.json"
+    snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+    assert snapshot["quality_gate"] == quality_gate
+    assert snapshot["report"]["quality_gate"] == quality_gate
 
 
 def test_create_midday_report_api_returns_generated_report(tmp_path: Path, monkeypatch) -> None:
@@ -134,6 +144,9 @@ def test_report_api_lists_reports_and_serves_assets(tmp_path: Path, monkeypatch)
         item = list_response.json()["items"][0]
         assert item["kind"] == "midday"
         assert item["kind_label"] == "午间复盘"
+        assert item["quality_score"] is None
+        assert item["publish_status"] == "not_applicable"
+        assert item["quality_summary"] == "该报告类型暂不接入质量门禁"
         assert item["html_url"].startswith("/api/reports/asset?path=")
         assert item["pdf_url"].startswith("/api/reports/asset?path=")
         assert item["created_at"].endswith("+08:00")
@@ -421,6 +434,11 @@ def test_create_close_report_api_persists_report_metadata(
     assert persisted.status == ReportStatusModel.READY_FOR_REVIEW
     assert persisted.asset_dir == str(reports_root / "2026-05-26" / "close" / "v001")
     assert persisted.algorithm_versions["sector_score"] == "sector_score_v1"
+    assert persisted.quality_score is not None
+    assert persisted.quality_score < 70
+    assert persisted.publish_status == "blocked"
+    assert persisted.quality_summary.startswith("不可发布草稿")
+    assert persisted.quality_gate["publish_status"] == "blocked"
 
 
 def test_report_model_persists_asset_path(tmp_path: Path) -> None:
@@ -447,6 +465,10 @@ def test_report_model_persists_asset_path(tmp_path: Path) -> None:
     assert loaded.status == ReportStatusModel.READY_FOR_REVIEW
     assert loaded.asset_dir == "/tmp/reports/2026-05-26/close/v001"
     assert loaded.algorithm_versions["sector_score"] == "sector_score_v1"
+    assert loaded.quality_score is None
+    assert loaded.publish_status is None
+    assert loaded.quality_summary is None
+    assert loaded.quality_gate is None
     assert loaded.created_at is not None
     assert loaded.updated_at is not None
 
@@ -455,6 +477,39 @@ def test_report_model_persists_asset_path(tmp_path: Path) -> None:
 
     assert row.kind == "close"
     assert row.status == "ready_for_review"
+
+
+def test_init_db_adds_quality_columns_to_existing_reports_table(tmp_path: Path) -> None:
+    database_url = f"sqlite:///{tmp_path / 'legacy.db'}"
+    engine = create_sqlite_engine(database_url)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                create table reports (
+                    id integer primary key autoincrement,
+                    trade_date varchar(10),
+                    kind varchar(16),
+                    version varchar(16),
+                    status varchar(32),
+                    asset_dir varchar(1024),
+                    algorithm_versions json,
+                    created_at datetime,
+                    updated_at datetime
+                )
+                """
+            )
+        )
+
+    init_db(engine)
+
+    with engine.connect() as connection:
+        columns = {
+            row[1]
+            for row in connection.execute(text("PRAGMA table_info(reports)"))
+        }
+
+    assert {"quality_score", "publish_status", "quality_summary", "quality_gate"}.issubset(columns)
 
 
 def test_fake_providers_return_deterministic_payloads() -> None:
@@ -537,6 +592,13 @@ def test_report_generator_writes_snapshot_files(tmp_path: Path) -> None:
     assert result.assets.news_raw.exists()
     assert result.assets.llm_calls.exists()
     assert result.assets.report_html.exists()
+    assert result.report.quality_gate is not None
+    assert result.report.quality_gate.publish_status == "blocked"
+
+    report_dto = json.loads(result.assets.report_dto.read_text(encoding="utf-8"))
+    snapshot = json.loads(result.assets.snapshot.read_text(encoding="utf-8"))
+    assert report_dto["quality_gate"]["publish_status"] == "blocked"
+    assert snapshot["quality_gate"] == report_dto["quality_gate"]
 
 
 def test_report_generator_writes_named_close_report_files(tmp_path: Path) -> None:
@@ -704,6 +766,8 @@ def test_mobile_report_renderer_contains_core_sections(tmp_path: Path) -> None:
     ]
 
     assert "2026-05-26-全日盘后复盘" in html
+    assert "质量门禁" in html
+    assert "不可发布草稿" in html
     for title in expected_titles:
         assert title in html
     assert "自选股观察" not in html

@@ -90,6 +90,48 @@
     color: var(--slate);
   }
 
+  .quality-gate {
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--navy);
+    border-radius: var(--radius);
+    background: var(--surface-soft);
+    padding: 14px 18px;
+    margin: 0 0 24px;
+  }
+  .quality-gate-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    color: var(--navy);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: .06em;
+  }
+  .quality-gate-score {
+    color: var(--text-muted);
+    font-weight: 600;
+    letter-spacing: 0;
+  }
+  .quality-gate-summary {
+    margin-top: 6px;
+    color: var(--slate);
+    font-size: 13.5px;
+    line-height: 1.65;
+  }
+  .quality-gate-publishable {
+    border-left-color: var(--bear-green);
+    background: var(--bear-bg);
+  }
+  .quality-gate-degraded {
+    border-left-color: var(--gold);
+    background: #FBF8F0;
+  }
+  .quality-gate-blocked {
+    border-left-color: var(--bull-red);
+    background: var(--bull-bg);
+  }
+
   .section-num {
     display: inline-block;
     background: var(--navy);
@@ -598,12 +640,28 @@
   "medium": "中",
   "low": "低"
 } %}
+{% set quality = report.quality_gate %}
 <div class="article-wrap">
 <div class="article-card">
 
   <div class="header-date">{{ brand_name or "STRUCTURED MARKET REVIEW" }}</div>
   <h1 class="header-title">{{ report.title }}</h1>
   <p class="header-sub">{{ structured.topic if structured else "结构复盘 · 风险分层 · 非投资建议" }}</p>
+  {% if quality %}
+    <div class="quality-gate quality-gate-{{ quality.publish_status }}">
+      <div class="quality-gate-header">
+        <span>质量门禁 · {{ quality.label }}</span>
+        <span class="quality-gate-score">
+          {% if quality.score is not none %}
+            {{ quality.score }}/100
+          {% else %}
+            未评分
+          {% endif %}
+        </span>
+      </div>
+      <div class="quality-gate-summary">{{ quality.summary }}</div>
+    </div>
+  {% endif %}
 
   {% if structured %}
     <div class="preamble">

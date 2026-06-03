@@ -16,6 +16,10 @@ test("data source panel supports experimental provider status", () => {
   assert.match(panelSource, /fallback_enabled/);
   assert.match(panelSource, /review_sources/);
   assert.match(panelSource, /onSave/);
+  assert.match(panelSource, /role="switch"/);
+  assert.match(panelSource, /aria-checked=\{draft\.fallback_enabled\}/);
+  assert.match(panelSource, /保存数据源选项中/);
+  assert.match(panelSource, /border-l-4/);
   assert.match(panelSource, /key=\{`\$\{item\.name\}-\$\{item\.role\}`\}/);
   assert.doesNotMatch(panelSource, /key=\{item\.name\}/);
 });

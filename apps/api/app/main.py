@@ -307,6 +307,7 @@ def _report_list_item(row: Report) -> dict[str, object]:
         "png_url": _asset_url(png_path),
         "pdf_url": _asset_url(pdf_path) if pdf_path.exists() else None,
         "created_at": _china_time_iso(row.created_at),
+        **_report_quality_list_fields(row),
     }
     return item
 
@@ -388,6 +389,7 @@ def create_weekly_report(request: CreateCloseReportRequest) -> dict[str, object]
                 status=status,
                 asset_dir=str(result.assets.root),
                 algorithm_versions={"weekly_report": WEEKLY_REPORT_ALGORITHM_VERSION},
+                **_quality_gate_db_fields(_not_applicable_quality_gate()),
             )
         )
     return _weekly_report_response(result)
@@ -421,6 +423,7 @@ def _generate_weekly_report(
 
 def _weekly_report_response(result: WeeklyGeneratedReport) -> dict[str, object]:
     label = report_kind_label("weekly")
+    quality_gate = _not_applicable_quality_gate()
     return {
         "report": {
             "trade_date": result.trade_date,
@@ -428,6 +431,7 @@ def _weekly_report_response(result: WeeklyGeneratedReport) -> dict[str, object]:
             "title": f"{result.start_date} 至 {result.end_date} {label}",
             "summary": result.summary,
             "algorithm_versions": {"weekly_report": WEEKLY_REPORT_ALGORITHM_VERSION},
+            "quality_gate": quality_gate,
         },
         "validation": {
             "is_valid": not result.validation_errors,
@@ -486,6 +490,7 @@ def _create_report_response(request: CreateCloseReportRequest, report_kind: str)
                 status=status,
                 asset_dir=str(result.assets.root),
                 algorithm_versions=result.report.algorithm_versions,
+                **_quality_gate_db_fields(result.report.quality_gate),
             )
         )
 
@@ -509,6 +514,62 @@ def _create_report_response(request: CreateCloseReportRequest, report_kind: str)
             "pdf_url": _asset_url(result.assets.report_pdf),
         },
         "provider_status": result.provider_status,
+    }
+
+
+def _quality_gate_db_fields(quality_gate: object | None) -> dict[str, object]:
+    payload = _quality_gate_payload(quality_gate)
+    return {
+        "quality_score": payload.get("score") if payload else None,
+        "publish_status": payload.get("publish_status") if payload else None,
+        "quality_summary": payload.get("summary") if payload else None,
+        "quality_gate": payload,
+    }
+
+
+def _quality_gate_payload(quality_gate: object | None) -> dict[str, object] | None:
+    if quality_gate is None:
+        return None
+    if isinstance(quality_gate, dict):
+        return quality_gate
+    model_dump = getattr(quality_gate, "model_dump", None)
+    if callable(model_dump):
+        return model_dump(mode="json")
+    return None
+
+
+def _not_applicable_quality_gate() -> dict[str, object]:
+    return {
+        "score": None,
+        "publish_status": "not_applicable",
+        "label": "暂不评分",
+        "summary": "该报告类型暂不接入质量门禁",
+        "hard_failures": [],
+        "warnings": [],
+        "provider_summary": {},
+    }
+
+
+def _report_quality_list_fields(row: Report) -> dict[str, object]:
+    if row.publish_status:
+        return {
+            "quality_score": row.quality_score,
+            "publish_status": row.publish_status,
+            "quality_summary": row.quality_summary,
+            "quality_gate": row.quality_gate,
+        }
+    if row.kind == ReportKindModel.CLOSE:
+        return {
+            "quality_score": None,
+            "publish_status": "not_scored",
+            "quality_summary": "旧版本报告未评分",
+            "quality_gate": None,
+        }
+    return {
+        "quality_score": None,
+        "publish_status": "not_applicable",
+        "quality_summary": "该报告类型暂不接入质量门禁",
+        "quality_gate": None,
     }
 
 

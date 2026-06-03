@@ -41,6 +41,10 @@ class Report(Base):
     )
     asset_dir: Mapped[str] = mapped_column(String(1024))
     algorithm_versions: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    quality_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    publish_status: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    quality_summary: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    quality_gate: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )

@@ -168,6 +168,23 @@ class WatchlistObservation(BaseModel):
     notes: list[str] = Field(default_factory=list)
 
 
+class QualityGateIssue(BaseModel):
+    code: str
+    severity: str
+    message: str
+    details: dict[str, Any] = Field(default_factory=dict)
+
+
+class QualityGateResult(BaseModel):
+    score: int | None
+    publish_status: str
+    label: str
+    summary: str
+    hard_failures: list[QualityGateIssue] = Field(default_factory=list)
+    warnings: list[QualityGateIssue] = Field(default_factory=list)
+    provider_summary: dict[str, Any] = Field(default_factory=dict)
+
+
 class ReportDTO(BaseModel):
     trade_date: str
     kind: ReportKind
@@ -182,6 +199,7 @@ class ReportDTO(BaseModel):
     previous_strong_themes: list[HistoricalThemeReview] = Field(default_factory=list)
     structured_review: StructuredReviewDTO | None = None
     watchlist_observation: WatchlistObservation | None = None
+    quality_gate: QualityGateResult | None = None
     overrides: list[OverrideRecord] = Field(default_factory=list)
     algorithm_versions: dict[str, str] = Field(
         default_factory=lambda: {

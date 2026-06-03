@@ -10,6 +10,7 @@ from app.db.session import session_scope
 
 
 DEFAULT_REPORT_KIND = "close"
+USABLE_PUBLISH_STATUSES = {"publishable", "degraded"}
 
 
 class ReportScheduleUpdate(BaseModel):
@@ -57,14 +58,16 @@ def run_due_report_schedule(
             select(Report).where(
                 Report.trade_date == due_trade_date,
                 Report.kind == ReportKindModel.CLOSE,
+                Report.publish_status.in_(USABLE_PUBLISH_STATUSES),
             )
         ).scalars().first()
         if existing is not None:
             config.last_run_at = current_utc
             config.last_result = {
-                "status": "skipped_existing",
+                "status": f"skipped_existing_{existing.publish_status}",
                 "trade_date": due_trade_date,
                 "kind": DEFAULT_REPORT_KIND,
+                "publish_status": existing.publish_status,
             }
             session.flush()
             return _status_payload(config)
@@ -100,16 +103,51 @@ def run_due_report_schedule(
                     status=status,
                     asset_dir=str(result.assets.root),
                     algorithm_versions=result.report.algorithm_versions,
+                    **_quality_gate_db_fields(result.report.quality_gate),
                 )
             )
-        config.last_run_at = current_utc
-        config.last_result = {
-            "status": "generated",
+        quality_gate = _quality_gate_payload(getattr(getattr(result, "report", None), "quality_gate", None))
+        publish_status = quality_gate.get("publish_status") if quality_gate else None
+        quality_score = quality_gate.get("score") if quality_gate else None
+        quality_summary = quality_gate.get("summary") if quality_gate else None
+        last_result = {
+            "status": f"generated_{publish_status}" if publish_status else "generated",
             "trade_date": due_trade_date,
             "kind": DEFAULT_REPORT_KIND,
         }
+        if publish_status:
+            last_result.update(
+                {
+                    "publish_status": publish_status,
+                    "quality_score": quality_score,
+                    "quality_summary": quality_summary,
+                }
+            )
+        config.last_run_at = current_utc
+        config.last_result = last_result
         session.flush()
         return _status_payload(config)
+
+
+def _quality_gate_db_fields(quality_gate: object | None) -> dict[str, object]:
+    payload = _quality_gate_payload(quality_gate)
+    return {
+        "quality_score": payload.get("score") if payload else None,
+        "publish_status": payload.get("publish_status") if payload else None,
+        "quality_summary": payload.get("summary") if payload else None,
+        "quality_gate": payload,
+    }
+
+
+def _quality_gate_payload(quality_gate: object | None) -> dict[str, object] | None:
+    if quality_gate is None:
+        return None
+    if isinstance(quality_gate, dict):
+        return quality_gate
+    model_dump = getattr(quality_gate, "model_dump", None)
+    if callable(model_dump):
+        return model_dump(mode="json")
+    return None
 
 
 def _get_or_create_config(engine: Engine, settings: Settings) -> ReportScheduleConfig:

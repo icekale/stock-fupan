@@ -55,37 +55,52 @@ export function DataSourceStatusPanel({
   onDraftChange: (draft: DataSourceOptionsCurrent) => void;
   onSave: () => void;
 }) {
+  const readyCount = items.filter((item) => item.status === "ready" || item.status === "local").length;
+
   return (
-    <section id="sources" className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+    <section id="sources" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">Data Sources</p>
           <h2 className="mt-1 text-xl font-black tracking-tight text-slate-950">数据源配置状态</h2>
+          <p className="mt-2 text-sm text-slate-500">运行时配置保存到本地 SQLite，不显示 API Key 明文。</p>
         </div>
-        <p className="text-sm text-slate-500">运行时配置保存到本地 SQLite，不显示 API Key 明文。</p>
+        <span className="inline-flex h-8 items-center rounded-full bg-slate-100 px-3 text-xs font-bold text-slate-600 ring-1 ring-slate-200">
+          就绪 {readyCount}/{items.length || 0}
+        </span>
       </div>
 
-      {options && draft && (
-        <div className="mt-4 space-y-4 rounded-2xl border border-slate-100 bg-slate-50 p-4">
+      {options && draft ? (
+        <div className="mt-4 space-y-4 rounded-xl border border-slate-100 bg-slate-50 p-4">
           {options.categories.map((category) => (
-            <fieldset key={category.key} className="space-y-2">
-              <legend className="text-sm font-black text-slate-800">{category.label}</legend>
-              <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+            <fieldset key={category.key} className="space-y-2.5">
+              <legend className="text-sm font-black text-slate-800">
+                {category.label}
+                <span className="ml-2 text-xs font-semibold text-slate-400">
+                  {category.selection === "multiple" ? "可多选" : "单选"}
+                </span>
+              </legend>
+              <div className="grid gap-2 md:grid-cols-2">
                 {category.options.map((option) => {
                   const checked =
                     category.key === "review_sources"
                       ? draft.review_sources.includes(option.key)
                       : draft[category.key] === option.key;
+                  const inputId = `data-source-${category.key}-${option.key}`;
                   return (
                     <label
                       key={`${category.key}-${option.key}`}
-                      className={`flex min-h-20 cursor-pointer items-start gap-3 rounded-2xl border bg-white p-3 text-sm transition ${
-                        checked ? "border-slate-900 ring-1 ring-slate-900" : "border-slate-200 hover:border-slate-300"
+                      className={`flex min-h-20 cursor-pointer items-start gap-3 rounded-xl border bg-white p-3 text-sm transition active:translate-y-px ${
+                        checked
+                          ? "border-slate-300 border-l-4 border-l-slate-950 bg-white ring-1 ring-slate-200"
+                          : "border-slate-200 hover:border-slate-300 hover:bg-slate-50"
                       }`}
+                      htmlFor={inputId}
                     >
                       <input
                         checked={checked}
                         className="mt-1 h-4 w-4 accent-slate-950"
+                        id={inputId}
                         name={category.key}
                         onChange={() => onDraftChange(updateDraft(draft, category.key, option.key))}
                         type={category.selection === "multiple" ? "checkbox" : "radio"}
@@ -102,33 +117,49 @@ export function DataSourceStatusPanel({
             </fieldset>
           ))}
 
-          <label className="flex items-center justify-between gap-3 rounded-2xl border border-slate-200 bg-white p-3">
+          <button
+            aria-checked={draft.fallback_enabled}
+            className="flex w-full items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white p-3 text-left transition hover:border-slate-300 hover:bg-slate-50 active:translate-y-px"
+            onClick={() => onDraftChange({ ...draft, fallback_enabled: !draft.fallback_enabled })}
+            role="switch"
+            type="button"
+          >
             <span>
               <span className="block text-sm font-black text-slate-950">数据源失败时允许 fake 回退</span>
               <span className="mt-1 block text-xs text-slate-500">关闭后真实源失败会直接让报告生成失败。</span>
             </span>
-            <input
-              checked={draft.fallback_enabled}
-              className="h-5 w-5 accent-slate-950"
-              onChange={(event) => onDraftChange({ ...draft, fallback_enabled: event.target.checked })}
-              type="checkbox"
-            />
-          </label>
+            <span
+              className={`relative h-6 w-11 shrink-0 rounded-full transition ${
+                draft.fallback_enabled ? "bg-slate-950" : "bg-slate-300"
+              }`}
+              aria-hidden="true"
+            >
+              <span
+                className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
+                  draft.fallback_enabled ? "translate-x-6" : "translate-x-1"
+                }`}
+              />
+            </span>
+          </button>
 
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="text-xs text-slate-500">
               {draft.updated_at ? `上次保存：${new Date(draft.updated_at).toLocaleString("zh-CN")}` : "当前使用环境变量默认配置"}
             </div>
             <button
-              className="rounded-full bg-slate-950 px-4 py-2 text-sm font-bold text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500"
+              className="rounded-xl bg-slate-950 px-4 py-2 text-sm font-bold text-white transition hover:bg-slate-800 active:translate-y-px disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:active:translate-y-0"
               disabled={saving}
               onClick={onSave}
               type="button"
             >
-              {saving ? "保存中" : "保存数据源选项"}
+              {saving ? "保存数据源选项中" : "保存数据源选项"}
             </button>
           </div>
-          {error && <p className="rounded-2xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+          {error && <p className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+        </div>
+      ) : (
+        <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+          {error ? "数据源选项读取失败，请检查后端服务。" : "读取数据源选项中。"}
         </div>
       )}
 
@@ -136,7 +167,7 @@ export function DataSourceStatusPanel({
         {items.map((item) => {
           const view = statusCopy[item.status] ?? unknownStatusCopy;
           return (
-            <article key={`${item.name}-${item.role}`} className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+            <article key={`${item.name}-${item.role}`} className="rounded-xl border border-slate-100 bg-slate-50 p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <div className="flex items-center gap-2">

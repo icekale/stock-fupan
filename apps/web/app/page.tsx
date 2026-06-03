@@ -261,7 +261,7 @@ export default function HomePage() {
   return (
     <AdminShell>
       <div className="space-y-6">
-        <header id="dashboard" className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+        <header id="dashboard" className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.32em] text-slate-400">Operations Console</p>
@@ -280,13 +280,13 @@ export default function HomePage() {
 
         <div className="grid gap-6 xl:grid-cols-[390px_minmax(0,1fr)]">
           <aside className="space-y-6">
-            <section id="generate" className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <section id="generate" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">Generate</p>
                   <h2 className="mt-1 text-xl font-black text-slate-950">报告生成</h2>
                 </div>
-                <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600">/api/reports/{reportKind}</span>
+                <span className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-bold text-slate-600">/api/reports/{reportKind}</span>
               </div>
 
               <label className="mt-5 block text-sm font-semibold text-slate-700" htmlFor="trade-date">
@@ -294,14 +294,14 @@ export default function HomePage() {
               </label>
               <input
                 id="trade-date"
-                className="mt-2 w-full rounded-2xl border border-slate-200 bg-white px-3 py-2.5 text-slate-950 shadow-sm transition-colors placeholder:text-slate-400 hover:border-slate-300"
+                className="mt-2 min-h-[44px] w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-slate-950 shadow-sm transition-colors placeholder:text-slate-400 hover:border-slate-300"
                 value={tradeDate}
                 onChange={(event) => setTradeDate(event.target.value)}
                 placeholder="YYYY-MM-DD"
                 inputMode="numeric"
               />
               {reportKind === "weekly" && weeklyRange && (
-                <div className="mt-3 rounded-2xl border border-amber-100 bg-amber-50 px-3 py-2 text-sm leading-6 text-amber-900">
+                <div className="mt-3 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-sm leading-6 text-amber-900">
                   将生成：{weeklyRange.startDate} 至 {weeklyRange.endDate} 周报复盘
                 </div>
               )}
@@ -311,14 +311,14 @@ export default function HomePage() {
                 <ReportKindButton active={reportKind === "weekly"} onClick={() => setReportKind("weekly")}>周报复盘</ReportKindButton>
               </div>
               <button
-                className="mt-4 w-full rounded-2xl bg-slate-950 px-4 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-slate-800 active:translate-y-px disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:active:translate-y-0"
+                className="mt-4 min-h-[46px] w-full rounded-xl bg-slate-950 px-4 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-slate-800 active:translate-y-px disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:active:translate-y-0"
                 disabled={running || tradeDate.trim().length === 0}
                 onClick={handleGenerate}
                 type="button"
               >
                 {running ? "生成中..." : generateButtonLabel(reportKind, weeklyRange)}
               </button>
-              {error && <p className="mt-3 rounded-2xl bg-red-50 p-3 text-sm leading-6 text-red-700">{error}</p>}
+              {error && <p className="mt-3 rounded-xl bg-red-50 p-3 text-sm leading-6 text-red-700">{error}</p>}
             </section>
 
             <ReportSchedulePanel
@@ -331,7 +331,7 @@ export default function HomePage() {
             <TaskProgress running={running} completed={Boolean(result)} />
             <WatchlistImportPanel onImported={() => setWatchlistImported(true)} />
             {watchlistImported && (
-              <p className="rounded-2xl bg-emerald-50 p-3 text-sm text-emerald-700">
+              <p className="rounded-xl bg-emerald-50 p-3 text-sm text-emerald-700">
                 自选股已导入，下一次生成报告会带入观察模块。
               </p>
             )}
@@ -348,27 +348,31 @@ export default function HomePage() {
               saving={savingDataSources}
             />
 
-            <section id="reports" className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <section id="reports" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">Reports</p>
                   <h2 className="mt-1 text-xl font-black text-slate-950">历史报告列表</h2>
                 </div>
-                <button className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-200" onClick={refreshReports} type="button">
+                <button
+                  className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600 transition hover:bg-slate-200 active:translate-y-px"
+                  onClick={refreshReports}
+                  type="button"
+                >
                   刷新列表
                 </button>
               </div>
 
-              <div className="mt-4 overflow-hidden rounded-2xl border border-slate-100">
+              <div className="mt-4 overflow-hidden rounded-xl border border-slate-100">
                 {reports.length > 0 ? (
                   <div className="divide-y divide-slate-100">
                     <div className="flex flex-col gap-3 bg-slate-50/80 p-3 text-xs sm:flex-row sm:items-center sm:justify-between">
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="rounded-full bg-white px-3 py-1.5 font-bold text-slate-600 ring-1 ring-slate-200">
+                        <span className="rounded-lg bg-white px-3 py-1.5 font-bold text-slate-600 ring-1 ring-slate-200">
                           已选 {selectedReportIds.length} 项
                         </span>
                         <button
-                          className="rounded-full bg-white px-3 py-1.5 font-bold text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                          className="rounded-lg bg-white px-3 py-1.5 font-bold text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-100 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50 disabled:active:translate-y-0"
                           disabled={allVisibleReportsSelected}
                           onClick={selectAllVisibleReports}
                           type="button"
@@ -376,7 +380,7 @@ export default function HomePage() {
                           全选当前列表
                         </button>
                         <button
-                          className="rounded-full bg-white px-3 py-1.5 font-bold text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                          className="rounded-lg bg-white px-3 py-1.5 font-bold text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-100 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50 disabled:active:translate-y-0"
                           disabled={selectedReportIds.length === 0}
                           onClick={clearReportSelection}
                           type="button"
@@ -385,7 +389,7 @@ export default function HomePage() {
                         </button>
                       </div>
                       <button
-                        className="rounded-full bg-red-50 px-3 py-1.5 font-bold text-red-700 ring-1 ring-red-100 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        className="rounded-lg bg-red-50 px-3 py-1.5 font-bold text-red-700 ring-1 ring-red-100 transition hover:bg-red-100 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50 disabled:active:translate-y-0"
                         disabled={selectedReportIds.length === 0 || deletingReportIds.length > 0}
                         onClick={() => void handleBulkDeleteReports()}
                         type="button"
@@ -398,14 +402,14 @@ export default function HomePage() {
                         key={item.id}
                         className={`grid gap-3 p-4 text-sm transition lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center ${
                           selectedReportIds.includes(item.id)
-                            ? "bg-sky-50/70 ring-1 ring-inset ring-sky-200"
+                            ? "border-l-4 border-l-slate-950 bg-slate-50"
                             : selectedReportId === item.id
-                              ? "bg-slate-50 ring-1 ring-inset ring-slate-300"
+                              ? "bg-white ring-1 ring-inset ring-slate-300"
                               : "bg-white hover:bg-slate-50"
                         }`}
                       >
                         <div className="flex items-start gap-3">
-                          <label className="mt-0.5 flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-2xl border border-slate-200 bg-white transition hover:border-slate-300 hover:bg-slate-50">
+                          <label className="mt-0.5 flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-xl border border-slate-200 bg-white transition hover:border-slate-300 hover:bg-slate-50 active:translate-y-px">
                             <input
                               aria-label={`选择报告 ${item.trade_date}-${item.kind_label} ${item.version}`}
                               checked={selectedReportIds.includes(item.id)}
@@ -416,7 +420,7 @@ export default function HomePage() {
                             />
                           </label>
                           <button
-                            className="min-w-0 flex-1 rounded-2xl px-1 text-left transition focus:outline-none focus:ring-2 focus:ring-slate-300"
+                            className="min-w-0 flex-1 rounded-xl px-1 text-left transition focus:outline-none focus:ring-2 focus:ring-slate-300 active:translate-y-px"
                             onClick={() => {
                               setSelectedReportId(item.id);
                               setResult(null);
@@ -428,28 +432,32 @@ export default function HomePage() {
                               <span className="ml-2 text-xs font-semibold text-slate-400">{item.version}</span>
                             </div>
                             <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-500">
+                              <PublishStatusBadge status={item.publish_status} score={item.quality_score} />
                               <span>{item.status}</span>
                               {item.created_at && <span>{new Date(item.created_at).toLocaleString("zh-CN")}</span>}
                             </div>
+                            {item.quality_summary && (
+                              <div className="mt-1 text-xs leading-5 text-slate-500">{item.quality_summary}</div>
+                            )}
                             <div className="mt-2 text-xs font-semibold text-slate-400">
                               {selectedReportId === item.id ? "正在预览" : "点击预览，左侧复选框用于批量操作"}
                             </div>
                           </button>
                         </div>
                         <div className="flex flex-wrap gap-2">
-                          <a className="rounded-full bg-slate-950 px-3 py-1.5 text-xs font-bold text-white" href={reportAssetUrl(item.html_url)} rel="noreferrer" target="_blank">
+                          <a className="rounded-lg bg-slate-950 px-3 py-1.5 text-xs font-bold text-white transition hover:bg-slate-800 active:translate-y-px" href={reportAssetUrl(item.html_url)} rel="noreferrer" target="_blank">
                             查看 HTML
                           </a>
-                          <a className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-700" href={reportAssetUrl(item.png_url)} rel="noreferrer" target="_blank">
+                          <a className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-slate-200 active:translate-y-px" href={reportAssetUrl(item.png_url)} rel="noreferrer" target="_blank">
                             打开 PNG
                           </a>
                           {item.pdf_url && (
-                            <a className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-700" href={reportAssetUrl(item.pdf_url)} rel="noreferrer" target="_blank">
+                            <a className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-700 transition hover:bg-slate-200 active:translate-y-px" href={reportAssetUrl(item.pdf_url)} rel="noreferrer" target="_blank">
                               打开 PDF
                             </a>
                           )}
                           <button
-                            className="rounded-full bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
+                            className="rounded-lg bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 transition hover:bg-red-100 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-60 disabled:active:translate-y-0"
                             disabled={deletingReportIds.includes(item.id)}
                             onClick={() => void handleDeleteReport(item)}
                             type="button"
@@ -465,18 +473,18 @@ export default function HomePage() {
                       </span>
                       <div className="flex items-center gap-2">
                         <button
-                          className="rounded-full bg-white px-3 py-1.5 font-bold text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                          className="rounded-lg bg-white px-3 py-1.5 font-bold text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-100 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50 disabled:active:translate-y-0"
                           disabled={currentReportPage <= 1}
                           onClick={() => setCurrentReportPage((page) => Math.max(1, page - 1))}
                           type="button"
                         >
                           上一页
                         </button>
-                        <span className="rounded-full bg-white px-3 py-1.5 font-bold text-slate-700 ring-1 ring-slate-200">
+                        <span className="rounded-lg bg-white px-3 py-1.5 font-bold text-slate-700 ring-1 ring-slate-200">
                           第 {currentReportPage} / {totalReportPages} 页
                         </span>
                         <button
-                          className="rounded-full bg-white px-3 py-1.5 font-bold text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                          className="rounded-lg bg-white px-3 py-1.5 font-bold text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-100 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50 disabled:active:translate-y-0"
                           disabled={currentReportPage >= totalReportPages}
                           onClick={() => setCurrentReportPage((page) => Math.min(totalReportPages, page + 1))}
                           type="button"
@@ -498,9 +506,9 @@ export default function HomePage() {
               ) : selectedReport ? (
                 <SelectedReportCard report={selectedReport} />
               ) : (
-                <div className="flex min-h-[360px] items-center justify-center rounded-3xl border border-dashed border-slate-300 bg-white/70 p-8 text-center text-sm text-slate-500">
+                <div className="flex min-h-[360px] items-center justify-center rounded-2xl border border-dashed border-slate-300 bg-white/70 p-8 text-center text-sm text-slate-500">
                   <div>
-                    <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-100 text-lg">沪</div>
+                    <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-xl bg-slate-100 text-lg">沪</div>
                     <p className="font-medium text-slate-700">选择交易日后生成报告预览</p>
                     <p className="mt-1 text-slate-500">
                       {latestReport ? `最近报告：${latestReport.trade_date}-${latestReport.kind_label}` : `默认交易日为 ${tradeDate}。`}
@@ -518,7 +526,7 @@ export default function HomePage() {
 
 function SelectedReportCard({ report }: { report: ReportListItem }) {
   return (
-    <article className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+    <article className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
       <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">Selected Report</p>
       <h2 className="mt-2 text-2xl font-black tracking-tight text-slate-950">
         {report.trade_date}-{report.kind_label}
@@ -528,30 +536,42 @@ function SelectedReportCard({ report }: { report: ReportListItem }) {
         已选择历史报告。HTML 是主产物，PNG 适合分享，PDF 适合归档和转发；删除会同时移除数据库记录和该版本文件夹。
       </p>
       <div className="mt-5 flex flex-wrap gap-2">
-        <a className="rounded-full bg-slate-950 px-4 py-2 text-sm font-bold text-white" href={reportAssetUrl(report.html_url)} rel="noreferrer" target="_blank">
+        <a className="rounded-xl bg-slate-950 px-4 py-2 text-sm font-bold text-white transition hover:bg-slate-800 active:translate-y-px" href={reportAssetUrl(report.html_url)} rel="noreferrer" target="_blank">
           查看 HTML
         </a>
-        <a className="rounded-full bg-slate-100 px-4 py-2 text-sm font-bold text-slate-700" href={reportAssetUrl(report.png_url)} rel="noreferrer" target="_blank">
+        <a className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-200 active:translate-y-px" href={reportAssetUrl(report.png_url)} rel="noreferrer" target="_blank">
           打开 PNG
         </a>
         {report.pdf_url && (
-          <a className="rounded-full bg-slate-100 px-4 py-2 text-sm font-bold text-slate-700" href={reportAssetUrl(report.pdf_url)} rel="noreferrer" target="_blank">
+          <a className="rounded-xl bg-slate-100 px-4 py-2 text-sm font-bold text-slate-700 transition hover:bg-slate-200 active:translate-y-px" href={reportAssetUrl(report.pdf_url)} rel="noreferrer" target="_blank">
             打开 PDF
           </a>
         )}
       </div>
       <dl className="mt-5 grid gap-3 text-sm sm:grid-cols-3">
-        <InfoItem label="状态" value={report.status} />
+        <InfoItem label="发布状态" value={formatPublishStatus(report.publish_status, report.quality_score)} />
         <InfoItem label="类型" value={report.kind_label} />
         <InfoItem label="创建时间" value={report.created_at ? new Date(report.created_at).toLocaleString("zh-CN") : "--"} />
       </dl>
+      {report.quality_summary && (
+        <p className="mt-3 rounded-xl bg-slate-50 p-3 text-sm leading-6 text-slate-600">{report.quality_summary}</p>
+      )}
     </article>
+  );
+}
+
+function PublishStatusBadge({ status, score }: { status: ReportListItem["publish_status"]; score: number | null }) {
+  const tone = publishStatusTone(status);
+  return (
+    <span className={`rounded-lg px-2 py-1 font-bold ${tone}`}>
+      {formatPublishStatus(status, score)}
+    </span>
   );
 }
 
 function InfoItem({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl bg-slate-50 p-4">
+    <div className="rounded-xl bg-slate-50 p-4">
       <div className="text-xs font-semibold text-slate-500">{label}</div>
       <div className="mt-1 font-bold text-slate-950">{value}</div>
     </div>
@@ -560,7 +580,7 @@ function InfoItem({ label, value }: { label: string; value: string }) {
 
 function SummaryMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+    <div className="rounded-xl border border-slate-100 bg-slate-50 px-4 py-3">
       <div className="text-2xl font-black tabular-nums text-slate-950">{value}</div>
       <div className="mt-1 text-xs font-semibold text-slate-500">{label}</div>
     </div>
@@ -570,8 +590,8 @@ function SummaryMetric({ label, value }: { label: string; value: string }) {
 function ReportKindButton({ active, children, onClick }: { active: boolean; children: React.ReactNode; onClick: () => void }) {
   return (
     <button
-      className={`rounded-2xl border px-3 py-2.5 text-sm font-bold transition ${
-        active ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+      className={`min-h-[44px] rounded-xl border px-3 py-2.5 text-sm font-bold transition active:translate-y-px ${
+        active ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
       }`}
       onClick={onClick}
       type="button"
@@ -596,6 +616,39 @@ function generateButtonLabel(kind: ReportKind, weeklyRange: { startDate: string;
     return `生成 ${weeklyRange.startDate} 至 ${weeklyRange.endDate} 周报复盘`;
   }
   return `生成${reportKindLabel(kind)}`;
+}
+
+function formatPublishStatus(status: ReportListItem["publish_status"], score: number | null): string {
+  const scoreText = score === null || score === undefined ? "" : ` ${score}`;
+  if (status === "publishable") {
+    return `可发布${scoreText}`;
+  }
+  if (status === "degraded") {
+    return `降级可发布${scoreText}`;
+  }
+  if (status === "blocked") {
+    return `不可发布草稿${scoreText}`;
+  }
+  if (status === "not_applicable") {
+    return "暂不评分";
+  }
+  if (status === "not_scored") {
+    return "未评分";
+  }
+  return "未评分";
+}
+
+function publishStatusTone(status: ReportListItem["publish_status"]): string {
+  if (status === "publishable") {
+    return "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100";
+  }
+  if (status === "degraded") {
+    return "bg-amber-50 text-amber-700 ring-1 ring-amber-100";
+  }
+  if (status === "blocked") {
+    return "bg-red-50 text-red-700 ring-1 ring-red-100";
+  }
+  return "bg-slate-100 text-slate-600 ring-1 ring-slate-200";
 }
 
 function getWeeklyRange(endDateText: string): { startDate: string; endDate: string } | null {
