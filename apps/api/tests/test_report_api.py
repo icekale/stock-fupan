@@ -1467,6 +1467,104 @@ class PowerOnlyReviewSourceProvider:
         ]
 
 
+class BoardRankReviewSourceProvider:
+    def collect(self, trade_date: str) -> list[ReviewSourceResult]:
+        return [
+            ReviewSourceResult(
+                source="a-stock-data 东财板块排名",
+                source_url="https://push2delay.eastmoney.com/api/qt/clist/get",
+                status="success",
+                themes=[
+                    ReviewThemeEvidence(
+                        name="培育钻石",
+                        pct_change=4.24,
+                        reason="板块涨跌幅4.24%，涨11跌5",
+                        stocks=[
+                            ReviewStockEvidence(
+                                name="恒盛能源",
+                                code="605580",
+                                pct_change=10.0,
+                                source="a-stock-data 东财板块排名",
+                            )
+                        ],
+                        source="a-stock-data 东财板块排名",
+                    ),
+                    ReviewThemeEvidence(
+                        name="光纤概念",
+                        pct_change=4.14,
+                        reason="板块涨跌幅4.14%，涨56跌10",
+                        stocks=[
+                            ReviewStockEvidence(
+                                name="亨通光电",
+                                code="600487",
+                                pct_change=10.0,
+                                source="a-stock-data 东财板块排名",
+                            )
+                        ],
+                        source="a-stock-data 东财板块排名",
+                    ),
+                    ReviewThemeEvidence(
+                        name="昨日首板",
+                        pct_change=3.8,
+                        reason="板块涨跌幅3.80%，涨37跌14",
+                        stocks=[
+                            ReviewStockEvidence(
+                                name="鑫科材料",
+                                code="600255",
+                                pct_change=10.03,
+                                source="a-stock-data 东财板块排名",
+                            )
+                        ],
+                        source="a-stock-data 东财板块排名",
+                    ),
+                    ReviewThemeEvidence(
+                        name="半导体",
+                        pct_change=2.34,
+                        reason="板块涨跌幅2.34%，涨80跌15",
+                        stocks=[
+                            ReviewStockEvidence(
+                                name="中芯国际",
+                                code="688981",
+                                pct_change=6.0,
+                                source="a-stock-data 东财板块排名",
+                            )
+                        ],
+                        source="a-stock-data 东财板块排名",
+                    ),
+                ],
+                hot_stocks=[],
+                market_notes=[
+                    "培育钻石: 4.24% 涨11跌5 领涨恒盛能源",
+                    "光纤概念: 4.14% 涨56跌10 领涨亨通光电",
+                    "半导体: 2.34% 涨80跌15 领涨中芯国际",
+                ],
+            )
+        ]
+
+
+def test_report_generator_prefers_board_rank_source_for_top_sector_order(
+    tmp_path: Path,
+) -> None:
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=ConflictingRawAndScoredMarketProvider(),
+        news_provider=FakeNewsProvider(),
+        llm_provider=FakeLLMProvider(),
+        review_source_provider=BoardRankReviewSourceProvider(),
+    )
+
+    result = generator.generate_close_report("2026-06-03")
+
+    assert [sector.name for sector in result.report.sectors[:3]] == ["培育钻石", "光纤概念", "半导体"]
+    assert "昨日首板" not in [sector.name for sector in result.report.sectors]
+    assert result.report.sectors[0].pct_change == 4.24
+    assert result.report.sectors[0].review_sources == ["a-stock-data 东财板块排名"]
+    assert any(stock.name == "恒盛能源" for stock in result.report.sectors[0].top_stocks)
+    facts = json.loads(result.assets.facts.read_text(encoding="utf-8"))
+    assert [sector["name"] for sector in facts["raw_sectors"][:3]] == ["培育钻石", "光纤概念", "半导体"]
+    assert facts["market_raw_sectors"][0]["name"] == "会展服务"
+
+
 class ThsdkReviewSourceProvider:
     def collect(self, trade_date: str) -> list[ReviewSourceResult]:
         return [

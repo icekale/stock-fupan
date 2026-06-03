@@ -74,13 +74,14 @@ def test_a_stock_industry_rank_maps_eastmoney_payload() -> None:
                 "data": {
                     "diff": [
                         {
-                            "f14": "半导体",
+                            "f14": "培育钻石",
                             "f3": 4.2,
-                            "f12": "BK1036",
-                            "f104": 75,
-                            "f105": 12,
-                            "f140": "中芯国际",
-                            "f136": 8.8,
+                            "f12": "BK1023",
+                            "f104": 11,
+                            "f105": 5,
+                            "f128": "恒盛能源",
+                            "f140": "605580",
+                            "f136": 10.0,
                         }
                     ]
                 }
@@ -91,12 +92,18 @@ def test_a_stock_industry_rank_maps_eastmoney_payload() -> None:
 
     result = provider("2026-05-26")
 
-    assert result.source == "a-stock-data 东财行业排名"
+    assert result.source == "a-stock-data 东财板块排名"
     assert result.status == "success"
-    assert result.themes[0].name == "半导体"
+    assert result.themes[0].name == "培育钻石"
     assert result.themes[0].pct_change == 4.2
-    assert result.hot_stocks[0].name == "中芯国际"
-    assert "涨75跌12" in result.market_notes[0]
+    assert result.themes[0].stocks[0].name == "恒盛能源"
+    assert result.themes[0].stocks[0].code == "605580"
+    assert result.hot_stocks[0].name == "恒盛能源"
+    assert "涨11跌5" in result.market_notes[0]
+    assert client.requests[0]["url"] == "https://push2delay.eastmoney.com/api/qt/clist/get"
+    assert client.requests[0]["params"]["fs"] == "m:90+t:3"
+    assert client.requests[0]["params"]["fid"] == "f3"
+    assert client.requests[0]["params"]["ut"] == "bd1d9ddb04089700cf9c27f6f7426281"
 
 
 def test_eastmoney_global_news_filters_by_sector_keyword() -> None:

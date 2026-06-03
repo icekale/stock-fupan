@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from app.providers.llm import LLMProvider
@@ -9,7 +9,7 @@ from app.providers.tickflow import TickFlowQuoteProvider
 from app.renderers.html_renderer import render_mobile_report_html
 from app.renderers.png_exporter import export_pdf, export_png
 from app.rules.quality_gate import evaluate_quality_gate
-from app.rules.scoring import score_sectors
+from app.rules.scoring import RawSectorInput, score_sectors
 from app.rules.validation import ValidationResult, validate_narrative_facts
 from app.schemas.report import CapitalEvidence, ReportDTO, ReportKind, SectorCandidate, StockCandidate
 from app.services.assets import AssetPaths, create_named_report_copies, create_report_asset_dir, report_kind_label, write_json
@@ -20,6 +20,16 @@ from app.services.watchlist_observation import build_watchlist_observation
 
 
 DEFAULT_LLM_METADATA_VALUE = "unknown"
+BOARD_RANK_EXCLUDED_KEYWORDS = (
+    "昨日",
+    "今日",
+    "首板",
+    "连板",
+    "涨停",
+    "打板",
+    "热股",
+    "表现",
+)
 
 
 @dataclass(frozen=True)
@@ -83,10 +93,11 @@ class ReportGenerator:
                 fallback_used=False,
                 reason=None,
             )
-        scored_sectors = score_sectors(market_snapshot.raw_sectors, top_n=5)
         review_source_results: list[ReviewSourceResult] = []
         if self.review_source_provider is not None:
             review_source_results = self.review_source_provider.collect(trade_date)
+        ranking_sectors = _board_rank_source_sectors(review_source_results) or market_snapshot.raw_sectors
+        scored_sectors = score_sectors(ranking_sectors, top_n=5)
 
         news_items = []
         news_statuses = []
@@ -138,6 +149,7 @@ class ReportGenerator:
             }
             for scored in scored_sectors
         ]
+        seed["market_raw_sectors"] = [asdict(sector) for sector in market_snapshot.raw_sectors]
         narrative = self.llm_provider.generate_narrative(seed)
 
         sector_candidates = [
@@ -225,7 +237,10 @@ class ReportGenerator:
         )
         quality_gate_payload = report.quality_gate.model_dump(mode="json")
 
-        write_json(assets.facts, market_snapshot.to_report_seed(news=[]))
+        facts_seed = market_snapshot.to_report_seed(news=[])
+        facts_seed["raw_sectors"] = [asdict(sector) for sector in ranking_sectors]
+        facts_seed["market_raw_sectors"] = [asdict(sector) for sector in market_snapshot.raw_sectors]
+        write_json(assets.facts, facts_seed)
         write_json(assets.news_raw, [item.model_dump() for item in news_items])
         write_json(
             assets.llm_calls,
@@ -346,6 +361,44 @@ def _theme_matches(sector_name: str, theme_name: str) -> bool:
     }
     candidates = aliases.get(sector_key, [sector_key])
     return any(candidate in theme_key or theme_key in candidate for candidate in candidates)
+
+
+def _board_rank_source_sectors(review_source_results: list[ReviewSourceResult]) -> list[RawSectorInput]:
+    board_rank_sources = [
+        result
+        for result in review_source_results
+        if result.status == "success" and "板块排名" in result.source
+    ]
+    if not board_rank_sources:
+        return []
+    sectors: list[RawSectorInput] = []
+    seen: set[str] = set()
+    for result in board_rank_sources:
+        for theme in result.themes:
+            if (
+                theme.name in seen
+                or theme.pct_change is None
+                or _is_noisy_board_rank_theme(theme.name)
+            ):
+                continue
+            seen.add(theme.name)
+            sectors.append(
+                RawSectorInput(
+                    name=theme.name,
+                    pct_change=theme.pct_change,
+                    limit_up_count=sum(
+                        1 for stock in theme.stocks if (stock.pct_change or 0) >= 9.8
+                    ),
+                    stock_up_ratio=1.0 if theme.pct_change > 0 else 0.0,
+                    turnover_change=0.0,
+                    news_weight=min(max(theme.pct_change / 8, 0.0), 1.0),
+                )
+            )
+    return sectors
+
+
+def _is_noisy_board_rank_theme(theme_name: str) -> bool:
+    return any(keyword in theme_name for keyword in BOARD_RANK_EXCLUDED_KEYWORDS)
 
 
 def _note_matches_sector(sector_name: str, note: str, result: ReviewSourceResult) -> bool:

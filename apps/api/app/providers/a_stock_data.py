@@ -104,7 +104,7 @@ class AStockThsHotProvider:
 
 
 class AStockIndustryRankProvider:
-    source_name = "a-stock-data 东财行业排名"
+    source_name = "a-stock-data 东财板块排名"
 
     def __init__(
         self,
@@ -116,7 +116,7 @@ class AStockIndustryRankProvider:
         self._owns_client = http_client is None
         self.http_client = http_client or httpx.Client()
         self.top_n = top_n
-        self.source_url = "https://push2.eastmoney.com/api/qt/clist/get"
+        self.source_url = "https://push2delay.eastmoney.com/api/qt/clist/get"
 
     def close(self) -> None:
         if self._owns_client:
@@ -133,8 +133,10 @@ class AStockIndustryRankProvider:
                 "np": "1",
                 "fltt": "2",
                 "invt": "2",
-                "fs": "m:90+t:2",
+                "fs": "m:90+t:3",
+                "fid": "f3",
                 "fields": "f2,f3,f4,f12,f13,f14,f104,f105,f128,f136,f140,f141,f207",
+                "ut": "bd1d9ddb04089700cf9c27f6f7426281",
             },
             timeout=self.timeout_seconds,
         )
@@ -146,7 +148,7 @@ class AStockIndustryRankProvider:
                 source=self.source_name,
                 source_url=self.source_url,
                 status="failed",
-                reason="东财行业排名无结果",
+                reason="东财板块排名无结果",
                 trade_date=trade_date,
             )
         themes: list[ReviewThemeEvidence] = []
@@ -157,10 +159,19 @@ class AStockIndustryRankProvider:
                 continue
             industry = str(item.get("f14") or "").strip()
             pct_change = _to_float(item.get("f3"))
-            leader = str(item.get("f140") or "").strip()
+            leader = str(item.get("f128") or "").strip()
+            leader_code = str(item.get("f140") or "").strip()
             leader_change = _to_float(item.get("f136"))
             up_count = item.get("f104", 0)
             down_count = item.get("f105", 0)
+            theme_stocks = [
+                ReviewStockEvidence(
+                    name=leader,
+                    code=leader_code or None,
+                    pct_change=leader_change,
+                    source=self.source_name,
+                )
+            ] if leader else []
             if industry:
                 themes.append(
                     ReviewThemeEvidence(
@@ -170,6 +181,7 @@ class AStockIndustryRankProvider:
                             f"行业涨跌幅{pct_change if pct_change is not None else 0}%，"
                             f"涨{up_count}跌{down_count}"
                         ),
+                        stocks=theme_stocks,
                         source=self.source_name,
                     )
                 )
@@ -181,6 +193,7 @@ class AStockIndustryRankProvider:
                 stocks.append(
                     ReviewStockEvidence(
                         name=leader,
+                        code=leader_code or None,
                         pct_change=leader_change,
                         source=self.source_name,
                     )
@@ -189,7 +202,7 @@ class AStockIndustryRankProvider:
             source=self.source_name,
             source_url=self.source_url,
             status="success" if themes else "failed",
-            reason=None if themes else "未解析到行业排名内容",
+            reason=None if themes else "未解析到板块排名内容",
             trade_date=trade_date,
             themes=_dedupe_themes(themes),
             hot_stocks=_dedupe_stocks(stocks),

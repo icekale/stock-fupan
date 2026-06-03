@@ -26,6 +26,7 @@ THEME_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("电力设备", ("输变电", "电网", "特锐德", "思源电气", "中国西电", "金盘科技", "三变科技")),
     ("电力", ("电力", "电网", "能源", "发电", "核电", "风电")),
 )
+GENERIC_SYNTHETIC_THEMES = {"新材料"}
 
 
 class WatchlistQuote(BaseModel):
@@ -239,9 +240,23 @@ class TickFlowMarketDataProvider:
         strong_quotes = _strong_quotes(equity_quotes, top_n=TOP_STRONG_QUOTES)
         themed = _sectors_from_theme_quotes(strong_quotes)
         self._sector_frontline_stocks = _frontline_stocks_from_theme_quotes(strong_quotes)
+        matching_industries = self._matching_industries_for_quotes(strong_quotes)
+        if themed and matching_industries:
+            industry_frontline = _frontline_stocks_from_industry_members(
+                equity_quotes,
+                matching_industries,
+            )
+            themed, specific_frontline = _replace_generic_theme_sectors_with_industry_sectors(
+                themed,
+                self._sector_frontline_stocks,
+                _sectors_from_industry_members(equity_quotes, matching_industries),
+                industry_frontline,
+            )
+            self._sector_frontline_stocks.update(specific_frontline)
         industry_theme_quotes = self._refine_theme_frontline_stocks_with_industries(
             equity_quotes,
             strong_quotes,
+            matching_industries,
         )
         if themed and industry_theme_quotes:
             themed = _replace_theme_sectors_with_industry_quotes(themed, industry_theme_quotes)
@@ -251,8 +266,9 @@ class TickFlowMarketDataProvider:
         self,
         equity_quotes: list[WatchlistQuote],
         strong_quotes: list[WatchlistQuote],
+        industries: list[IndustryUniverse] | None = None,
     ) -> dict[str, list[WatchlistQuote]]:
-        industries = self._matching_industries_for_quotes(strong_quotes)
+        industries = industries if industries is not None else self._matching_industries_for_quotes(strong_quotes)
         if not industries:
             return {}
         industry_frontline = _frontline_stocks_from_industry_members(
@@ -571,6 +587,72 @@ def _replace_theme_sectors_with_industry_quotes(
         key=lambda sector: (sector.limit_up_count, sector.pct_change, sector.stock_up_ratio),
         reverse=True,
     )[:10]
+
+
+def _replace_generic_theme_sectors_with_industry_sectors(
+    sectors: list[RawSectorInput],
+    current_frontline: dict[str, list[WatchlistQuote]],
+    industry_sectors: list[RawSectorInput],
+    industry_frontline: dict[str, list[WatchlistQuote]],
+) -> tuple[list[RawSectorInput], dict[str, list[WatchlistQuote]]]:
+    industry_by_name = {sector.name: sector for sector in industry_sectors}
+    output: list[RawSectorInput] = []
+    replacement_frontline: dict[str, list[WatchlistQuote]] = {}
+    for sector in sectors:
+        if sector.name not in GENERIC_SYNTHETIC_THEMES:
+            output.append(sector)
+            continue
+        replacement_names = _specific_industry_names_for_theme(
+            current_frontline.get(sector.name, []),
+            industry_frontline,
+        )
+        replacements = [industry_by_name[name] for name in replacement_names if name in industry_by_name]
+        if not replacements:
+            output.append(sector)
+            continue
+        output.extend(replacements)
+        for name in replacement_names:
+            frontline = industry_frontline.get(name)
+            if frontline:
+                replacement_frontline[name] = frontline
+    deduped: dict[str, RawSectorInput] = {}
+    for sector in output:
+        existing = deduped.get(sector.name)
+        if existing is None or (sector.limit_up_count, sector.pct_change) > (
+            existing.limit_up_count,
+            existing.pct_change,
+        ):
+            deduped[sector.name] = sector
+    return (
+        sorted(
+            deduped.values(),
+            key=lambda sector: (sector.limit_up_count, sector.pct_change, sector.stock_up_ratio),
+            reverse=True,
+        )[:10],
+        replacement_frontline,
+    )
+
+
+def _specific_industry_names_for_theme(
+    theme_frontline: list[WatchlistQuote],
+    industry_frontline: dict[str, list[WatchlistQuote]],
+) -> list[str]:
+    theme_symbols = {quote.symbol for quote in theme_frontline}
+    if not theme_symbols:
+        return []
+    ranked: list[tuple[int, float, str]] = []
+    for industry_name, quotes in industry_frontline.items():
+        matching_quotes = [quote for quote in quotes if quote.symbol in theme_symbols]
+        if not matching_quotes:
+            continue
+        ranked.append(
+            (
+                len(matching_quotes),
+                sum(quote.pct_change or 0 for quote in matching_quotes) / len(matching_quotes),
+                industry_name,
+            )
+        )
+    return [name for _count, _avg_change, name in sorted(ranked, reverse=True)]
 
 
 def _sectors_from_industry_members(

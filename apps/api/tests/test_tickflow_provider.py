@@ -424,6 +424,60 @@ def test_tickflow_market_provider_uses_industry_members_only_to_refine_theme_fro
     assert all(quote.name != "金盘科技" for quote in nonferrous_frontline)
 
 
+def test_tickflow_market_provider_prefers_industry_sectors_over_synthetic_theme_bucket() -> None:
+    quotes = [
+        WatchlistQuote(symbol="000001.SH", name="上证指数", last_price=4100, pct_change=0.2, turnover_cny=1),
+        WatchlistQuote(symbol="399006.SZ", name="创业板指", last_price=2200, pct_change=0.5, turnover_cny=1),
+        WatchlistQuote(symbol="603330.SH", name="天洋新材", pct_change=10.04, turnover_cny=2_000_000_000),
+        WatchlistQuote(symbol="600255.SH", name="鑫科材料", pct_change=10.03, turnover_cny=1_800_000_000),
+        WatchlistQuote(symbol="603663.SH", name="三祥新材", pct_change=10.00, turnover_cny=1_500_000_000),
+        WatchlistQuote(symbol="001212.SZ", name="中旗新材", pct_change=10.00, turnover_cny=1_300_000_000),
+        WatchlistQuote(symbol="301071.SZ", name="力量钻石", pct_change=6.5, turnover_cny=1_100_000_000),
+        WatchlistQuote(symbol="300620.SZ", name="光库科技", pct_change=8.2, turnover_cny=2_600_000_000),
+        WatchlistQuote(symbol="300502.SZ", name="新易盛", pct_change=7.8, turnover_cny=4_600_000_000),
+        WatchlistQuote(symbol="688981.SH", name="中芯国际", pct_change=6.0, turnover_cny=6_600_000_000),
+        WatchlistQuote(symbol="688256.SH", name="寒武纪", pct_change=5.5, turnover_cny=5_600_000_000),
+    ]
+    provider = TickFlowMarketDataProvider(api_key="tk-test-local", base_url="https://api.tickflow.org")
+    provider.quote_provider = TrackingTickFlowProvider(
+        quotes=quotes,
+        universes=[
+            IndustryUniverse("CN_Equity_SW3_110101", "培育钻石", 3),
+            IndustryUniverse("CN_Equity_SW3_730401", "通信设备", 2),
+            IndustryUniverse("CN_Equity_SW3_270401", "半导体", 2),
+        ],
+        universe_details={
+            "CN_Equity_SW3_110101": IndustryUniverse(
+                "CN_Equity_SW3_110101",
+                "培育钻石",
+                3,
+                ("603330.SH", "600255.SH", "301071.SZ"),
+            ),
+            "CN_Equity_SW3_730401": IndustryUniverse(
+                "CN_Equity_SW3_730401",
+                "通信设备",
+                2,
+                ("300620.SZ", "300502.SZ"),
+            ),
+            "CN_Equity_SW3_270401": IndustryUniverse(
+                "CN_Equity_SW3_270401",
+                "半导体",
+                2,
+                ("688981.SH", "688256.SH"),
+            ),
+        },
+    )
+
+    snapshot = provider.get_close_snapshot("2026-06-03")
+
+    assert snapshot.raw_sectors[0].name == "培育钻石"
+    assert all(sector.name != "新材料" for sector in snapshot.raw_sectors)
+    assert [quote.name for quote in provider.get_sector_frontline_stocks("培育钻石")][:2] == [
+        "天洋新材",
+        "鑫科材料",
+    ]
+
+
 def test_tickflow_market_provider_maps_grid_equipment_to_power_equipment_theme() -> None:
     quotes = [
         WatchlistQuote(symbol="000001.SH", name="上证指数", last_price=4100, pct_change=0.2, turnover_cny=1),

@@ -136,6 +136,32 @@ def test_quality_gate_degrades_partial_news_and_review_source_failures() -> None
     ]
 
 
+def test_quality_gate_degrades_when_board_rank_source_fails() -> None:
+    from app.rules.quality_gate import evaluate_quality_gate
+
+    provider_status = success_provider_status()
+    provider_status["review_sources"] = [
+        {"source": "同花顺复盘", "status": "success", "reason": None, "theme_count": 1},
+        {
+            "source": "a-stock-data 东财板块排名",
+            "status": "failed",
+            "reason": "Server disconnected",
+            "theme_count": 0,
+        },
+    ]
+
+    result = evaluate_quality_gate(
+        report=make_report(),
+        validation=ValidationResult(is_valid=True, errors=[]),
+        provider_status=provider_status,
+        structured_review_status={"provider": "rule", "status": "success", "fallback_used": False},
+    )
+
+    assert result.publish_status == "degraded"
+    assert result.score < 85
+    assert "board_rank_source_failed" in [issue.code for issue in result.warnings]
+
+
 def test_quality_gate_blocks_fake_market_and_missing_front_row() -> None:
     from app.rules.quality_gate import evaluate_quality_gate
 

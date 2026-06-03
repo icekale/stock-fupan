@@ -156,7 +156,7 @@ PROVIDER_OPTIONS: tuple[ProviderOption, ...] = (
     ProviderOption("eastmoney_ztfp", "review_sources", "东方财富涨停复盘", "辅助源 · 涨停质量"),
     ProviderOption("thsdk", "review_sources", "THSDK", "实验源 · 同花顺问财/概念", False, None, True),
     ProviderOption("a_stock_ths_hot", "review_sources", "a-stock 同花顺热点", "增强源 · 强势股归因"),
-    ProviderOption("a_stock_industry_rank", "review_sources", "a-stock 东财行业排名", "增强源 · 行业轮动"),
+    ProviderOption("a_stock_industry_rank", "review_sources", "a-stock 东财板块排名", "增强源 · 行业/概念轮动"),
 )
 
 

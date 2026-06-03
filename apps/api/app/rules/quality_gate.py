@@ -127,6 +127,16 @@ def evaluate_quality_gate(
                 {"failed_count": review_failed_count, "penalty": 5},
             )
         )
+    if _has_failed_board_rank_source(provider_status):
+        score -= 15
+        warnings.append(
+            _issue(
+                "board_rank_source_failed",
+                "warning",
+                "板块排名源失败，强势板块排序可信度降级",
+                {"penalty": 15},
+            )
+        )
 
     catalyst_missing_count = sum(1 for sector in report.sectors[:3] if not sector.news_summaries)
     if catalyst_missing_count:
@@ -237,6 +247,15 @@ def _provider_summary(
         },
         "fake_fallback_used": fake_fallback_used,
     }
+
+
+def _has_failed_board_rank_source(provider_status: dict[str, object]) -> bool:
+    for item in _as_list(provider_status.get("review_sources")):
+        source = str(_as_dict(item).get("source", ""))
+        status = str(_as_dict(item).get("status", ""))
+        if "板块排名" in source and status != "success":
+            return True
+    return False
 
 
 def _group_status_summary(items: list[dict[str, object]]) -> dict[str, object]:
