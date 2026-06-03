@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import time
 import uuid
 from typing import Any
 
@@ -12,7 +13,7 @@ from app.providers.review_sources import (
     ReviewStockEvidence,
     ReviewThemeEvidence,
 )
-from app.schemas.report import NewsItem
+from app.schemas.report import DragonTigerSeat, DragonTigerStock, DragonTigerSummary, NewsItem
 
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/117.0.0.0 Safari/537.36"
@@ -210,6 +211,183 @@ class AStockIndustryRankProvider:
         )
 
 
+class AStockDragonTigerProvider:
+    source_name = "a-stock-data 东财龙虎榜"
+
+    def __init__(
+        self,
+        timeout_seconds: float = 12,
+        http_client: object | None = None,
+        page_size: int = 200,
+        max_detail_stocks: int = 5,
+        sleep_seconds: float = 1.0,
+    ) -> None:
+        self.timeout_seconds = timeout_seconds
+        self._owns_client = http_client is None
+        self.http_client = http_client or httpx.Client()
+        self.page_size = page_size
+        self.max_detail_stocks = max_detail_stocks
+        self.sleep_seconds = sleep_seconds
+        self.source_url = "https://data.eastmoney.com/stock/lhb.html"
+        self.api_url = "https://datacenter-web.eastmoney.com/api/data/v1/get"
+
+    def close(self) -> None:
+        if self._owns_client:
+            self.http_client.close()
+
+    def __call__(self, trade_date: str) -> ReviewSourceResult:
+        try:
+            rows = self._datacenter(
+                "RPT_DAILYBILLBOARD_DETAILSNEW",
+                filter_str=f"(TRADE_DATE>='{trade_date}')(TRADE_DATE<='{trade_date}')",
+                page_size=self.page_size,
+                sort_columns="BILLBOARD_NET_AMT",
+                sort_types="-1",
+            )
+        except Exception as exc:
+            summary = DragonTigerSummary(
+                trade_date=trade_date,
+                status="failed",
+                reason=str(exc) or exc.__class__.__name__,
+                conclusion="龙虎榜数据未取得。",
+            )
+            return ReviewSourceResult(
+                source=self.source_name,
+                source_url=self.source_url,
+                status="failed",
+                reason=summary.reason,
+                trade_date=trade_date,
+                dragon_tiger=summary,
+            )
+        if not rows:
+            summary = DragonTigerSummary(
+                trade_date=trade_date,
+                status="failed",
+                reason="东财龙虎榜无结果",
+                conclusion="龙虎榜数据未取得。",
+            )
+            return ReviewSourceResult(
+                source=self.source_name,
+                source_url=self.source_url,
+                status="failed",
+                reason="东财龙虎榜无结果",
+                trade_date=trade_date,
+                dragon_tiger=summary,
+            )
+
+        stocks = [_dragon_tiger_stock(row) for row in rows if isinstance(row, dict)]
+        stocks = [stock for stock in stocks if stock.code and stock.name]
+        top_net_buy = sorted(stocks, key=lambda stock: stock.net_buy_wan, reverse=True)[:5]
+        top_net_sell = sorted(stocks, key=lambda stock: stock.net_buy_wan)[:5]
+        detail_failed = False
+        for stock in top_net_buy[: self.max_detail_stocks]:
+            try:
+                self._attach_seats(stock, trade_date)
+            except Exception:
+                detail_failed = True
+            if self.sleep_seconds > 0:
+                time.sleep(self.sleep_seconds)
+
+        institution_net = _seat_net_by_role(top_net_buy, "institution")
+        connect_net = _seat_net_by_role(top_net_buy, "northbound")
+        summary = DragonTigerSummary(
+            trade_date=trade_date,
+            status="success",
+            reason="席位明细部分失败" if detail_failed else None,
+            total_records=len(stocks),
+            positive_net_count=sum(1 for stock in stocks if stock.net_buy_wan > 0),
+            negative_net_count=sum(1 for stock in stocks if stock.net_buy_wan < 0),
+            net_buy_total_wan=round(sum(stock.net_buy_wan for stock in stocks), 1),
+            top_net_buy=top_net_buy,
+            top_net_sell=top_net_sell,
+            highlighted_stocks=top_net_buy[:3],
+            institution_net_buy_wan=institution_net,
+            connect_net_buy_wan=connect_net,
+            sentiment=_dragon_tiger_sentiment(stocks, institution_net, connect_net),
+            strength=_dragon_tiger_strength(stocks),
+            conclusion=_dragon_tiger_conclusion(top_net_buy, institution_net, connect_net),
+            risk_notes=_dragon_tiger_risk_notes(top_net_sell),
+        )
+        return ReviewSourceResult(
+            source=self.source_name,
+            source_url=self.source_url,
+            status="success",
+            reason=summary.reason,
+            trade_date=trade_date,
+            market_notes=_dragon_tiger_market_notes(summary),
+            hot_stocks=[
+                ReviewStockEvidence(
+                    name=stock.name,
+                    code=stock.code,
+                    pct_change=stock.change_pct,
+                    note=stock.reason,
+                    source=self.source_name,
+                )
+                for stock in top_net_buy[:5]
+            ],
+            dragon_tiger=summary,
+        )
+
+    def _datacenter(
+        self,
+        report_name: str,
+        filter_str: str,
+        page_size: int,
+        sort_columns: str,
+        sort_types: str,
+    ) -> list[dict[str, Any]]:
+        response = self.http_client.get(
+            self.api_url,
+            headers={
+                "User-Agent": UA,
+                "Referer": self.source_url,
+                "Accept": "application/json,text/plain,*/*",
+            },
+            params={
+                "reportName": report_name,
+                "columns": "ALL",
+                "filter": filter_str,
+                "pageNumber": "1",
+                "pageSize": str(page_size),
+                "sortColumns": sort_columns,
+                "sortTypes": sort_types,
+                "source": "WEB",
+                "client": "WEB",
+            },
+            timeout=self.timeout_seconds,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        if not isinstance(payload, dict) or payload.get("success") is False:
+            message = (
+                payload.get("message", "东财龙虎榜响应异常")
+                if isinstance(payload, dict)
+                else "东财龙虎榜响应异常"
+            )
+            raise ProviderFallbackError(str(message))
+        rows = payload.get("result", {}).get("data", []) if isinstance(payload.get("result"), dict) else []
+        return rows if isinstance(rows, list) else []
+
+    def _attach_seats(self, stock: DragonTigerStock, trade_date: str) -> None:
+        filter_str = f"(TRADE_DATE='{trade_date}')(SECURITY_CODE=\"{stock.code}\")"
+        buy_rows = self._datacenter(
+            "RPT_BILLBOARD_DAILYDETAILSBUY",
+            filter_str=filter_str,
+            page_size=10,
+            sort_columns="BUY",
+            sort_types="-1",
+        )
+        sell_rows = self._datacenter(
+            "RPT_BILLBOARD_DAILYDETAILSSELL",
+            filter_str=filter_str,
+            page_size=10,
+            sort_columns="SELL",
+            sort_types="-1",
+        )
+        stock.seats_buy = [_dragon_tiger_seat(row) for row in buy_rows[:5]]
+        stock.seats_sell = [_dragon_tiger_seat(row) for row in sell_rows[:5]]
+
+
 class EastmoneyGlobalNewsProvider:
     provider_name = "eastmoney_global"
 
@@ -278,6 +456,121 @@ def _global_news_item(row: dict[str, Any], sector_name: str) -> NewsItem:
         matched_sector=sector_name,
         weight=0.7,
     )
+
+
+def _dragon_tiger_stock(row: dict[str, Any]) -> DragonTigerStock:
+    return DragonTigerStock(
+        code=str(row.get("SECURITY_CODE") or ""),
+        name=str(row.get("SECURITY_NAME_ABBR") or ""),
+        reason=str(row.get("EXPLANATION") or row.get("EXPLAIN") or ""),
+        close=_to_float_value(row.get("CLOSE_PRICE")),
+        change_pct=_to_float_value(row.get("CHANGE_RATE")),
+        turnover_pct=_to_float_value(row.get("TURNOVERRATE")),
+        net_buy_wan=round((_to_float_value(row.get("BILLBOARD_NET_AMT")) or 0) / 10000, 1),
+        buy_wan=round((_to_float_value(row.get("BILLBOARD_BUY_AMT")) or 0) / 10000, 1),
+        sell_wan=round((_to_float_value(row.get("BILLBOARD_SELL_AMT")) or 0) / 10000, 1),
+        tags=["龙虎榜"],
+    )
+
+
+def _dragon_tiger_seat(row: dict[str, Any]) -> DragonTigerSeat:
+    name = str(row.get("OPERATEDEPT_NAME") or "")
+    return DragonTigerSeat(
+        name=name,
+        buy_wan=round((_to_float_value(row.get("BUY")) or 0) / 10000, 1),
+        sell_wan=round((_to_float_value(row.get("SELL")) or 0) / 10000, 1),
+        net_wan=round((_to_float_value(row.get("NET")) or 0) / 10000, 1),
+        role=_dragon_tiger_seat_role(name),
+    )
+
+
+def _dragon_tiger_seat_role(name: str) -> str:
+    if "机构专用" in name:
+        return "institution"
+    if "沪股通专用" in name or "深股通专用" in name:
+        return "northbound"
+    return "brokerage"
+
+
+def _seat_net_by_role(stocks: list[DragonTigerStock], role: str) -> float:
+    value = sum(
+        seat.net_wan
+        for stock in stocks
+        for seat in stock.seats_buy
+        if seat.role == role
+    )
+    return round(value, 1)
+
+
+def _dragon_tiger_sentiment(
+    stocks: list[DragonTigerStock],
+    institution_net: float,
+    connect_net: float,
+) -> str:
+    if not stocks:
+        return "unknown"
+    positive_ratio = sum(1 for stock in stocks if stock.net_buy_wan > 0) / len(stocks)
+    top_net = max((stock.net_buy_wan for stock in stocks), default=0)
+    if len(stocks) >= 50 and positive_ratio >= 0.55 and top_net >= 10000 and (
+        institution_net > 0 or connect_net > 0
+    ):
+        return "strong"
+    if len(stocks) >= 20 and positive_ratio >= 0.45:
+        return "medium"
+    return "weak"
+
+
+def _dragon_tiger_strength(stocks: list[DragonTigerStock]) -> str:
+    top_five_total = sum(
+        stock.net_buy_wan
+        for stock in sorted(stocks, key=lambda item: item.net_buy_wan, reverse=True)[:5]
+    )
+    big_net_count = sum(1 for stock in stocks if stock.net_buy_wan >= 10000)
+    if top_five_total >= 50000 and big_net_count >= 2:
+        return "high"
+    if top_five_total >= 15000 or big_net_count:
+        return "normal"
+    return "low"
+
+
+def _dragon_tiger_conclusion(
+    top_net_buy: list[DragonTigerStock],
+    institution_net: float,
+    connect_net: float,
+) -> str:
+    names = "、".join(stock.name for stock in top_net_buy[:3] if stock.name)
+    seat_parts = []
+    if institution_net > 0:
+        seat_parts.append("机构净买")
+    if connect_net > 0:
+        seat_parts.append("股通席位净买")
+    seat_text = f"，{'、'.join(seat_parts)}参与" if seat_parts else ""
+    return f"龙虎榜净买集中在{names or '核心个股'}{seat_text}。"
+
+
+def _dragon_tiger_risk_notes(top_net_sell: list[DragonTigerStock]) -> list[str]:
+    if not top_net_sell:
+        return []
+    names = "、".join(stock.name for stock in top_net_sell[:3] if stock.net_buy_wan < 0)
+    return [f"净卖出集中在{names}，次日需观察高位分歧是否扩大。"] if names else []
+
+
+def _dragon_tiger_market_notes(summary: DragonTigerSummary) -> list[str]:
+    names = "、".join(stock.name for stock in summary.top_net_buy[:3])
+    return [
+        f"龙虎榜情绪{summary.sentiment}，攻击强度{summary.strength}，净买额集中在{names}。",
+        summary.conclusion,
+        *summary.risk_notes[:1],
+    ]
+
+
+def _to_float_value(value: object) -> float | None:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _to_float(value: object) -> float | None:

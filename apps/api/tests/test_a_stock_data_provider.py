@@ -1,4 +1,5 @@
 from app.providers.a_stock_data import (
+    AStockDragonTigerProvider,
     AStockIndustryRankProvider,
     AStockThsHotProvider,
     EastmoneyGlobalNewsProvider,
@@ -136,3 +137,151 @@ def test_eastmoney_global_news_filters_by_sector_keyword() -> None:
     assert items[0].matched_sector == "机器人"
     assert items[0].source == "东方财富"
     assert items[0].weight == 0.7
+
+
+def test_a_stock_dragon_tiger_maps_all_market_and_seat_payloads() -> None:
+    class MultiResponseClient:
+        def __init__(self) -> None:
+            self.requests: list[dict[str, object]] = []
+
+        def get(self, url: str, **kwargs: object) -> FakeResponse:
+            self.requests.append({"url": url, **kwargs})
+            params = kwargs["params"]
+            report_name = params["reportName"]
+            if report_name == "RPT_DAILYBILLBOARD_DETAILSNEW":
+                return FakeResponse(
+                    {
+                        "success": True,
+                        "result": {
+                            "count": 2,
+                            "data": [
+                                {
+                                    "TRADE_DATE": "2026-06-03 00:00:00",
+                                    "SECURITY_CODE": "002156",
+                                    "SECURITY_NAME_ABBR": "通富微电",
+                                    "EXPLANATION": "日涨幅偏离值达到7%的前5只证券",
+                                    "CLOSE_PRICE": 70.22,
+                                    "CHANGE_RATE": 9.9937,
+                                    "TURNOVERRATE": 11.6315,
+                                    "BILLBOARD_NET_AMT": 1622415424.28,
+                                    "BILLBOARD_BUY_AMT": 2509824656.64,
+                                    "BILLBOARD_SELL_AMT": 887409232.36,
+                                },
+                                {
+                                    "TRADE_DATE": "2026-06-03 00:00:00",
+                                    "SECURITY_CODE": "600487",
+                                    "SECURITY_NAME_ABBR": "亨通光电",
+                                    "EXPLANATION": "非ST连续三日涨幅偏离值累计达到20%",
+                                    "CLOSE_PRICE": 91.43,
+                                    "CHANGE_RATE": 9.9976,
+                                    "TURNOVERRATE": 2.8593,
+                                    "BILLBOARD_NET_AMT": 992629307.58,
+                                    "BILLBOARD_BUY_AMT": 3032952427.42,
+                                    "BILLBOARD_SELL_AMT": 2040323119.84,
+                                },
+                            ],
+                        },
+                    }
+                )
+            return FakeResponse(
+                {
+                    "success": True,
+                    "result": {
+                        "count": 2,
+                        "data": [
+                            {
+                                "SECURITY_CODE": "002156",
+                                "TRADE_DATE": "2026-06-03 00:00:00",
+                                "OPERATEDEPT_NAME": "深股通专用",
+                                "BUY": 1235988605.21,
+                                "SELL": 407529601.17,
+                                "NET": 828459004.04,
+                            },
+                            {
+                                "SECURITY_CODE": "002156",
+                                "TRADE_DATE": "2026-06-03 00:00:00",
+                                "OPERATEDEPT_NAME": "机构专用",
+                                "BUY": 205402058.94,
+                                "SELL": 106159009.83,
+                                "NET": 99243049.11,
+                            },
+                        ],
+                    },
+                }
+            )
+
+        def close(self) -> None:
+            pass
+
+    client = MultiResponseClient()
+    provider = AStockDragonTigerProvider(http_client=client, sleep_seconds=0, max_detail_stocks=1)
+
+    result = provider("2026-06-03")
+
+    assert result.source == "a-stock-data 东财龙虎榜"
+    assert result.status == "success"
+    assert result.dragon_tiger is not None
+    assert result.dragon_tiger.total_records == 2
+    assert result.dragon_tiger.top_net_buy[0].name == "通富微电"
+    assert result.dragon_tiger.top_net_buy[0].net_buy_wan == 162241.5
+    assert result.dragon_tiger.top_net_buy[0].seats_buy[0].role == "northbound"
+    assert result.dragon_tiger.top_net_buy[0].seats_buy[1].role == "institution"
+    assert result.dragon_tiger.connect_net_buy_wan == 82845.9
+    assert result.dragon_tiger.institution_net_buy_wan == 9924.3
+    assert result.market_notes[0].startswith("龙虎榜情绪")
+    detail_filters = [request["params"]["filter"] for request in client.requests[1:]]
+    assert all('SECURITY_CODE="002156"' in value for value in detail_filters)
+
+
+def test_a_stock_dragon_tiger_degrades_when_detail_request_fails() -> None:
+    class DetailFailClient:
+        def get(self, url: str, **kwargs: object) -> FakeResponse:
+            if kwargs["params"]["reportName"] == "RPT_DAILYBILLBOARD_DETAILSNEW":
+                return FakeResponse(
+                    {
+                        "success": True,
+                        "result": {
+                            "count": 1,
+                            "data": [
+                                {
+                                    "TRADE_DATE": "2026-06-03 00:00:00",
+                                    "SECURITY_CODE": "002156",
+                                    "SECURITY_NAME_ABBR": "通富微电",
+                                    "BILLBOARD_NET_AMT": 1622415424.28,
+                                    "BILLBOARD_BUY_AMT": 2509824656.64,
+                                    "BILLBOARD_SELL_AMT": 887409232.36,
+                                }
+                            ],
+                        },
+                    }
+                )
+            raise RuntimeError("detail failed")
+
+        def close(self) -> None:
+            pass
+
+    provider = AStockDragonTigerProvider(
+        http_client=DetailFailClient(),
+        sleep_seconds=0,
+        max_detail_stocks=1,
+    )
+
+    result = provider("2026-06-03")
+
+    assert result.status == "success"
+    assert result.reason == "席位明细部分失败"
+    assert result.dragon_tiger is not None
+    assert result.dragon_tiger.total_records == 1
+    assert result.dragon_tiger.top_net_buy[0].seats_buy == []
+
+
+def test_a_stock_dragon_tiger_returns_failed_when_all_market_empty() -> None:
+    client = FakeClient(FakeResponse({"success": True, "result": {"count": 0, "data": []}}))
+    provider = AStockDragonTigerProvider(http_client=client, sleep_seconds=0)
+
+    result = provider("2026-06-03")
+
+    assert result.status == "failed"
+    assert result.reason == "东财龙虎榜无结果"
+    assert result.dragon_tiger is not None
+    assert result.dragon_tiger.status == "failed"
