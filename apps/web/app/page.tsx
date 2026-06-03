@@ -3,12 +3,32 @@
 import { useEffect, useMemo, useState } from "react";
 import { AdminShell } from "../components/AdminShell";
 import { DataSourceStatusPanel } from "../components/DataSourceStatusPanel";
+import { EvidencePanel } from "../components/EvidencePanel";
+import { ReportSchedulePanel } from "../components/ReportSchedulePanel";
 import { ReportPreview } from "../components/ReportPreview";
 import { TaskProgress } from "../components/TaskProgress";
 import { WatchlistImportPanel } from "../components/WatchlistImportPanel";
-import { createReport, deleteReport, getConfigStatus, listReports, reportAssetUrl } from "../lib/api";
+import {
+  createReport,
+  deleteReport,
+  getConfigStatus,
+  getDataSourceOptions,
+  getReportScheduleStatus,
+  listReports,
+  reportAssetUrl,
+  updateDataSourceOptions,
+  updateReportScheduleStatus,
+} from "../lib/api";
 import { getLatestTradeDate } from "../lib/tradeDate";
-import type { ConfigStatusItem, CreateReportResponse, ReportKind, ReportListItem } from "../lib/types";
+import type {
+  ConfigStatusItem,
+  CreateReportResponse,
+  DataSourceOptionsCurrent,
+  DataSourceOptionsResponse,
+  ReportKind,
+  ReportListItem,
+  ReportScheduleStatus,
+} from "../lib/types";
 
 export default function HomePage() {
   const [tradeDate, setTradeDate] = useState(() => getLatestTradeDate());
@@ -21,6 +41,13 @@ export default function HomePage() {
   const [selectedReportId, setSelectedReportId] = useState<number | null>(null);
   const [deletingReportId, setDeletingReportId] = useState<number | null>(null);
   const [configItems, setConfigItems] = useState<ConfigStatusItem[]>([]);
+  const [dataSourceOptions, setDataSourceOptions] = useState<DataSourceOptionsResponse | null>(null);
+  const [dataSourceDraft, setDataSourceDraft] = useState<DataSourceOptionsCurrent | null>(null);
+  const [savingDataSources, setSavingDataSources] = useState(false);
+  const [dataSourceError, setDataSourceError] = useState<string | null>(null);
+  const [reportSchedule, setReportSchedule] = useState<ReportScheduleStatus | null>(null);
+  const [savingReportSchedule, setSavingReportSchedule] = useState(false);
+  const [reportScheduleError, setReportScheduleError] = useState<string | null>(null);
 
   const latestReport = reports[0];
   const selectedReport = reports.find((item) => item.id === selectedReportId) ?? null;
@@ -36,6 +63,8 @@ export default function HomePage() {
   useEffect(() => {
     void refreshReports();
     void refreshConfigStatus();
+    void refreshDataSourceOptions();
+    void refreshReportSchedule();
   }, []);
 
   async function refreshReports() {
@@ -60,6 +89,30 @@ export default function HomePage() {
       setConfigItems(response.items);
     } catch {
       setConfigItems([]);
+    }
+  }
+
+  async function refreshDataSourceOptions() {
+    try {
+      const response = await getDataSourceOptions();
+      setDataSourceOptions(response);
+      setDataSourceDraft(response.current);
+      setDataSourceError(null);
+    } catch (err) {
+      setDataSourceOptions(null);
+      setDataSourceDraft(null);
+      setDataSourceError(err instanceof Error ? err.message : "读取数据源选项失败");
+    }
+  }
+
+  async function refreshReportSchedule() {
+    try {
+      const response = await getReportScheduleStatus();
+      setReportSchedule(response);
+      setReportScheduleError(null);
+    } catch (err) {
+      setReportSchedule(null);
+      setReportScheduleError(err instanceof Error ? err.message : "读取定时生成状态失败");
     }
   }
 
@@ -99,6 +152,49 @@ export default function HomePage() {
       setError(err instanceof Error ? err.message : "删除失败");
     } finally {
       setDeletingReportId(null);
+    }
+  }
+
+  async function handleSaveDataSources() {
+    if (!dataSourceDraft) {
+      return;
+    }
+    setSavingDataSources(true);
+    setDataSourceError(null);
+    try {
+      const response = await updateDataSourceOptions({
+        market_provider: dataSourceDraft.market_provider,
+        news_provider: dataSourceDraft.news_provider,
+        review_sources: dataSourceDraft.review_sources,
+        fallback_enabled: dataSourceDraft.fallback_enabled,
+      });
+      setDataSourceOptions(response);
+      setDataSourceDraft(response.current);
+      await refreshConfigStatus();
+    } catch (err) {
+      setDataSourceError(err instanceof Error ? err.message : "保存数据源选项失败");
+    } finally {
+      setSavingDataSources(false);
+    }
+  }
+
+  async function handleSaveReportSchedule() {
+    if (!reportSchedule) {
+      return;
+    }
+    setSavingReportSchedule(true);
+    setReportScheduleError(null);
+    try {
+      const response = await updateReportScheduleStatus({
+        enabled: reportSchedule.enabled,
+        time: reportSchedule.time,
+        timezone: reportSchedule.timezone,
+      });
+      setReportSchedule(response);
+    } catch (err) {
+      setReportScheduleError(err instanceof Error ? err.message : "保存定时生成状态失败");
+    } finally {
+      setSavingReportSchedule(false);
     }
   }
 
@@ -159,6 +255,13 @@ export default function HomePage() {
               {error && <p className="mt-3 rounded-2xl bg-red-50 p-3 text-sm leading-6 text-red-700">{error}</p>}
             </section>
 
+            <ReportSchedulePanel
+              error={reportScheduleError}
+              onChange={setReportSchedule}
+              onSave={() => void handleSaveReportSchedule()}
+              saving={savingReportSchedule}
+              status={reportSchedule}
+            />
             <TaskProgress running={running} completed={Boolean(result)} />
             <WatchlistImportPanel onImported={() => setWatchlistImported(true)} />
             {watchlistImported && (
@@ -169,7 +272,16 @@ export default function HomePage() {
           </aside>
 
           <section className="space-y-6">
-            <DataSourceStatusPanel items={configItems} />
+            <DataSourceStatusPanel
+              draft={dataSourceDraft}
+              error={dataSourceError}
+              items={configItems}
+              onDraftChange={setDataSourceDraft}
+              onSave={() => void handleSaveDataSources()}
+              options={dataSourceOptions}
+              saving={savingDataSources}
+            />
+            <EvidencePanel tradeDate={tradeDate} />
 
             <section id="reports" className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">

@@ -13,8 +13,8 @@ export function ReportPreview({ result }: { result: CreateReportResponse }) {
           <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">A-Share Market Review</p>
           <h2 className="mt-2 text-2xl font-black tracking-tight text-slate-950">{report.title}</h2>
           <div className="mt-3 flex flex-wrap gap-2">
-            {report.market_state_tags.map((tag) => (
-              <span key={tag} className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+            {report.market_state_tags.map((tag, index) => (
+              <span key={`${tag}-${index}`} className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
                 {tag}
               </span>
             ))}
@@ -110,7 +110,7 @@ export function ReportPreview({ result }: { result: CreateReportResponse }) {
         <SectionTitle>强势板块</SectionTitle>
         <div className="mt-3 grid gap-3">
           {report.sectors.map((sector) => (
-            <div key={sector.name} className="rounded-2xl border border-slate-200 p-4">
+            <div key={`${sector.rank}-${sector.name}`} className="rounded-2xl border border-slate-200 p-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="font-bold text-slate-950">
                   {sector.rank}. {sector.name}
@@ -137,8 +137,8 @@ export function ReportPreview({ result }: { result: CreateReportResponse }) {
         <section className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-800">
           <h3 className="font-bold">事实校验失败</h3>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-sm">
-            {validation.errors.map((error) => (
-              <li key={error}>{error}</li>
+            {validation.errors.map((error, index) => (
+              <li key={`${error}-${index}`}>{error}</li>
             ))}
           </ul>
         </section>
@@ -178,8 +178,8 @@ function NarrativeBlock({ title, items, fallback }: { title: string; items: stri
       <h3 className="text-sm font-bold text-slate-900">{title}</h3>
       {items.length > 0 ? (
         <ul className="mt-2 list-disc space-y-1 pl-5 text-sm leading-6 text-slate-600">
-          {items.map((item) => (
-            <li key={item}>{item}</li>
+          {items.map((item, index) => (
+            <li key={`${item}-${index}`}>{item}</li>
           ))}
         </ul>
       ) : (

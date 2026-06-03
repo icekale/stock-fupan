@@ -1,10 +1,13 @@
 from collections.abc import AsyncIterator
+import asyncio
+from contextlib import suppress
 from contextlib import asynccontextmanager
 from datetime import UTC
+import logging
 from pathlib import Path
 import shutil
 from urllib.parse import quote
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,8 +19,35 @@ from app.db.models import Report, ReportKindModel, ReportStatusModel
 from app.db.session import get_engine, init_db, session_scope
 from app.providers.factory import create_provider_bundle
 from app.providers.ocr import OcrExtractError
+from app.providers.runtime_config import (
+    RuntimeProviderConfigInput,
+    build_data_source_options_payload,
+    config_status_items,
+    get_runtime_provider_config,
+    save_runtime_provider_config,
+)
+from app.schemas.evidence import (
+    EvidenceCandidateRequest,
+    EvidenceCandidateResponse,
+    EvidenceListResponse,
+    EvidenceParsePreviewRequest,
+    EvidenceSaveRequest,
+    EvidenceStatus,
+)
 from app.services.assets import report_kind_label
+from app.services.evidence_service import (
+    EvidenceStore,
+    build_candidate_preview_from_news,
+    parse_evidence_preview,
+    query_for_candidate_task,
+)
 from app.services.report_generator import ReportGenerator
+from app.services.report_schedule import (
+    ReportScheduleUpdate,
+    get_report_schedule_status,
+    run_due_report_schedule,
+    update_report_schedule_status,
+)
 from app.watchlist.ocr_service import (
     OcrPreviewNotFoundError,
     UnsupportedOcrImageError,
@@ -37,6 +67,12 @@ class ImportWatchlistTextRequest(BaseModel):
 
 class ConfirmOcrPreviewRequest(BaseModel):
     preview_id: str
+
+
+class ReportScheduleRequest(BaseModel):
+    enabled: bool
+    time: str = "19:00"
+    timezone: str = "Asia/Shanghai"
 
 
 def _status_item(
@@ -62,7 +98,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     engine = get_engine()
     init_db(engine)
     app.state.engine = engine
-    yield
+    app.state.report_schedule_task = asyncio.create_task(_report_schedule_loop())
+    try:
+        yield
+    finally:
+        app.state.report_schedule_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await app.state.report_schedule_task
 
 
 def _cors_allow_origins() -> list[str]:
@@ -79,6 +121,7 @@ app.add_middleware(
 )
 
 CHINA_TZ = ZoneInfo("Asia/Shanghai")
+logger = logging.getLogger(__name__)
 
 
 @app.get("/health")
@@ -102,6 +145,48 @@ def _watchlist_ocr_service() -> WatchlistOcrService:
         ocr_provider=providers.ocr_provider,
         import_service=_watchlist_service(),
     )
+
+
+def _evidence_store() -> EvidenceStore:
+    return EvidenceStore(app.state.engine)
+
+
+async def _report_schedule_loop() -> None:
+    while True:
+        await asyncio.sleep(60)
+        try:
+            await asyncio.to_thread(_run_report_schedule_once)
+        except Exception:
+            logger.exception("report schedule tick failed")
+
+
+def _run_report_schedule_once() -> dict[str, object]:
+    settings = get_settings()
+    return run_due_report_schedule(
+        engine=app.state.engine,
+        settings=settings,
+        generate_close_report=lambda trade_date: _generate_scheduled_close_report(trade_date, settings),
+    )
+
+
+def _generate_scheduled_close_report(trade_date: str, settings: object):
+    runtime_config = get_runtime_provider_config(app.state.engine, settings)
+    with create_provider_bundle(settings, runtime_config=runtime_config) as providers:
+        generator = ReportGenerator(
+            reports_root=Path(settings.reports_root),
+            market_provider=providers.market_provider,
+            news_provider=providers.news_provider,
+            llm_provider=providers.llm_provider,
+            structured_review_provider=settings.structured_review_provider,
+            structured_review_fallback_enabled=settings.structured_review_fallback_enabled,
+            watchlist_service=_watchlist_service(),
+            tickflow_provider=providers.tickflow_provider,
+            watchlist_enabled=settings.report_watchlist_enabled,
+            review_source_provider=providers.review_source_provider,
+            previous_review_html_path=settings.previous_review_html_path,
+            evidence_store=_evidence_store(),
+        )
+        return generator.generate_close_report(trade_date)
 
 
 @app.post("/api/watchlists/import-text")
@@ -155,45 +240,13 @@ def get_latest_watchlist() -> dict[str, object]:
 @app.get("/api/config/status")
 def get_config_status() -> dict[str, object]:
     settings = get_settings()
-    tickflow_enabled = settings.market_provider == "tickflow" or settings.tickflow_provider == "tickflow"
-    anspire_enabled = settings.news_provider == "anspire"
-    review_sources_enabled = settings.review_sources_enabled
+    config = get_runtime_provider_config(app.state.engine, settings)
+    base_items = config_status_items(config, settings)
     watchlist_enabled = settings.report_watchlist_enabled
     ocr_is_fake = settings.ocr_provider == "fake"
     return {
         "items": [
-            _status_item(
-                name="TickFlow",
-                role="主源 · 行情",
-                configured=bool(settings.tickflow_api_key),
-                enabled=tickflow_enabled,
-                status=_external_status(tickflow_enabled, bool(settings.tickflow_api_key)),
-                detail=f"MARKET_PROVIDER={settings.market_provider} · TICKFLOW_PROVIDER={settings.tickflow_provider}",
-            ),
-            _status_item(
-                name="Anspire",
-                role="主源 · 新闻",
-                configured=bool(settings.anspire_api_key),
-                enabled=anspire_enabled,
-                status=_external_status(anspire_enabled, bool(settings.anspire_api_key)),
-                detail=f"NEWS_PROVIDER={settings.news_provider}",
-            ),
-            _status_item(
-                name="同花顺复盘",
-                role="辅助源 · 题材复盘",
-                configured=bool(settings.ths_fupan_url),
-                enabled=review_sources_enabled,
-                status="ready" if review_sources_enabled else "disabled",
-                detail="REVIEW_SOURCES_ENABLED=true" if review_sources_enabled else "REVIEW_SOURCES_ENABLED=false",
-            ),
-            _status_item(
-                name="东方财富涨停复盘",
-                role="辅助源 · 涨停质量",
-                configured=bool(settings.eastmoney_ztfp_url),
-                enabled=review_sources_enabled,
-                status="ready" if review_sources_enabled else "disabled",
-                detail="REVIEW_SOURCES_ENABLED=true" if review_sources_enabled else "REVIEW_SOURCES_ENABLED=false",
-            ),
+            *base_items,
             _status_item(
                 name="自选股模块",
                 role="本地 · 自选股观察",
@@ -214,12 +267,86 @@ def get_config_status() -> dict[str, object]:
     }
 
 
+@app.get("/api/data-sources/options")
+def get_data_source_options() -> dict[str, object]:
+    settings = get_settings()
+    config = get_runtime_provider_config(app.state.engine, settings)
+    return build_data_source_options_payload(config, settings)
+
+
+@app.put("/api/data-sources/options")
+def update_data_source_options(request: RuntimeProviderConfigInput) -> dict[str, object]:
+    try:
+        config = save_runtime_provider_config(app.state.engine, request)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return build_data_source_options_payload(config, get_settings())
+
+
 def _external_status(enabled: bool, configured: bool) -> str:
     if not enabled:
         return "disabled"
     if not configured:
         return "missing_key"
     return "ready"
+
+
+@app.post("/api/evidence/parse-preview")
+def parse_evidence(request: EvidenceParsePreviewRequest) -> dict[str, object]:
+    return parse_evidence_preview(request.content).model_dump(mode="json")
+
+
+@app.get("/api/evidence")
+def list_evidence(trade_date: str, status: EvidenceStatus | None = None) -> dict[str, object]:
+    return EvidenceListResponse(
+        items=_evidence_store().list_items(trade_date, status=status)
+    ).model_dump(mode="json")
+
+
+@app.post("/api/evidence")
+def save_evidence(request: EvidenceSaveRequest) -> dict[str, object]:
+    try:
+        items = _evidence_store().save_items(request.items)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return EvidenceListResponse(items=items).model_dump(mode="json")
+
+
+@app.post("/api/evidence/anspire-candidates")
+def search_evidence_candidates(request: EvidenceCandidateRequest) -> dict[str, object]:
+    settings = get_settings()
+    runtime_config = get_runtime_provider_config(app.state.engine, settings)
+    query = query_for_candidate_task(request.task, request.query)
+    with create_provider_bundle(settings, runtime_config=runtime_config) as providers:
+        if not hasattr(providers.news_provider, "search_news_with_status"):
+            raise HTTPException(status_code=422, detail="当前新闻源不支持候选搜索")
+        try:
+            result = providers.news_provider.search_news_with_status(query, request.trade_date)
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=_safe_provider_error(exc, settings)) from exc
+    if result.status.fallback_used or result.status.status != "success":
+        raise HTTPException(status_code=502, detail=result.status.reason or "候选证据搜索失败")
+    preview = build_candidate_preview_from_news(
+        trade_date=request.trade_date,
+        query=query,
+        items=result.items,
+    )
+    return EvidenceCandidateResponse(
+        items=preview.items,
+        provider_status=result.status.model_dump(mode="json"),
+    ).model_dump(mode="json")
+
+
+def _safe_provider_error(exc: Exception, settings: object) -> str:
+    message = str(exc) or exc.__class__.__name__
+    for secret in (
+        getattr(settings, "anspire_api_key", ""),
+        getattr(settings, "tickflow_api_key", ""),
+        getattr(settings, "openai_api_key", ""),
+    ):
+        if secret:
+            message = message.replace(str(secret), "[redacted]")
+    return message
 
 
 @app.get("/api/reports")
@@ -277,6 +404,24 @@ def delete_report(report_id: int) -> dict[str, object]:
     return {"deleted": True, "id": report_id}
 
 
+@app.get("/api/report-schedule/status")
+def report_schedule_status() -> dict[str, object]:
+    return get_report_schedule_status(app.state.engine, get_settings())
+
+
+@app.put("/api/report-schedule/status")
+def update_report_schedule(request: ReportScheduleRequest) -> dict[str, object]:
+    try:
+        update = ReportScheduleUpdate(
+            enabled=request.enabled,
+            time=request.time,
+            timezone=request.timezone,
+        )
+        return update_report_schedule_status(app.state.engine, get_settings(), update)
+    except (ValueError, ZoneInfoNotFoundError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.post("/api/reports/close")
 def create_close_report(request: CreateCloseReportRequest) -> dict[str, object]:
     return _create_report_response(request, report_kind="close")
@@ -289,7 +434,8 @@ def create_midday_report(request: CreateCloseReportRequest) -> dict[str, object]
 
 def _create_report_response(request: CreateCloseReportRequest, report_kind: str) -> dict[str, object]:
     settings = get_settings()
-    with create_provider_bundle(settings) as providers:
+    runtime_config = get_runtime_provider_config(app.state.engine, settings)
+    with create_provider_bundle(settings, runtime_config=runtime_config) as providers:
         generator = ReportGenerator(
             reports_root=Path(settings.reports_root),
             market_provider=providers.market_provider,
@@ -302,6 +448,7 @@ def _create_report_response(request: CreateCloseReportRequest, report_kind: str)
             watchlist_enabled=settings.report_watchlist_enabled,
             review_source_provider=providers.review_source_provider,
             previous_review_html_path=settings.previous_review_html_path,
+            evidence_store=_evidence_store(),
         )
         if report_kind == "midday":
             result = generator.generate_midday_report(request.trade_date)

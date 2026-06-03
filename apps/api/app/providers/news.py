@@ -14,6 +14,12 @@ class SectorNewsResult(BaseModel):
     status: ProviderStatus
 
 
+class NewsSearchResult(BaseModel):
+    query: str
+    items: list[NewsItem]
+    status: ProviderStatus
+
+
 def _provider_name(provider: object, default: str) -> str:
     value = getattr(provider, "provider_name", default)
     return value if isinstance(value, str) and value else default
@@ -36,6 +42,12 @@ class FakeNewsProvider:
                 matched_sector=sector_name,
                 weight=0.8,
             )
+        ]
+
+    def search_news(self, query: str, trade_date: str) -> list[NewsItem]:
+        return [
+            item.model_copy(update={"matched_sector": None})
+            for item in self.search_sector_news(query, trade_date)
         ]
 
 
@@ -70,6 +82,12 @@ class AnspireNewsProvider:
         self.close()
 
     def search_sector_news(self, sector_name: str, trade_date: str) -> list[NewsItem]:
+        return [
+            item.model_copy(update={"matched_sector": sector_name})
+            for item in self.search_news(f"{sector_name} A股", trade_date)
+        ]
+
+    def search_news(self, query: str, trade_date: str) -> list[NewsItem]:
         if not self.api_key:
             raise ProviderFallbackError("ANSPIRE_API_KEY 未配置")
 
@@ -80,7 +98,7 @@ class AnspireNewsProvider:
                 self.base_url,
                 headers={"Authorization": f"Bearer {self.api_key}"},
                 params={
-                    "query": f"{sector_name} A股",
+                    "query": query,
                     "top_k": self.top_k,
                     "FromTime": from_time.isoformat(),
                     "ToTime": to_time.isoformat(),
@@ -90,8 +108,6 @@ class AnspireNewsProvider:
             response.raise_for_status()
         except httpx.TimeoutException as exc:
             raise ProviderFallbackError("Anspire 请求超时") from exc
-        except ProviderFallbackError as exc:
-            raise ProviderFallbackError(self._safe_request_error(exc)) from exc
         except httpx.HTTPStatusError as exc:
             status_code = exc.response.status_code if exc.response is not None else None
             raise ProviderFallbackError(self._safe_http_status_error(status_code)) from exc
@@ -107,7 +123,7 @@ class AnspireNewsProvider:
         if not raw_items:
             raise ProviderFallbackError("Anspire 无结果")
 
-        return [self._to_news_item(raw_item, sector_name) for raw_item in raw_items[: self.top_k]]
+        return [self._to_news_item(raw_item, None) for raw_item in raw_items[: self.top_k]]
 
     def _extract_items(self, payload: object) -> list[dict[str, Any]]:
         if not isinstance(payload, dict):
@@ -128,7 +144,7 @@ class AnspireNewsProvider:
             raise ProviderFallbackError("Anspire 响应结构异常")
         return [item for item in data if isinstance(item, dict)]
 
-    def _to_news_item(self, raw_item: dict[str, Any], sector_name: str) -> NewsItem:
+    def _to_news_item(self, raw_item: dict[str, Any], sector_name: str | None) -> NewsItem:
         title = str(raw_item.get("title") or raw_item.get("name") or "未命名新闻")
         url = str(raw_item.get("url") or raw_item.get("link") or "")
         summary = str(raw_item.get("summary") or raw_item.get("snippet") or raw_item.get("content") or title)
@@ -200,6 +216,51 @@ class FallbackNewsProvider:
 
         return SectorNewsResult(
             sector=sector_name,
+            items=items,
+            status=ProviderStatus(
+                provider=provider,
+                status="success",
+                fallback_used=False,
+                reason=None,
+            ),
+        )
+
+    def search_news_with_status(self, query: str, trade_date: str) -> NewsSearchResult:
+        provider = _provider_name(self.primary, "news")
+        try:
+            search_news = getattr(self.primary, "search_news", None)
+            if callable(search_news):
+                items = search_news(query, trade_date)
+            else:
+                items = [
+                    item.model_copy(update={"matched_sector": None})
+                    for item in self.primary.search_sector_news(query, trade_date)
+                ]
+        except Exception as exc:
+            reason = str(exc) or exc.__class__.__name__
+            if not self.fallback_enabled:
+                raise
+            fallback_search_news = getattr(self.fallback, "search_news", None)
+            if callable(fallback_search_news):
+                fallback_items = fallback_search_news(query, trade_date)
+            else:
+                fallback_items = [
+                    item.model_copy(update={"matched_sector": None})
+                    for item in self.fallback.search_sector_news(query, trade_date)
+                ]
+            return NewsSearchResult(
+                query=query,
+                items=fallback_items,
+                status=ProviderStatus(
+                    provider=provider,
+                    status="fallback",
+                    fallback_used=True,
+                    reason=reason,
+                ),
+            )
+
+        return NewsSearchResult(
+            query=query,
             items=items,
             status=ProviderStatus(
                 provider=provider,

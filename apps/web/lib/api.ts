@@ -1,7 +1,15 @@
 import type {
   ConfigStatusResponse,
   CreateReportResponse,
+  DataSourceOptionsResponse,
+  DataSourceOptionsUpdate,
   DeleteReportResponse,
+  EvidenceCandidateResponse,
+  EvidenceItem,
+  EvidenceListResponse,
+  EvidenceParsePreview,
+  ReportScheduleStatus,
+  ReportScheduleUpdate,
   ReportKind,
   ReportListResponse,
   WatchlistImportResult,
@@ -71,6 +79,50 @@ export async function getConfigStatus(): Promise<ConfigStatusResponse> {
   return response.json() as Promise<ConfigStatusResponse>;
 }
 
+export async function getReportScheduleStatus(): Promise<ReportScheduleStatus> {
+  const response = await fetch(`${API_BASE_URL}/api/report-schedule/status`);
+  if (!response.ok) {
+    throw new Error(`读取定时生成状态失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<ReportScheduleStatus>;
+}
+
+export async function updateReportScheduleStatus(
+  payload: ReportScheduleUpdate,
+): Promise<ReportScheduleStatus> {
+  const response = await fetch(`${API_BASE_URL}/api/report-schedule/status`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(`保存定时生成状态失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<ReportScheduleStatus>;
+}
+
+export async function getDataSourceOptions(): Promise<DataSourceOptionsResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/data-sources/options`);
+  if (!response.ok) {
+    throw new Error(`读取数据源选项失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<DataSourceOptionsResponse>;
+}
+
+export async function updateDataSourceOptions(
+  payload: DataSourceOptionsUpdate,
+): Promise<DataSourceOptionsResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/data-sources/options`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(`保存数据源选项失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<DataSourceOptionsResponse>;
+}
+
 export function reportAssetUrl(path: string): string {
   if (path.startsWith("http://") || path.startsWith("https://")) {
     return path;
@@ -129,4 +181,52 @@ export async function confirmWatchlistOcr(previewId: string): Promise<WatchlistI
     throw new Error(`OCR 导入失败：${response.status} ${await response.text()}`);
   }
   return response.json() as Promise<WatchlistImportResult>;
+}
+
+export async function parseEvidencePreview(content: string): Promise<EvidenceParsePreview> {
+  const response = await fetch(`${API_BASE_URL}/api/evidence/parse-preview`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content }),
+  });
+  if (!response.ok) {
+    throw new Error(`解析证据失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<EvidenceParsePreview>;
+}
+
+export async function listEvidence(tradeDate: string): Promise<EvidenceListResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/evidence?trade_date=${encodeURIComponent(tradeDate)}&status=verified`);
+  if (!response.ok) {
+    throw new Error(`读取证据失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<EvidenceListResponse>;
+}
+
+export async function saveEvidenceItems(items: EvidenceItem[]): Promise<EvidenceListResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/evidence`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ items }),
+  });
+  if (!response.ok) {
+    throw new Error(`保存证据失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<EvidenceListResponse>;
+}
+
+export async function searchEvidenceCandidates(
+  tradeDate: string,
+  task: string,
+  query = "",
+): Promise<EvidenceCandidateResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/evidence/anspire-candidates`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ trade_date: tradeDate, task, query }),
+  });
+  if (!response.ok) {
+    throw new Error(`搜索候选证据失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<EvidenceCandidateResponse>;
 }

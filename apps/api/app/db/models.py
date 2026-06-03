@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, Enum, ForeignKey, Integer, String
+from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, Integer, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -50,6 +50,44 @@ class Report(Base):
     )
 
 
+class RuntimeProviderConfig(Base):
+    __tablename__ = "runtime_provider_config"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    market_provider: Mapped[str] = mapped_column(String(64))
+    news_provider: Mapped[str] = mapped_column(String(64))
+    review_sources: Mapped[list[str]] = mapped_column(JSON, default=list)
+    fallback_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+
+class ReportScheduleConfig(Base):
+    __tablename__ = "report_schedule_config"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    kind: Mapped[str] = mapped_column(String(16), default="close")
+    time: Mapped[str] = mapped_column(String(5), default="19:00")
+    timezone: Mapped[str] = mapped_column(String(64), default="Asia/Shanghai")
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_result: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+
 class WatchlistImport(Base):
     __tablename__ = "watchlist_imports"
 
@@ -80,3 +118,30 @@ class WatchlistItemModel(Base):
     name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     display_order: Mapped[int] = mapped_column(Integer)
     import_record: Mapped[WatchlistImport] = relationship(back_populates="items")
+
+
+class EvidenceRecord(Base):
+    __tablename__ = "evidence_records"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    evidence_id: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    trade_date: Mapped[str] = mapped_column(String(10), index=True)
+    source: Mapped[str] = mapped_column(String(128))
+    title: Mapped[str] = mapped_column(String(512))
+    url: Mapped[str] = mapped_column(String(1024))
+    published_at: Mapped[str] = mapped_column(String(64))
+    category: Mapped[str] = mapped_column(String(32), index=True)
+    claim: Mapped[str] = mapped_column(String(1024))
+    numbers: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    related_sectors: Mapped[list[str]] = mapped_column(JSON, default=list)
+    confidence: Mapped[str] = mapped_column(String(16), index=True)
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    manual_confirmed: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )

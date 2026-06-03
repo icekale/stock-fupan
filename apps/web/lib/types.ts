@@ -243,7 +243,7 @@ export type DeleteReportResponse = {
   id: number;
 };
 
-export type ConfigStatusState = "ready" | "missing_key" | "disabled" | "local";
+export type ConfigStatusState = "ready" | "missing_key" | "disabled" | "local" | "experimental";
 
 export type ConfigStatusItem = {
   name: string;
@@ -256,4 +256,116 @@ export type ConfigStatusItem = {
 
 export type ConfigStatusResponse = {
   items: ConfigStatusItem[];
+};
+
+export type ReportScheduleLastResult = {
+  status: string;
+  trade_date: string;
+  kind: ReportKind;
+};
+
+export type ReportScheduleStatus = {
+  enabled: boolean;
+  kind: ReportKind;
+  time: string;
+  timezone: string;
+  next_run_at: string | null;
+  last_run_at: string | null;
+  last_result: ReportScheduleLastResult | null;
+};
+
+export type ReportScheduleUpdate = {
+  enabled: boolean;
+  time: string;
+  timezone: string;
+};
+
+export type EvidenceCategory =
+  | "capital_flow"
+  | "catalyst"
+  | "market_sentiment"
+  | "limit_up"
+  | "risk"
+  | "policy"
+  | "earnings";
+
+export type EvidenceConfidence = "high" | "medium" | "low";
+export type EvidenceStatus = "candidate" | "draft" | "verified";
+
+export type EvidenceItem = {
+  id?: string;
+  trade_date: string;
+  source: string;
+  title: string;
+  url: string;
+  published_at: string;
+  category: EvidenceCategory;
+  claim: string;
+  numbers: Record<string, unknown>;
+  related_sectors: string[];
+  confidence: EvidenceConfidence;
+  status: EvidenceStatus;
+  manual_confirmed: boolean;
+};
+
+export type EvidencePreviewItem = {
+  raw: Record<string, unknown> | string;
+  item: EvidenceItem | null;
+  errors: string[];
+};
+
+export type EvidenceParsePreview = {
+  items: EvidencePreviewItem[];
+  valid_count: number;
+  invalid_count: number;
+};
+
+export type EvidenceListResponse = {
+  items: EvidenceItem[];
+};
+
+export type EvidenceCandidateResponse = {
+  items: EvidencePreviewItem[];
+  provider_status: ProviderStatus;
+};
+
+export type DataSourceSelectionMode = "single" | "multiple";
+
+export type DataSourceOptionItem = {
+  key: string;
+  label: string;
+  role: string;
+  configured: boolean;
+  enabled: boolean;
+  status: ConfigStatusState;
+  requires_key: boolean;
+  experimental: boolean;
+  detail: string;
+};
+
+export type DataSourceOptionCategory = {
+  key: "market_provider" | "news_provider" | "review_sources";
+  label: string;
+  selection: DataSourceSelectionMode;
+  options: DataSourceOptionItem[];
+};
+
+export type DataSourceOptionsCurrent = {
+  market_provider: string;
+  news_provider: string;
+  review_sources: string[];
+  fallback_enabled: boolean;
+  updated_at: string | null;
+};
+
+export type DataSourceOptionsResponse = {
+  current: DataSourceOptionsCurrent;
+  categories: DataSourceOptionCategory[];
+};
+
+export type DataSourceOptionsUpdate = {
+  market_provider: string;
+  news_provider: string;
+  review_sources: string[];
+  fallback_enabled: boolean;
 };

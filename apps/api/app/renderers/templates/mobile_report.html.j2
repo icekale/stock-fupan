@@ -620,8 +620,81 @@
 
     <hr class="divider">
 
+    <div class="summary-board">
+      <div class="summary-main">
+        <div class="summary-eyebrow">今日结论</div>
+        <div class="summary-headline">
+          {% if structured.evidence_conclusion %}
+            {{ structured.evidence_conclusion.summary }}
+          {% elif structured.practical_conclusion.headline %}
+            {{ structured.practical_conclusion.headline }}
+          {% else %}
+            {{ report.narrative.conclusion }}
+          {% endif %}
+        </div>
+      </div>
+      <div class="summary-side">
+        <div class="summary-eyebrow">明日观察</div>
+        <ul class="compact-list">
+          {% if structured.next_session_strategy and structured.next_session_strategy.focus %}
+            {% for item in structured.next_session_strategy.focus[:3] %}
+              <li>{{ item }}</li>
+            {% endfor %}
+          {% else %}
+            {% for item in structured.tomorrow_judgement.operating_focus[:3] %}
+              <li>{{ item }}</li>
+            {% endfor %}
+          {% endif %}
+        </ul>
+      </div>
+    </div>
+    <div class="metric-grid">
+      <div class="metric-card">
+        <div class="metric-label">盘面温度</div>
+        <div class="metric-value">{{ structured.tomorrow_judgement.core_view }}</div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">结构标签</div>
+        <div class="metric-value">
+          {% if structured.market_overview.structure_features %}
+            {{ structured.market_overview.structure_features|join(" / ") }}
+          {% else %}
+            {{ report.market_state_tags|join(" / ") }}
+          {% endif %}
+        </div>
+      </div>
+      <div class="metric-card">
+        <div class="metric-label">主线观察</div>
+        <div class="metric-value">{{ structured.tomorrow_judgement.most_likely_to_continue }}</div>
+      </div>
+    </div>
+
+    <span class="section-num">ZERO</span>
+    <h2 class="section-title">今日核心结论</h2>
+    {% if structured.evidence_conclusion %}
+      <div class="key-insight">
+        <div class="ki-title">一句话总结</div>
+        <p>{{ structured.evidence_conclusion.summary }}</p>
+      </div>
+      <div class="sector-grid">
+        {% for signal in structured.evidence_conclusion.signals %}
+          <div class="insight-card">
+            <div class="insight-label">{{ signal.label }}</div>
+            <p>{{ signal.summary }}</p>
+            {% if signal.evidence_ids %}
+              <p class="muted">证据：{{ signal.evidence_ids|join("、") }}</p>
+            {% else %}
+              <p class="muted">证据不足，待确认。</p>
+            {% endif %}
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <div class="conclusion-box"><p>{{ report.narrative.conclusion }}</p></div>
+    {% endif %}
+
     <span class="section-num">ONE</span>
-    <h2 class="section-title">核心结论</h2>
+    <h2 class="section-title">指数与市场情绪</h2>
     {% if structured.market_phase %}
       <div class="key-insight">
         <div class="ki-title">市场阶段 · {{ market_phase_labels.get(structured.market_phase.phase, structured.market_phase.phase) }}</div>
@@ -638,9 +711,6 @@
     {% else %}
       <div class="conclusion-box"><p>{{ report.narrative.conclusion }}</p></div>
     {% endif %}
-
-    <span class="section-num">TWO</span>
-    <h2 class="section-title">指数与市场情绪</h2>
 
     <div class="metric-grid">
       {% for row in structured.market_overview.emotion_rows %}
@@ -699,7 +769,7 @@
     </div>
 
     {% if structured.prediction_verifications %}
-      <span class="section-num">THREE</span>
+      <span class="section-num">TWO</span>
       <h2 class="section-title">昨日预判验证</h2>
       <p class="muted">逐条验证昨日判断，避免被单日情绪带偏。</p>
       <div class="table-wrap">
@@ -722,8 +792,8 @@
       </div>
     {% endif %}
 
-    <span class="section-num">FOUR</span>
-    <h2 class="section-title">板块详细分析</h2>
+    <span class="section-num">THREE</span>
+    <h2 class="section-title">板块深度分析 / 板块详细分析</h2>
     {% for sector in structured.sector_deep_dives %}
       <article class="sector-block">
         <h3 class="section-subtitle">{{ loop.index }}. {{ sector.sector }} <span class="tag tag-gold">{{ rating_labels.get(sector.rating, sector.rating) }}</span></h3>
@@ -731,6 +801,11 @@
           <span><strong>阶段：</strong>{{ sector_stage_labels.get(sector.stage, sector.stage) }}</span>
           <span><strong>梯队：</strong>{{ sector.team_structure }}</span>
         </div>
+        {% if sector.evidence_ids %}
+          <p class="muted">证据：{{ sector.evidence_ids|join("、") }}</p>
+        {% else %}
+          <p class="muted">证据不足，强判断已降级。</p>
+        {% endif %}
         <div class="sector-grid">
           <div class="insight-card">
             <div class="insight-label">催化与逻辑</div>
@@ -754,8 +829,36 @@
       </article>
     {% endfor %}
 
-    <span class="section-num">5</span>
-    <h2 class="section-title">资金轮动路径</h2>
+    {% if structured.historical_theme_reviews %}
+      <h3 class="section-subtitle">前期强势主线跟踪</h3>
+      {% for item in structured.historical_theme_reviews %}
+        <div class="card">
+          <p><strong>{{ item.theme }}</strong> · {{ item.judgement }}</p>
+          <p class="muted">{{ item.previous_status }} / {{ item.current_status }}</p>
+          {% if item.evidence %}
+            <ul class="compact-list">
+              {% for evidence in item.evidence %}
+                <li>{{ evidence }}</li>
+              {% endfor %}
+            </ul>
+          {% endif %}
+          {% if item.current_stock_checks %}
+            <h4 class="section-sub-subtitle">当日核心股校验</h4>
+            <ul class="compact-list">
+              {% for check in item.current_stock_checks %}
+                <li>{{ check }}</li>
+              {% endfor %}
+            </ul>
+          {% endif %}
+          {% if item.watch_items %}
+            <p class="muted">{{ item.watch_items|join("；") }}</p>
+          {% endif %}
+        </div>
+      {% endfor %}
+    {% endif %}
+
+    <span class="section-num">FOUR</span>
+    <h2 class="section-title">资金轮动全景 / 资金轮动路径</h2>
     {% if structured.capital_rotation_v2 %}
       <div class="path-flow">
         {% for item in structured.capital_rotation_v2.path %}
@@ -775,11 +878,11 @@
 
     {% if structured.sustainability_ranking %}
       <hr class="divider">
-      <span class="section-num">6</span>
+      <span class="section-num">FIVE</span>
       <h2 class="section-title">板块持续性排序</h2>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>排序</th><th>方向</th><th>评级</th><th>核心理由</th></tr></thead>
+          <thead><tr><th>排序</th><th>方向</th><th>评级</th><th>核心理由</th><th>证据</th></tr></thead>
           <tbody>
             {% for item in structured.sustainability_ranking %}
               <tr>
@@ -795,6 +898,7 @@
                   {% endif %}
                 </td>
                 <td style="text-align:left;">{{ item.reason }}</td>
+                <td style="text-align:left;">{{ item.evidence_ids|join("、") if item.evidence_ids else "证据不足" }}</td>
               </tr>
             {% endfor %}
           </tbody>
@@ -804,8 +908,13 @@
 
     {% if structured.next_session_strategy %}
       <hr class="divider">
-      <span class="section-num">7</span>
+      <span class="section-num">SIX</span>
       <h2 class="section-title">明日操作思路</h2>
+      {% if structured.next_session_strategy.evidence_ids %}
+        <p class="muted">证据：{{ structured.next_session_strategy.evidence_ids|join("、") }}</p>
+      {% else %}
+        <p class="muted">证据不足，操作思路保持观察优先。</p>
+      {% endif %}
       <div class="sector-grid">
         <div class="insight-card"><div class="insight-label">重点关注</div><ul class="compact-list">{% for item in structured.next_session_strategy.focus %}<li>{{ item }}</li>{% endfor %}</ul></div>
         <div class="insight-card"><div class="insight-label">谨慎观察</div><ul class="compact-list">{% for item in structured.next_session_strategy.observe %}<li>{{ item }}</li>{% endfor %}</ul></div>
@@ -929,8 +1038,8 @@
 
     <hr class="divider">
 
-    <span class="section-num">12</span>
-    <h2 class="section-title">上证指数中期走势研判</h2>
+    <span class="section-num">SEVEN</span>
+    <h2 class="section-title">中期研判 / 上证指数中期走势研判</h2>
 
     <h3 class="section-subtitle">年度走势回顾与规律提取</h3>
     <div class="card">
@@ -954,6 +1063,7 @@
         </tbody>
       </table>
     </div>
+
   {% else %}
     <div class="preamble">
       <strong>结构复盘：</strong>{{ report.narrative.conclusion }}
@@ -992,9 +1102,25 @@
     <div class="footer-disclaimer">{{ brand_footer }}</div>
   {% endif %}
 
+  {% if report.evidence %}
+    <div class="footer-sources">
+      <p style="font-weight:600; margin-bottom:6px;">已验证证据</p>
+      <div class="source-grid">
+        {% for item in report.evidence[:8] %}
+          <div class="source-item">
+            <div class="source-name">
+              {% if item.url %}<a href="{{ item.url }}">{{ item.title }}</a>{% else %}{{ item.title }}{% endif %}
+            </div>
+            <div class="source-meta">{{ item.id }} · {{ item.source }} · {{ item.category }}</div>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+
   {% if report.news %}
     <div class="footer-sources">
-      <p style="font-weight:600; margin-bottom:6px;">主要来源</p>
+      <p style="font-weight:600; margin-bottom:6px;">主要信息来源</p>
       <div class="source-grid">
         {% for item in report.news[:8] %}
           <div class="source-item">
