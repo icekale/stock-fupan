@@ -137,6 +137,16 @@ def evaluate_quality_gate(
                 {"penalty": 15},
             )
         )
+    if _has_failed_dragon_tiger_source(provider_status):
+        score -= 5
+        warnings.append(
+            _issue(
+                "dragon_tiger_source_failed",
+                "warning",
+                "龙虎榜源失败，情绪资金确认降级",
+                {"penalty": 5},
+            )
+        )
 
     catalyst_missing_count = sum(1 for sector in report.sectors[:3] if not sector.news_summaries)
     if catalyst_missing_count:
@@ -254,6 +264,15 @@ def _has_failed_board_rank_source(provider_status: dict[str, object]) -> bool:
         source = str(_as_dict(item).get("source", ""))
         status = str(_as_dict(item).get("status", ""))
         if "板块排名" in source and status != "success":
+            return True
+    return False
+
+
+def _has_failed_dragon_tiger_source(provider_status: dict[str, object]) -> bool:
+    for item in _as_list(provider_status.get("review_sources")):
+        source = str(_as_dict(item).get("source", ""))
+        status = str(_as_dict(item).get("status", ""))
+        if "龙虎榜" in source and status not in {"success", "disabled"}:
             return True
     return False
 
