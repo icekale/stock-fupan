@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from app.providers.llm import FakeLLMProvider, LLMFallbackError
@@ -479,6 +481,14 @@ def test_build_structured_review_localizes_medium_dragon_tiger_sentiment() -> No
     review = build_structured_review(report)
 
     assert {"label": "龙虎榜", "value": "中 / normal"} in review.market_overview.emotion_rows
+
+
+def test_mobile_template_contains_compact_dragon_tiger_section() -> None:
+    template = Path("app/renderers/templates/mobile_report.html.j2").read_text(encoding="utf-8")
+
+    assert "龙虎榜情绪确认" in template
+    assert "report.dragon_tiger" in template
+    assert "top_net_buy[:3]" in template
 
 
 def test_build_structured_review_adds_v2_capital_rotation_and_strategy() -> None:
