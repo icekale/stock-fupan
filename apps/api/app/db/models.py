@@ -69,6 +69,26 @@ class RuntimeProviderConfig(Base):
     )
 
 
+class ReportScheduleConfig(Base):
+    __tablename__ = "report_schedule_config"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False)
+    kind: Mapped[str] = mapped_column(String(16), default="close")
+    time: Mapped[str] = mapped_column(String(5), default="19:00")
+    timezone: Mapped[str] = mapped_column(String(64), default="Asia/Shanghai")
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_result: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+
 class WatchlistImport(Base):
     __tablename__ = "watchlist_imports"
 

@@ -263,6 +263,29 @@ export type ConfigStatusResponse = {
   items: ConfigStatusItem[];
 };
 
+export type ReportScheduleLastResult = {
+  status: string;
+  trade_date: string;
+  kind: ReportKind;
+  reason?: string;
+};
+
+export type ReportScheduleStatus = {
+  enabled: boolean;
+  kind: "close";
+  time: string;
+  timezone: string;
+  next_run_at: string | null;
+  last_run_at: string | null;
+  last_result: ReportScheduleLastResult | null;
+};
+
+export type ReportScheduleUpdate = {
+  enabled: boolean;
+  time: string;
+  timezone: string;
+};
+
 export type DataSourceSelectionMode = "single" | "multiple";
 
 export type DataSourceOptionItem = {

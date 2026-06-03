@@ -1,10 +1,13 @@
 from collections.abc import AsyncIterator
+import asyncio
 from contextlib import asynccontextmanager
+from contextlib import suppress
 from datetime import UTC, date, timedelta
+import logging
 from pathlib import Path
 import shutil
 from urllib.parse import quote
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,6 +28,12 @@ from app.providers.runtime_config import (
 )
 from app.services.assets import report_kind_label
 from app.services.report_generator import ReportGenerator
+from app.services.report_schedule import (
+    ReportScheduleUpdate,
+    get_report_schedule_status,
+    run_due_report_schedule,
+    update_report_schedule_status,
+)
 from app.services.weekly_report_generator import (
     TickFlowWeeklyDataClient,
     WeeklyGeneratedReport,
@@ -52,6 +61,12 @@ class ConfirmOcrPreviewRequest(BaseModel):
     preview_id: str
 
 
+class ReportScheduleRequest(BaseModel):
+    enabled: bool
+    time: str = "19:00"
+    timezone: str = "Asia/Shanghai"
+
+
 def _status_item(
     name: str,
     role: str,
@@ -75,7 +90,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     engine = get_engine()
     init_db(engine)
     app.state.engine = engine
-    yield
+    app.state.report_schedule_task = asyncio.create_task(_report_schedule_loop())
+    try:
+        yield
+    finally:
+        app.state.report_schedule_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await app.state.report_schedule_task
 
 
 def _cors_allow_origins() -> list[str]:
@@ -92,6 +113,7 @@ app.add_middleware(
 )
 
 CHINA_TZ = ZoneInfo("Asia/Shanghai")
+logger = logging.getLogger(__name__)
 
 
 @app.get("/health")
@@ -115,6 +137,43 @@ def _watchlist_ocr_service() -> WatchlistOcrService:
         ocr_provider=providers.ocr_provider,
         import_service=_watchlist_service(),
     )
+
+
+async def _report_schedule_loop() -> None:
+    while True:
+        await asyncio.sleep(60)
+        try:
+            await asyncio.to_thread(_run_report_schedule_once)
+        except Exception:
+            logger.exception("report schedule tick failed")
+
+
+def _run_report_schedule_once() -> dict[str, object]:
+    settings = get_settings()
+    return run_due_report_schedule(
+        engine=app.state.engine,
+        settings=settings,
+        generate_close_report=lambda trade_date: _generate_scheduled_close_report(trade_date, settings),
+    )
+
+
+def _generate_scheduled_close_report(trade_date: str, settings: object):
+    runtime_config = get_runtime_provider_config(app.state.engine, settings)
+    with create_provider_bundle(settings, runtime_config=runtime_config) as providers:
+        generator = ReportGenerator(
+            reports_root=Path(settings.reports_root),
+            market_provider=providers.market_provider,
+            news_provider=providers.news_provider,
+            llm_provider=providers.llm_provider,
+            structured_review_provider=settings.structured_review_provider,
+            structured_review_fallback_enabled=settings.structured_review_fallback_enabled,
+            watchlist_service=_watchlist_service(),
+            tickflow_provider=providers.tickflow_provider,
+            watchlist_enabled=settings.report_watchlist_enabled,
+            review_source_provider=providers.review_source_provider,
+            previous_review_html_path=settings.previous_review_html_path,
+        )
+        return generator.generate_close_report(trade_date)
 
 
 @app.post("/api/watchlists/import-text")
@@ -280,6 +339,24 @@ def delete_report(report_id: int) -> dict[str, object]:
     if asset_dir.exists():
         shutil.rmtree(asset_dir)
     return {"deleted": True, "id": report_id}
+
+
+@app.get("/api/report-schedule/status")
+def report_schedule_status() -> dict[str, object]:
+    return get_report_schedule_status(app.state.engine, get_settings())
+
+
+@app.put("/api/report-schedule/status")
+def update_report_schedule(request: ReportScheduleRequest) -> dict[str, object]:
+    try:
+        update = ReportScheduleUpdate(
+            enabled=request.enabled,
+            time=request.time,
+            timezone=request.timezone,
+        )
+        return update_report_schedule_status(app.state.engine, get_settings(), update)
+    except (ValueError, ZoneInfoNotFoundError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/api/reports/close")
