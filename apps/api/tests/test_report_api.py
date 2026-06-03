@@ -24,7 +24,14 @@ from app.providers.tickflow import FakeTickFlowProvider, WatchlistQuote
 from app.renderers.html_renderer import render_mobile_report_html
 from app.rules.scoring import score_sectors
 from app.rules.validation import validate_narrative_facts
-from app.schemas.report import IndexSnapshot, ReportDTO, ReportKind, SectorCandidate
+from app.schemas.report import (
+    DragonTigerStock,
+    DragonTigerSummary,
+    IndexSnapshot,
+    ReportDTO,
+    ReportKind,
+    SectorCandidate,
+)
 from app.services import report_generator as report_generator_module
 from app.services.assets import AssetPaths
 from app.services.assets import write_json
@@ -599,6 +606,67 @@ def test_report_generator_writes_snapshot_files(tmp_path: Path) -> None:
     snapshot = json.loads(result.assets.snapshot.read_text(encoding="utf-8"))
     assert report_dto["quality_gate"]["publish_status"] == "blocked"
     assert snapshot["quality_gate"] == report_dto["quality_gate"]
+
+
+def test_report_generator_persists_dragon_tiger_summary(tmp_path: Path) -> None:
+    dragon_summary = DragonTigerSummary(
+        trade_date="2026-06-03",
+        status="success",
+        total_records=91,
+        positive_net_count=55,
+        negative_net_count=36,
+        net_buy_total_wan=268081.1,
+        sentiment="strong",
+        strength="high",
+        conclusion="龙虎榜净买集中在通富微电、亨通光电。",
+        top_net_buy=[
+            DragonTigerStock(
+                code="002156",
+                name="通富微电",
+                reason="日涨幅偏离值达到7%的前5只证券",
+                net_buy_wan=162241.5,
+                buy_wan=250982.5,
+                sell_wan=88740.9,
+                tags=["龙虎榜"],
+            )
+        ],
+        top_net_sell=[],
+        highlighted_stocks=[],
+    )
+
+    class FakeDragonTigerSource:
+        def collect(self, trade_date: str):
+            return [
+                ReviewSourceResult(
+                    source="a-stock-data 东财龙虎榜",
+                    source_url="https://data.eastmoney.com/stock/lhb.html",
+                    status="success",
+                    trade_date=trade_date,
+                    market_notes=["龙虎榜情绪strong，攻击强度high。"],
+                    dragon_tiger=dragon_summary,
+                )
+            ]
+
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=FakeMarketDataProvider(),
+        news_provider=FakeNewsProvider(),
+        llm_provider=FakeLLMProvider(),
+        review_source_provider=FakeDragonTigerSource(),
+    )
+
+    result = generator.generate_close_report("2026-06-03")
+    snapshot = json.loads(result.assets.snapshot.read_text(encoding="utf-8"))
+    report_dto = json.loads(result.assets.report_dto.read_text(encoding="utf-8"))
+
+    assert result.report.dragon_tiger is not None
+    assert result.report.dragon_tiger.total_records == 91
+    assert snapshot["report"]["dragon_tiger"]["top_net_buy"][0]["name"] == "通富微电"
+    assert report_dto["dragon_tiger"]["sentiment"] == "strong"
+    dragon_status = next(
+        item for item in result.provider_status["review_sources"] if item["source"] == "a-stock-data 东财龙虎榜"
+    )
+    assert dragon_status["record_count"] == 91
 
 
 def test_report_generator_writes_named_close_report_files(tmp_path: Path) -> None:

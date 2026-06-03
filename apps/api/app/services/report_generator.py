@@ -161,6 +161,7 @@ class ReportGenerator:
             )
             for scored in scored_sectors
         ]
+        dragon_tiger_summary = _dragon_tiger_summary(review_source_results)
 
         report = ReportDTO(
             trade_date=trade_date,
@@ -173,6 +174,7 @@ class ReportGenerator:
             sectors=sector_candidates,
             narrative=narrative,
             news=news_items,
+            dragon_tiger=dragon_tiger_summary,
         )
         report.next_day_predictions = build_next_day_predictions(
             report=report,
@@ -535,8 +537,17 @@ def _dedupe_stock_candidates(stocks: list[StockCandidate]) -> list[StockCandidat
     return output[:8]
 
 
+def _dragon_tiger_summary(results: list[ReviewSourceResult]):
+    for result in results:
+        summary = getattr(result, "dragon_tiger", None)
+        if summary is not None:
+            return summary
+    return None
+
+
 def _review_source_status(result: ReviewSourceResult) -> dict[str, object]:
-    return {
+    dragon_tiger = getattr(result, "dragon_tiger", None)
+    payload = {
         "source": result.source,
         "source_url": result.source_url,
         "status": result.status,
@@ -544,3 +555,16 @@ def _review_source_status(result: ReviewSourceResult) -> dict[str, object]:
         "theme_count": len(result.themes),
         "hot_stock_count": len(result.hot_stocks),
     }
+    if dragon_tiger is not None:
+        payload.update(
+            {
+                "record_count": dragon_tiger.total_records,
+                "seat_detail_count": sum(
+                    len(stock.seats_buy) + len(stock.seats_sell)
+                    for stock in [*dragon_tiger.top_net_buy, *dragon_tiger.top_net_sell]
+                ),
+                "dragon_tiger_sentiment": dragon_tiger.sentiment,
+                "dragon_tiger_strength": dragon_tiger.strength,
+            }
+        )
+    return payload
