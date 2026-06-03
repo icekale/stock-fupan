@@ -10,6 +10,7 @@ from app.providers.easy_tdx import EasyTdxMarketDataProvider
 from app.providers.llm import FakeLLMProvider, LLMProvider, OpenAILLMProvider
 from app.providers.market import (
     FakeMarketDataProvider,
+    FallbackMarketDataProvider,
     MarketDataProvider,
 )
 from app.providers.news import AnspireNewsProvider, FakeNewsProvider, FallbackNewsProvider, NewsProvider
@@ -89,17 +90,28 @@ def _create_market_provider(
     runtime_config: RuntimeProviderConfigState | None = None,
 ) -> MarketDataProvider:
     market_provider = str(_runtime_value(runtime_config, "market_provider", settings.market_provider))
+    fallback_enabled = bool(
+        _runtime_value(runtime_config, "fallback_enabled", settings.provider_fallback_enabled)
+    )
     if market_provider == "fake":
         return FakeMarketDataProvider()
     if market_provider == "tickflow":
-        return TickFlowMarketDataProvider(
-            api_key=settings.tickflow_api_key,
-            base_url=settings.tickflow_base_url,
-            timeout_seconds=settings.provider_timeout_seconds,
+        primary = _tickflow_market_provider(settings)
+        if not fallback_enabled:
+            return primary
+        return FallbackMarketDataProvider(
+            primary=primary,
+            fallback=_easy_tdx_market_provider(settings),
+            fallback_enabled=True,
         )
     if market_provider == "easy_tdx":
-        return EasyTdxMarketDataProvider(
-            timeout_seconds=settings.provider_timeout_seconds,
+        primary = _easy_tdx_market_provider(settings)
+        if not fallback_enabled:
+            return primary
+        return FallbackMarketDataProvider(
+            primary=primary,
+            fallback=_tickflow_market_provider(settings),
+            fallback_enabled=True,
         )
     raise ValueError(f"Unsupported MARKET_PROVIDER: {market_provider}")
 
@@ -116,25 +128,47 @@ def _create_news_provider(
         return FakeNewsProvider()
     if news_provider == "anspire":
         return FallbackNewsProvider(
-            primary=AnspireNewsProvider(
-                api_key=settings.anspire_api_key,
-                base_url=settings.anspire_base_url,
-                top_k=settings.news_top_k,
-                lookback_hours=settings.news_lookback_hours,
-                timeout_seconds=settings.provider_timeout_seconds,
-            ),
-            fallback=FakeNewsProvider(),
+            primary=_anspire_news_provider(settings),
+            fallback=_eastmoney_global_news_provider(settings),
             fallback_enabled=fallback_enabled,
         )
     if news_provider == "eastmoney_global":
         return FallbackNewsProvider(
-            primary=EastmoneyGlobalNewsProvider(
-                timeout_seconds=settings.provider_timeout_seconds,
-            ),
-            fallback=FakeNewsProvider(),
+            primary=_eastmoney_global_news_provider(settings),
+            fallback=_anspire_news_provider(settings),
             fallback_enabled=fallback_enabled,
         )
     raise ValueError(f"Unsupported NEWS_PROVIDER: {news_provider}")
+
+
+def _tickflow_market_provider(settings: Settings) -> TickFlowMarketDataProvider:
+    return TickFlowMarketDataProvider(
+        api_key=settings.tickflow_api_key,
+        base_url=settings.tickflow_base_url,
+        timeout_seconds=settings.provider_timeout_seconds,
+    )
+
+
+def _easy_tdx_market_provider(settings: Settings) -> EasyTdxMarketDataProvider:
+    return EasyTdxMarketDataProvider(
+        timeout_seconds=settings.provider_timeout_seconds,
+    )
+
+
+def _anspire_news_provider(settings: Settings) -> AnspireNewsProvider:
+    return AnspireNewsProvider(
+        api_key=settings.anspire_api_key,
+        base_url=settings.anspire_base_url,
+        top_k=settings.news_top_k,
+        lookback_hours=settings.news_lookback_hours,
+        timeout_seconds=settings.provider_timeout_seconds,
+    )
+
+
+def _eastmoney_global_news_provider(settings: Settings) -> EastmoneyGlobalNewsProvider:
+    return EastmoneyGlobalNewsProvider(
+        timeout_seconds=settings.provider_timeout_seconds,
+    )
 
 
 def _create_llm_provider(settings: Settings) -> LLMProvider:

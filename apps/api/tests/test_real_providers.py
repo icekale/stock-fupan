@@ -1,6 +1,7 @@
 import pytest
 
 from app.config import Settings
+from app.providers.a_stock_data import EastmoneyGlobalNewsProvider
 from app.providers.factory import create_provider_bundle
 from app.providers.easy_tdx import EasyTdxMarketDataProvider
 from app.providers.llm import OpenAILLMProvider
@@ -333,13 +334,77 @@ def test_provider_factory_uses_tickflow_market_without_market_fallback() -> None
     assert isinstance(bundle.news_provider.primary, AnspireNewsProvider)
 
 
+def test_provider_factory_uses_tickflow_market_with_easy_tdx_fallback() -> None:
+    settings = Settings(
+        market_provider="tickflow",
+        news_provider="fake",
+        provider_fallback_enabled=True,
+        tickflow_api_key="tk-test-local",
+    )
+
+    bundle = create_provider_bundle(settings)
+
+    assert isinstance(bundle.market_provider, FallbackMarketDataProvider)
+    assert isinstance(bundle.market_provider.primary, TickFlowMarketDataProvider)
+    assert isinstance(bundle.market_provider.fallback, EasyTdxMarketDataProvider)
+    assert bundle.market_provider.fallback_enabled is True
+
+
 def test_provider_factory_uses_easy_tdx_market_provider(monkeypatch) -> None:
     monkeypatch.setattr("app.providers.easy_tdx._create_easy_tdx_client", lambda timeout: object())
-    settings = Settings(market_provider="easy_tdx", news_provider="fake")
+    settings = Settings(market_provider="easy_tdx", news_provider="fake", provider_fallback_enabled=False)
 
     bundle = create_provider_bundle(settings)
 
     assert isinstance(bundle.market_provider, EasyTdxMarketDataProvider)
+
+
+def test_provider_factory_uses_easy_tdx_market_with_tickflow_fallback() -> None:
+    settings = Settings(
+        market_provider="easy_tdx",
+        news_provider="fake",
+        provider_fallback_enabled=True,
+        tickflow_api_key="tk-test-local",
+    )
+
+    bundle = create_provider_bundle(settings)
+
+    assert isinstance(bundle.market_provider, FallbackMarketDataProvider)
+    assert isinstance(bundle.market_provider.primary, EasyTdxMarketDataProvider)
+    assert isinstance(bundle.market_provider.fallback, TickFlowMarketDataProvider)
+    assert bundle.market_provider.fallback_enabled is True
+
+
+def test_provider_factory_uses_anspire_news_with_eastmoney_fallback() -> None:
+    settings = Settings(
+        market_provider="fake",
+        news_provider="anspire",
+        provider_fallback_enabled=True,
+        anspire_api_key="secret-key",
+    )
+
+    bundle = create_provider_bundle(settings)
+
+    assert isinstance(bundle.news_provider, FallbackNewsProvider)
+    assert isinstance(bundle.news_provider.primary, AnspireNewsProvider)
+    assert isinstance(bundle.news_provider.fallback, EastmoneyGlobalNewsProvider)
+    assert bundle.news_provider.fallback_enabled is True
+
+
+def test_provider_factory_uses_eastmoney_news_with_anspire_fallback() -> None:
+    settings = Settings(
+        market_provider="fake",
+        news_provider="eastmoney_global",
+        provider_fallback_enabled=True,
+        anspire_api_key="secret-key",
+    )
+
+    bundle = create_provider_bundle(settings)
+
+    assert isinstance(bundle.news_provider, FallbackNewsProvider)
+    assert isinstance(bundle.news_provider.primary, EastmoneyGlobalNewsProvider)
+    assert isinstance(bundle.news_provider.fallback, AnspireNewsProvider)
+    assert bundle.news_provider.fallback_enabled is True
 
 
 def test_provider_factory_can_force_fake_providers() -> None:
