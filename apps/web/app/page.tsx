@@ -6,12 +6,27 @@ import { DataSourceStatusPanel } from "../components/DataSourceStatusPanel";
 import { ReportPreview } from "../components/ReportPreview";
 import { TaskProgress } from "../components/TaskProgress";
 import { WatchlistImportPanel } from "../components/WatchlistImportPanel";
-import { createReport, deleteReport, getConfigStatus, listReports, reportAssetUrl } from "../lib/api";
+import {
+  createReport,
+  deleteReport,
+  getConfigStatus,
+  getDataSourceOptions,
+  listReports,
+  reportAssetUrl,
+  updateDataSourceOptions,
+} from "../lib/api";
 import { getLatestTradeDate } from "../lib/tradeDate";
-import type { ConfigStatusItem, CreateReportResponse, ReportKind, ReportListItem } from "../lib/types";
+import type {
+  ConfigStatusItem,
+  CreateReportResponse,
+  DataSourceOptionsCurrent,
+  DataSourceOptionsResponse,
+  ReportKind,
+  ReportListItem,
+} from "../lib/types";
 
 export default function HomePage() {
-  const [tradeDate, setTradeDate] = useState(() => getLatestTradeDate());
+  const [tradeDate, setTradeDate] = useState("");
   const [reportKind, setReportKind] = useState<ReportKind>("close");
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -19,11 +34,23 @@ export default function HomePage() {
   const [watchlistImported, setWatchlistImported] = useState(false);
   const [reports, setReports] = useState<ReportListItem[]>([]);
   const [selectedReportId, setSelectedReportId] = useState<number | null>(null);
-  const [deletingReportId, setDeletingReportId] = useState<number | null>(null);
+  const [selectedReportIds, setSelectedReportIds] = useState<number[]>([]);
+  const [deletingReportIds, setDeletingReportIds] = useState<number[]>([]);
   const [configItems, setConfigItems] = useState<ConfigStatusItem[]>([]);
+  const [dataSourceOptions, setDataSourceOptions] = useState<DataSourceOptionsResponse | null>(null);
+  const [dataSourceDraft, setDataSourceDraft] = useState<DataSourceOptionsCurrent | null>(null);
+  const [savingDataSources, setSavingDataSources] = useState(false);
+  const [dataSourceError, setDataSourceError] = useState<string | null>(null);
+  const [currentReportPage, setCurrentReportPage] = useState(1);
 
   const latestReport = reports[0];
   const selectedReport = reports.find((item) => item.id === selectedReportId) ?? null;
+  const weeklyRange = getWeeklyRange(tradeDate);
+  const reportsPerPage = 5;
+  const totalReportPages = Math.max(1, Math.ceil(reports.length / reportsPerPage));
+  const paginatedReports = reports.slice((currentReportPage - 1) * reportsPerPage, currentReportPage * reportsPerPage);
+  const selectedVisibleReportCount = paginatedReports.filter((item) => selectedReportIds.includes(item.id)).length;
+  const allVisibleReportsSelected = paginatedReports.length > 0 && selectedVisibleReportCount === paginatedReports.length;
   const readySourceCount = configItems.filter((item) => item.status === "ready" || item.status === "local").length;
   const activeStep = useMemo(() => {
     if (result) {
@@ -34,14 +61,21 @@ export default function HomePage() {
   }, [result, running]);
 
   useEffect(() => {
+    setTradeDate((currentDate) => currentDate || getLatestTradeDate());
     void refreshReports();
     void refreshConfigStatus();
+    void refreshDataSourceOptions();
   }, []);
+
+  useEffect(() => {
+    setCurrentReportPage((page) => Math.min(Math.max(page, 1), totalReportPages));
+  }, [totalReportPages]);
 
   async function refreshReports() {
     try {
       const response = await listReports();
       setReports(response.items);
+      setSelectedReportIds((currentIds) => currentIds.filter((id) => response.items.some((item) => item.id === id)));
       setSelectedReportId((currentId) => {
         if (currentId && response.items.some((item) => item.id === currentId)) {
           return currentId;
@@ -51,6 +85,7 @@ export default function HomePage() {
     } catch {
       setReports([]);
       setSelectedReportId(null);
+      setSelectedReportIds([]);
     }
   }
 
@@ -60,6 +95,19 @@ export default function HomePage() {
       setConfigItems(response.items);
     } catch {
       setConfigItems([]);
+    }
+  }
+
+  async function refreshDataSourceOptions() {
+    try {
+      const response = await getDataSourceOptions();
+      setDataSourceOptions(response);
+      setDataSourceDraft(response.current);
+      setDataSourceError(null);
+    } catch (err) {
+      setDataSourceOptions(null);
+      setDataSourceDraft(null);
+      setDataSourceError(err instanceof Error ? err.message : "读取数据源选项失败");
     }
   }
 
@@ -86,19 +134,88 @@ export default function HomePage() {
       return;
     }
 
-    setDeletingReportId(item.id);
+    setDeletingReportIds([item.id]);
     setError(null);
     try {
       await deleteReport(item.id);
       if (selectedReportId === item.id) {
         setSelectedReportId(null);
       }
+      setSelectedReportIds((currentIds) => currentIds.filter((id) => id !== item.id));
       setResult(null);
       await refreshReports();
     } catch (err) {
       setError(err instanceof Error ? err.message : "删除失败");
     } finally {
-      setDeletingReportId(null);
+      setDeletingReportIds([]);
+    }
+  }
+
+  function toggleReportSelection(reportId: number) {
+    setSelectedReportIds((currentIds) =>
+      currentIds.includes(reportId) ? currentIds.filter((id) => id !== reportId) : [...currentIds, reportId],
+    );
+  }
+
+  function selectAllVisibleReports() {
+    setSelectedReportIds((currentIds) => Array.from(new Set([...currentIds, ...paginatedReports.map((item) => item.id)])));
+  }
+
+  function clearReportSelection() {
+    setSelectedReportIds([]);
+  }
+
+  async function handleBulkDeleteReports() {
+    const selectedReports = reports.filter((item) => selectedReportIds.includes(item.id));
+    if (selectedReports.length === 0) {
+      return;
+    }
+
+    const confirmed = window.confirm(`确认删除选中的 ${selectedReports.length} 个报告吗？`);
+    if (!confirmed) {
+      return;
+    }
+
+    const idsToDelete = selectedReports.map((item) => item.id);
+    setDeletingReportIds(idsToDelete);
+    setError(null);
+    try {
+      for (const reportId of idsToDelete) {
+        await deleteReport(reportId);
+      }
+      if (selectedReportId && idsToDelete.includes(selectedReportId)) {
+        setSelectedReportId(null);
+      }
+      setSelectedReportIds([]);
+      setResult(null);
+      await refreshReports();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "批量删除失败");
+    } finally {
+      setDeletingReportIds([]);
+    }
+  }
+
+  async function handleSaveDataSources() {
+    if (!dataSourceDraft) {
+      return;
+    }
+    setSavingDataSources(true);
+    setDataSourceError(null);
+    try {
+      const response = await updateDataSourceOptions({
+        market_provider: dataSourceDraft.market_provider,
+        news_provider: dataSourceDraft.news_provider,
+        review_sources: dataSourceDraft.review_sources,
+        fallback_enabled: dataSourceDraft.fallback_enabled,
+      });
+      setDataSourceOptions(response);
+      setDataSourceDraft(response.current);
+      await refreshConfigStatus();
+    } catch (err) {
+      setDataSourceError(err instanceof Error ? err.message : "保存数据源选项失败");
+    } finally {
+      setSavingDataSources(false);
     }
   }
 
@@ -117,7 +234,7 @@ export default function HomePage() {
             <div className="grid grid-cols-3 gap-2 sm:min-w-[420px]">
               <SummaryMetric label="历史报告" value={`${reports.length}`} />
               <SummaryMetric label="数据源就绪" value={`${readySourceCount}/${configItems.length || 6}`} />
-              <SummaryMetric label="当前模式" value={reportKind === "midday" ? "午间" : "盘后"} />
+              <SummaryMetric label="当前模式" value={reportKindLabel(reportKind)} />
             </div>
           </div>
         </header>
@@ -134,7 +251,7 @@ export default function HomePage() {
               </div>
 
               <label className="mt-5 block text-sm font-semibold text-slate-700" htmlFor="trade-date">
-                交易日
+                {reportKind === "weekly" ? "周报结束日 / 本周最后交易日" : "交易日"}
               </label>
               <input
                 id="trade-date"
@@ -144,9 +261,15 @@ export default function HomePage() {
                 placeholder="YYYY-MM-DD"
                 inputMode="numeric"
               />
-              <div className="mt-4 grid grid-cols-2 gap-2">
+              {reportKind === "weekly" && weeklyRange && (
+                <div className="mt-3 rounded-2xl border border-amber-100 bg-amber-50 px-3 py-2 text-sm leading-6 text-amber-900">
+                  将生成：{weeklyRange.startDate} 至 {weeklyRange.endDate} 周报复盘
+                </div>
+              )}
+              <div className="mt-4 grid grid-cols-3 gap-2">
                 <ReportKindButton active={reportKind === "close"} onClick={() => setReportKind("close")}>全日盘后复盘</ReportKindButton>
                 <ReportKindButton active={reportKind === "midday"} onClick={() => setReportKind("midday")}>午间复盘</ReportKindButton>
+                <ReportKindButton active={reportKind === "weekly"} onClick={() => setReportKind("weekly")}>周报复盘</ReportKindButton>
               </div>
               <button
                 className="mt-4 w-full rounded-2xl bg-slate-950 px-4 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-slate-800 active:translate-y-px disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:active:translate-y-0"
@@ -154,7 +277,7 @@ export default function HomePage() {
                 onClick={handleGenerate}
                 type="button"
               >
-                {running ? "生成中..." : `生成${reportKind === "midday" ? "午间复盘" : "全日盘后复盘"}`}
+                {running ? "生成中..." : generateButtonLabel(reportKind, weeklyRange)}
               </button>
               {error && <p className="mt-3 rounded-2xl bg-red-50 p-3 text-sm leading-6 text-red-700">{error}</p>}
             </section>
@@ -169,7 +292,15 @@ export default function HomePage() {
           </aside>
 
           <section className="space-y-6">
-            <DataSourceStatusPanel items={configItems} />
+            <DataSourceStatusPanel
+              draft={dataSourceDraft}
+              error={dataSourceError}
+              items={configItems}
+              onDraftChange={setDataSourceDraft}
+              onSave={() => void handleSaveDataSources()}
+              options={dataSourceOptions}
+              saving={savingDataSources}
+            />
 
             <section id="reports" className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -185,37 +316,80 @@ export default function HomePage() {
               <div className="mt-4 overflow-hidden rounded-2xl border border-slate-100">
                 {reports.length > 0 ? (
                   <div className="divide-y divide-slate-100">
-                    {reports.slice(0, 10).map((item) => (
+                    <div className="flex flex-col gap-3 bg-slate-50/80 p-3 text-xs sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="rounded-full bg-white px-3 py-1.5 font-bold text-slate-600 ring-1 ring-slate-200">
+                          已选 {selectedReportIds.length} 项
+                        </span>
+                        <button
+                          className="rounded-full bg-white px-3 py-1.5 font-bold text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                          disabled={allVisibleReportsSelected}
+                          onClick={selectAllVisibleReports}
+                          type="button"
+                        >
+                          全选当前列表
+                        </button>
+                        <button
+                          className="rounded-full bg-white px-3 py-1.5 font-bold text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                          disabled={selectedReportIds.length === 0}
+                          onClick={clearReportSelection}
+                          type="button"
+                        >
+                          取消选择
+                        </button>
+                      </div>
+                      <button
+                        className="rounded-full bg-red-50 px-3 py-1.5 font-bold text-red-700 ring-1 ring-red-100 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+                        disabled={selectedReportIds.length === 0 || deletingReportIds.length > 0}
+                        onClick={() => void handleBulkDeleteReports()}
+                        type="button"
+                      >
+                        {deletingReportIds.length > 0 ? "删除中" : "批量删除"}
+                      </button>
+                    </div>
+                    {paginatedReports.map((item) => (
                       <article
                         key={item.id}
                         className={`grid gap-3 p-4 text-sm transition lg:grid-cols-[minmax(0,1fr)_auto] lg:items-center ${
-                          selectedReportId === item.id ? "bg-slate-50 ring-1 ring-inset ring-slate-300" : "bg-white hover:bg-slate-50"
+                          selectedReportIds.includes(item.id)
+                            ? "bg-sky-50/70 ring-1 ring-inset ring-sky-200"
+                            : selectedReportId === item.id
+                              ? "bg-slate-50 ring-1 ring-inset ring-slate-300"
+                              : "bg-white hover:bg-slate-50"
                         }`}
                       >
-                        <button
-                          className="text-left"
-                          onClick={() => {
-                            setSelectedReportId(item.id);
-                            setResult(null);
-                          }}
-                          type="button"
-                        >
-                          <div className="font-black text-slate-950">
-                            <span
-                              className={`mr-2 inline-flex h-4 w-4 items-center justify-center rounded-full border align-[-2px] ${
-                                selectedReportId === item.id ? "border-slate-950 bg-slate-950" : "border-slate-300 bg-white"
-                              }`}
-                            >
-                              {selectedReportId === item.id && <span className="h-1.5 w-1.5 rounded-full bg-white" />}
-                            </span>
-                            {item.trade_date}-{item.kind_label}
-                            <span className="ml-2 text-xs font-semibold text-slate-400">{item.version}</span>
-                          </div>
-                          <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-500">
-                            <span>{item.status}</span>
-                            {item.created_at && <span>{new Date(item.created_at).toLocaleString("zh-CN")}</span>}
-                          </div>
-                        </button>
+                        <div className="flex items-start gap-3">
+                          <label className="mt-0.5 flex h-10 w-10 shrink-0 cursor-pointer items-center justify-center rounded-2xl border border-slate-200 bg-white transition hover:border-slate-300 hover:bg-slate-50">
+                            <input
+                              aria-label={`选择报告 ${item.trade_date}-${item.kind_label} ${item.version}`}
+                              checked={selectedReportIds.includes(item.id)}
+                              className="h-5 w-5 rounded border-slate-300 text-slate-950 accent-slate-950"
+                              disabled={deletingReportIds.includes(item.id)}
+                              onChange={() => toggleReportSelection(item.id)}
+                              type="checkbox"
+                            />
+                          </label>
+                          <button
+                            className="min-w-0 flex-1 rounded-2xl px-1 text-left transition focus:outline-none focus:ring-2 focus:ring-slate-300"
+                            onClick={() => {
+                              setSelectedReportId(item.id);
+                              setResult(null);
+                            }}
+                            type="button"
+                          >
+                            <div className="font-black text-slate-950">
+                              {item.trade_date}-{item.kind_label}
+                              <span className="ml-2 text-xs font-semibold text-slate-400">{item.version}</span>
+                            </div>
+                            <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-500">
+                              <span>{item.status}</span>
+                              {item.created_at && <span>{new Date(item.created_at).toLocaleString("zh-CN")}</span>}
+                            </div>
+                            <div className="mt-2 text-xs font-semibold text-slate-400">
+                              {selectedReportId === item.id ? "正在预览" : "点击预览，左侧复选框用于批量操作"}
+                            </div>
+                          </button>
+                        </div>
                         <div className="flex flex-wrap gap-2">
                           <a className="rounded-full bg-slate-950 px-3 py-1.5 text-xs font-bold text-white" href={reportAssetUrl(item.html_url)} rel="noreferrer" target="_blank">
                             查看 HTML
@@ -223,17 +397,48 @@ export default function HomePage() {
                           <a className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-700" href={reportAssetUrl(item.png_url)} rel="noreferrer" target="_blank">
                             打开 PNG
                           </a>
+                          {item.pdf_url && (
+                            <a className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-700" href={reportAssetUrl(item.pdf_url)} rel="noreferrer" target="_blank">
+                              打开 PDF
+                            </a>
+                          )}
                           <button
                             className="rounded-full bg-red-50 px-3 py-1.5 text-xs font-bold text-red-700 transition hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-60"
-                            disabled={deletingReportId === item.id}
+                            disabled={deletingReportIds.includes(item.id)}
                             onClick={() => void handleDeleteReport(item)}
                             type="button"
                           >
-                            {deletingReportId === item.id ? "删除中" : "删除"}
+                            {deletingReportIds.includes(item.id) ? "删除中" : "删除"}
                           </button>
                         </div>
                       </article>
                     ))}
+                    <div className="flex flex-col gap-3 bg-slate-50/80 p-3 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+                      <span className="font-semibold">
+                        共 {reports.length} 份报告，每页 {reportsPerPage} 份
+                      </span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          className="rounded-full bg-white px-3 py-1.5 font-bold text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                          disabled={currentReportPage <= 1}
+                          onClick={() => setCurrentReportPage((page) => Math.max(1, page - 1))}
+                          type="button"
+                        >
+                          上一页
+                        </button>
+                        <span className="rounded-full bg-white px-3 py-1.5 font-bold text-slate-700 ring-1 ring-slate-200">
+                          第 {currentReportPage} / {totalReportPages} 页
+                        </span>
+                        <button
+                          className="rounded-full bg-white px-3 py-1.5 font-bold text-slate-600 ring-1 ring-slate-200 transition hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-50"
+                          disabled={currentReportPage >= totalReportPages}
+                          onClick={() => setCurrentReportPage((page) => Math.min(totalReportPages, page + 1))}
+                          type="button"
+                        >
+                          下一页
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 ) : (
                   <p className="bg-slate-50 p-5 text-sm text-slate-500">暂无历史报告，生成后会出现在这里。</p>
@@ -274,7 +479,7 @@ function SelectedReportCard({ report }: { report: ReportListItem }) {
         <span className="ml-2 text-sm font-semibold text-slate-400">{report.version}</span>
       </h2>
       <p className="mt-3 text-sm leading-6 text-slate-600">
-        已选择历史报告。HTML 是主产物，PNG 适合分享；删除会同时移除数据库记录和该版本文件夹。
+        已选择历史报告。HTML 是主产物，PNG 适合分享，PDF 适合归档和转发；删除会同时移除数据库记录和该版本文件夹。
       </p>
       <div className="mt-5 flex flex-wrap gap-2">
         <a className="rounded-full bg-slate-950 px-4 py-2 text-sm font-bold text-white" href={reportAssetUrl(report.html_url)} rel="noreferrer" target="_blank">
@@ -283,6 +488,11 @@ function SelectedReportCard({ report }: { report: ReportListItem }) {
         <a className="rounded-full bg-slate-100 px-4 py-2 text-sm font-bold text-slate-700" href={reportAssetUrl(report.png_url)} rel="noreferrer" target="_blank">
           打开 PNG
         </a>
+        {report.pdf_url && (
+          <a className="rounded-full bg-slate-100 px-4 py-2 text-sm font-bold text-slate-700" href={reportAssetUrl(report.pdf_url)} rel="noreferrer" target="_blank">
+            打开 PDF
+          </a>
+        )}
       </div>
       <dl className="mt-5 grid gap-3 text-sm sm:grid-cols-3">
         <InfoItem label="状态" value={report.status} />
@@ -323,4 +533,45 @@ function ReportKindButton({ active, children, onClick }: { active: boolean; chil
       {children}
     </button>
   );
+}
+
+function reportKindLabel(kind: ReportKind): string {
+  if (kind === "midday") {
+    return "午间复盘";
+  }
+  if (kind === "weekly") {
+    return "周报复盘";
+  }
+  return "全日盘后复盘";
+}
+
+function generateButtonLabel(kind: ReportKind, weeklyRange: { startDate: string; endDate: string } | null): string {
+  if (kind === "weekly" && weeklyRange) {
+    return `生成 ${weeklyRange.startDate} 至 ${weeklyRange.endDate} 周报复盘`;
+  }
+  return `生成${reportKindLabel(kind)}`;
+}
+
+function getWeeklyRange(endDateText: string): { startDate: string; endDate: string } | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(endDateText)) {
+    return null;
+  }
+  const endDate = new Date(`${endDateText}T00:00:00+08:00`);
+  if (Number.isNaN(endDate.getTime())) {
+    return null;
+  }
+  const weekday = endDate.getDay() === 0 ? 7 : endDate.getDay();
+  const startDate = new Date(endDate);
+  startDate.setDate(endDate.getDate() - weekday + 1);
+  return {
+    startDate: formatDate(startDate),
+    endDate: endDateText,
+  };
+}
+
+function formatDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }

@@ -7,7 +7,7 @@ from app.providers.news import NewsProvider, SectorNewsResult
 from app.providers.review_sources import ReviewSourceResult
 from app.providers.tickflow import TickFlowQuoteProvider
 from app.renderers.html_renderer import render_mobile_report_html
-from app.renderers.png_exporter import export_png
+from app.renderers.png_exporter import export_pdf, export_png
 from app.rules.scoring import score_sectors
 from app.rules.validation import ValidationResult, validate_narrative_facts
 from app.schemas.report import CapitalEvidence, ReportDTO, ReportKind, SectorCandidate, StockCandidate
@@ -252,6 +252,7 @@ class ReportGenerator:
         )
         assets.report_html.write_text(render_mobile_report_html(report), encoding="utf-8")
         export_png(assets.report_html, assets.report_png)
+        export_pdf(assets.report_html, assets.report_pdf)
         create_named_report_copies(assets, trade_date=trade_date, kind=kind.value)
         write_json(assets.notes, {"overrides": []})
 
@@ -289,10 +290,12 @@ class ReportGenerator:
             for theme in result.themes:
                 if not _theme_matches(sector_name, theme.name):
                     continue
-                if _theme_is_positive(theme) or matching_notes:
+                if _theme_is_positive(theme) or matching_notes or getattr(theme, "stocks", []):
                     review_sources.append(result.source)
                     if theme.reason:
                         review_notes.append(theme.reason)
+                    if result.source == "THSDK":
+                        review_notes.extend(result.market_notes)
                     for stock in theme.stocks:
                         top_stocks.append(_review_stock_to_candidate(stock, result.source))
             for note in matching_notes:

@@ -1,6 +1,8 @@
 import type {
   ConfigStatusResponse,
   CreateReportResponse,
+  DataSourceOptionsResponse,
+  DataSourceOptionsUpdate,
   DeleteReportResponse,
   ReportKind,
   ReportListResponse,
@@ -69,6 +71,28 @@ export async function getConfigStatus(): Promise<ConfigStatusResponse> {
     throw new Error(`读取数据源状态失败：${response.status} ${await response.text()}`);
   }
   return response.json() as Promise<ConfigStatusResponse>;
+}
+
+export async function getDataSourceOptions(): Promise<DataSourceOptionsResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/data-sources/options`);
+  if (!response.ok) {
+    throw new Error(`读取数据源选项失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<DataSourceOptionsResponse>;
+}
+
+export async function updateDataSourceOptions(
+  payload: DataSourceOptionsUpdate,
+): Promise<DataSourceOptionsResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/data-sources/options`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(`保存数据源选项失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<DataSourceOptionsResponse>;
 }
 
 export function reportAssetUrl(path: string): string {

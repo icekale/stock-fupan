@@ -29,9 +29,10 @@ from app.schemas.structured_review import (
     SustainabilityRating,
     TomorrowJudgement,
 )
+from app.services.catalyst_summarizer import summarize_catalysts
 
 
-def build_structured_review(report: ReportDTO) -> StructuredReviewDTO:
+def build_structured_review(report: ReportDTO, llm_provider: object | None = None) -> StructuredReviewDTO:
     leader = report.sectors[0] if report.sectors else None
     top_prediction = _top_numeric_prediction(report)
     leader_name = top_prediction.sector if top_prediction is not None else leader.name if leader else "暂无主线"
@@ -73,7 +74,7 @@ def build_structured_review(report: ReportDTO) -> StructuredReviewDTO:
         market_overview=_build_market_overview(report),
         after_hours_news=_build_after_hours_news(report, next_session),
         sector_reviews=[_build_sector_review(sector, next_session) for sector in report.sectors],
-        sector_deep_dives=_build_sector_deep_dives(report),
+        sector_deep_dives=_build_sector_deep_dives(report, llm_provider=llm_provider),
         sustainability_ranking=[
             SustainabilityRank(
                 rank=index + 1,
@@ -485,14 +486,25 @@ def _build_sector_review(sector: SectorCandidate, next_session: str = "明日") 
     )
 
 
-def _build_sector_deep_dives(report: ReportDTO) -> list[SectorDeepDive]:
-    return [_build_sector_deep_dive(sector, index) for index, sector in enumerate(report.sectors[:6])]
+def _build_sector_deep_dives(
+    report: ReportDTO,
+    llm_provider: object | None = None,
+) -> list[SectorDeepDive]:
+    return [
+        _build_sector_deep_dive(sector, index, trade_date=report.trade_date, llm_provider=llm_provider)
+        for index, sector in enumerate(_body_sectors(report.sectors))
+    ]
 
 
-def _build_sector_deep_dive(sector: SectorCandidate, index: int) -> SectorDeepDive:
-    stock_names = [stock.name for stock in sector.top_stocks if stock.name][:5]
-    catalysts = _distinct_compact([*sector.news_summaries[:3], *sector.review_notes[:3]])
-    capital_notes = _sector_capital_notes(sector)
+def _build_sector_deep_dive(
+    sector: SectorCandidate,
+    index: int,
+    trade_date: str | None = None,
+    llm_provider: object | None = None,
+) -> SectorDeepDive:
+    stock_names = _frontline_stock_names(sector, max_items=3)
+    catalysts = _sector_catalysts(sector, trade_date=trade_date, llm_provider=llm_provider)
+    capital_notes = _sector_capital_notes(sector)[:3]
     stage = _sector_stage(sector, index)
     rating = _rating_for_sector(sector)
     if not stock_names:
@@ -508,15 +520,57 @@ def _build_sector_deep_dive(sector: SectorCandidate, index: int) -> SectorDeepDi
         capital_evidence=capital_notes,
         team_structure=_team_structure_text(sector),
         conclusion=_sector_deep_conclusion(sector, stage, rating),
-        watch_signals=_sector_watch_signals(sector),
-        avoid_signals=_sector_avoid_signals(),
+        watch_signals=_sector_watch_signals(sector)[:3],
+        avoid_signals=_sector_avoid_signals()[:2],
     )
 
 
-def _distinct_compact(values: list[str], max_items: int = 4) -> list[str]:
+def _body_sectors(sectors: list[SectorCandidate]) -> list[SectorCandidate]:
+    selected = [sector for sector in sectors if _evidence_score(sector) >= 1]
+    return selected[:3]
+
+
+def _frontline_stock_names(sector: SectorCandidate, max_items: int) -> list[str]:
     seen: set[str] = set()
     output: list[str] = []
-    for value in values:
+    for stock in sector.top_stocks:
+        if not stock.name or stock.name in seen:
+            continue
+        seen.add(stock.name)
+        output.append(stock.name)
+        if len(output) >= max_items:
+            break
+    return output
+
+
+def _sector_catalysts(
+    sector: SectorCandidate,
+    trade_date: str | None,
+    llm_provider: object | None,
+) -> list[str]:
+    news = summarize_catalysts(
+        _distinct_compact(sector.news_summaries[:3], max_items=3),
+        max_items=3,
+        sector_name=sector.name,
+        trade_date=trade_date,
+        llm_provider=llm_provider,
+    )
+    if news and news != ["消息面仅作观察，缺少明确催化"]:
+        return news
+    return summarize_catalysts(
+        _distinct_compact(sector.review_notes[:3], max_items=3),
+        max_items=3,
+        sector_name=sector.name,
+        trade_date=trade_date,
+        llm_provider=llm_provider,
+    )
+
+
+def _distinct_compact(values: list[str], max_items: int = 4, prefer_news: bool = False) -> list[str]:
+    seen: set[str] = set()
+    output: list[str] = []
+    ordered_values = sorted(values, key=_evidence_display_priority) if prefer_news else values
+    for value in ordered_values:
         text = " ".join(str(value).split())
         if not text or text in seen:
             continue
@@ -525,6 +579,17 @@ def _distinct_compact(values: list[str], max_items: int = 4) -> list[str]:
         if len(output) >= max_items:
             break
     return output
+
+
+def _evidence_display_priority(value: str) -> int:
+    text = str(value)
+    if text.startswith("Anspire新闻") or re.search(r"20\d{2}[-/年]\d{1,2}[-/月]\d{1,2}", text):
+        return 0
+    if "THSDK问财" in text:
+        return 1
+    if "复盘" in text or "确认" in text:
+        return 2
+    return 3
 
 
 def _sector_capital_notes(sector: SectorCandidate) -> list[str]:
@@ -688,11 +753,34 @@ def _compact_news_evidence(news_summaries: list[str], max_length: int = 72) -> s
 
 
 def _rating_for_sector(sector: SectorCandidate) -> SustainabilityRating:
-    if sector.score >= 70 and (sector.news_summaries or sector.review_sources):
+    evidence_score = _evidence_score(sector)
+    if sector.score >= 70 and evidence_score >= 3:
         return "high"
-    if sector.score >= 45:
+    if sector.score >= 45 and evidence_score >= 1:
         return "medium"
     return "low"
+
+
+def _evidence_score(sector: SectorCandidate) -> int:
+    score = 0
+    if sector.top_stocks:
+        score += 1
+    if sector.capital_evidence is not None:
+        score += 1
+    if sector.review_sources or sector.review_notes:
+        score += 1
+    if _has_effective_catalyst(sector):
+        score += 1
+    return score
+
+
+def _has_effective_catalyst(sector: SectorCandidate) -> bool:
+    catalysts = summarize_catalysts(
+        _distinct_compact([*sector.news_summaries[:3], *sector.review_notes[:3]], max_items=6),
+        max_items=1,
+        sector_name=sector.name,
+    )
+    return bool(catalysts and catalysts != ["消息面仅作观察，缺少明确催化"])
 
 
 def _front_row_stock_text(sector: SectorCandidate) -> str:

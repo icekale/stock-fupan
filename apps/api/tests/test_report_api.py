@@ -26,15 +26,18 @@ from app.rules.scoring import score_sectors
 from app.rules.validation import validate_narrative_facts
 from app.schemas.report import IndexSnapshot, ReportDTO, ReportKind, SectorCandidate
 from app.services import report_generator as report_generator_module
+from app.services.assets import AssetPaths
 from app.services.assets import write_json
 from app.services.report_generator import ReportGenerator
+from app.services.weekly_report_generator import WeeklyGeneratedReport
 from app.watchlist.parser import WatchlistItem
 from app.watchlist.service import WatchlistImportResult
 
 
 @pytest.fixture(autouse=True)
-def isolate_settings_and_png_export(monkeypatch: pytest.MonkeyPatch):
+def isolate_settings_and_png_export(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     get_settings.cache_clear()
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'test.db'}")
     monkeypatch.setenv("MARKET_PROVIDER", "fake")
     monkeypatch.setenv("NEWS_PROVIDER", "fake")
     monkeypatch.setenv("REVIEW_SOURCES_ENABLED", "false")
@@ -43,7 +46,12 @@ def isolate_settings_and_png_export(monkeypatch: pytest.MonkeyPatch):
         assert html_path.exists()
         output_path.write_bytes(b"fake-png")
 
+    def fake_export_pdf(html_path: Path, output_path: Path) -> None:
+        assert html_path.exists()
+        output_path.write_bytes(b"fake-pdf")
+
     monkeypatch.setattr(report_generator_module, "export_png", fake_export_png, raising=False)
+    monkeypatch.setattr(report_generator_module, "export_pdf", fake_export_pdf, raising=False)
     yield
     get_settings.cache_clear()
 
@@ -62,6 +70,9 @@ def test_create_close_report_api_returns_generated_report(
     assert payload["report"]["sectors"][0]["name"] == "机器人"
     assert payload["validation"]["is_valid"] is True
     assert payload["assets"]["version"] == "v001"
+    assert payload["assets"]["pdf"].endswith("/report.pdf")
+    assert payload["assets"]["named_pdf"].endswith("/2026-05-26-全日盘后复盘.pdf")
+    assert payload["assets"]["pdf_url"].startswith("/api/reports/asset?path=")
 
 
 def test_create_midday_report_api_returns_generated_report(tmp_path: Path, monkeypatch) -> None:
@@ -77,6 +88,40 @@ def test_create_midday_report_api_returns_generated_report(tmp_path: Path, monke
     assert payload["assets"]["root"].endswith("/2026-05-26/midday/v001")
 
 
+def test_create_weekly_report_api_returns_generated_report(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("REPORTS_ROOT", str(tmp_path))
+
+    def fake_weekly(start_date: str, end_date: str, reports_root: Path, settings: object):
+        root = reports_root / f"{start_date}_{end_date}" / "weekly" / "v001"
+        root.mkdir(parents=True)
+        assets = AssetPaths(root=root, version="v001")
+        assets.report_html.write_text("<html>weekly</html>", encoding="utf-8")
+        assets.report_png.write_bytes(b"png")
+        assets.report_pdf.write_bytes(b"pdf")
+        return WeeklyGeneratedReport(
+            trade_date=f"{start_date}_{end_date}",
+            start_date=start_date,
+            end_date=end_date,
+            assets=assets,
+            validation_errors=[],
+            provider_status={"weekly_tickflow": {"status": "success"}},
+            summary={"title": f"{start_date} 至 {end_date} 周报复盘"},
+        )
+
+    monkeypatch.setattr("app.main._generate_weekly_report", fake_weekly)
+
+    with TestClient(app) as client:
+        response = client.post("/api/reports/weekly", json={"trade_date": "2026-05-29"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["report"]["kind"] == "weekly"
+    assert payload["report"]["trade_date"] == "2026-05-25_2026-05-29"
+    assert payload["report"]["algorithm_versions"]["weekly_report"] == "weekly_report_daily_dimensions_v2"
+    assert payload["assets"]["root"].endswith("/2026-05-25_2026-05-29/weekly/v001")
+    assert payload["assets"]["named_html"].endswith("/2026-05-25_2026-05-29-周报复盘.html")
+
+
 def test_report_api_lists_reports_and_serves_assets(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("REPORTS_ROOT", str(tmp_path))
 
@@ -90,11 +135,15 @@ def test_report_api_lists_reports_and_serves_assets(tmp_path: Path, monkeypatch)
         assert item["kind"] == "midday"
         assert item["kind_label"] == "午间复盘"
         assert item["html_url"].startswith("/api/reports/asset?path=")
+        assert item["pdf_url"].startswith("/api/reports/asset?path=")
         assert item["created_at"].endswith("+08:00")
 
         asset_response = client.get(item["html_url"])
+        pdf_response = client.get(item["pdf_url"])
         assert asset_response.status_code == 200
+        assert pdf_response.status_code == 200
         assert "2026-05-26-午间复盘" in asset_response.text
+        assert pdf_response.content == b"fake-pdf"
 
 
 def test_report_api_deletes_report_row_and_asset_dir(tmp_path: Path, monkeypatch) -> None:
@@ -140,10 +189,92 @@ def test_config_status_api_returns_sanitized_provider_state(monkeypatch) -> None
     assert items["Anspire"]["status"] == "ready"
     assert items["同花顺复盘"]["status"] == "ready"
     assert items["东方财富涨停复盘"]["status"] == "ready"
+    assert items["THSDK"]["status"] == "disabled"
+    assert items["THSDK"]["enabled"] is False
     assert items["自选股模块"]["status"] == "disabled"
     assert items["OCR"]["status"] == "local"
     assert "tk_secret_should_not_leak" not in response.text
     assert "sk-secret-should-not-leak" not in response.text
+
+
+def test_config_status_api_marks_thsdk_experimental_when_enabled(monkeypatch) -> None:
+    monkeypatch.setenv("THSDK_ENABLED", "true")
+    get_settings.cache_clear()
+
+    with TestClient(app) as client:
+        response = client.get("/api/config/status")
+
+    assert response.status_code == 200
+    items = {item["name"]: item for item in response.json()["items"]}
+    assert items["THSDK"]["status"] == "experimental"
+    assert items["THSDK"]["enabled"] is True
+    assert items["THSDK"]["detail"] == "已启用实验源"
+
+
+def test_data_source_options_api_returns_current_options(monkeypatch) -> None:
+    monkeypatch.setenv("MARKET_PROVIDER", "tickflow")
+    monkeypatch.setenv("NEWS_PROVIDER", "anspire")
+    monkeypatch.setenv("TICKFLOW_API_KEY", "tk_secret_should_not_leak")
+    monkeypatch.setenv("ANSPIRE_API_KEY", "")
+    get_settings.cache_clear()
+
+    with TestClient(app) as client:
+        response = client.get("/api/data-sources/options")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["current"]["market_provider"] == "tickflow"
+    assert payload["current"]["news_provider"] == "anspire"
+    categories = {category["key"]: category for category in payload["categories"]}
+    assert categories["market_provider"]["selection"] == "single"
+    assert categories["news_provider"]["selection"] == "single"
+    assert categories["review_sources"]["selection"] == "multiple"
+    news_options = {item["key"]: item for item in categories["news_provider"]["options"]}
+    assert news_options["anspire"]["status"] == "missing_key"
+    assert news_options["eastmoney_global"]["status"] == "ready"
+    assert "tk_secret_should_not_leak" not in response.text
+
+
+def test_data_source_options_api_saves_runtime_config(monkeypatch) -> None:
+    monkeypatch.setenv("MARKET_PROVIDER", "tickflow")
+    monkeypatch.setenv("NEWS_PROVIDER", "anspire")
+    get_settings.cache_clear()
+
+    with TestClient(app) as client:
+        save_response = client.put(
+            "/api/data-sources/options",
+            json={
+                "market_provider": "tickflow",
+                "news_provider": "eastmoney_global",
+                "review_sources": ["a_stock_ths_hot", "a_stock_industry_rank"],
+                "fallback_enabled": False,
+            },
+        )
+        read_response = client.get("/api/data-sources/options")
+
+    assert save_response.status_code == 200
+    assert read_response.status_code == 200
+    current = read_response.json()["current"]
+    assert current["news_provider"] == "eastmoney_global"
+    assert current["review_sources"] == ["a_stock_ths_hot", "a_stock_industry_rank"]
+    assert current["fallback_enabled"] is False
+    assert current["updated_at"] is not None
+
+
+def test_data_source_options_api_rejects_unknown_provider() -> None:
+    with TestClient(app) as client:
+        response = client.put(
+            "/api/data-sources/options",
+            json={
+                "market_provider": "tickflow",
+                "news_provider": "unknown",
+                "review_sources": [],
+                "fallback_enabled": True,
+            },
+        )
+
+    assert response.status_code == 422
+    assert "Unsupported NEWS_PROVIDER" in response.text
 
 
 def test_create_close_report_api_returns_provider_status(tmp_path: Path, monkeypatch) -> None:
@@ -167,6 +298,66 @@ def test_create_close_report_api_returns_provider_status(tmp_path: Path, monkeyp
     snapshot_path = Path(payload["assets"]["root"]) / "snapshot.json"
     snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
     assert snapshot["provider_status"] == payload["provider_status"]
+
+
+def test_create_report_uses_runtime_data_source_options(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("REPORTS_ROOT", str(tmp_path))
+    monkeypatch.setenv("MARKET_PROVIDER", "fake")
+    monkeypatch.setenv("NEWS_PROVIDER", "fake")
+    get_settings.cache_clear()
+
+    class FakeAStockResponse:
+        def __init__(self, payload: object) -> None:
+            self.payload = payload
+
+        def raise_for_status(self) -> None:
+            pass
+
+        def json(self) -> object:
+            return self.payload
+
+    class FakeAStockClient:
+        def get(self, url: str, **kwargs: object) -> FakeAStockResponse:
+            if "getharden" in url:
+                return FakeAStockResponse(
+                    {
+                        "errocode": 0,
+                        "data": [
+                            {
+                                "code": "688017",
+                                "name": "绿的谐波",
+                                "reason": "机器人+减速器",
+                                "zhangfu": "20.0",
+                            }
+                        ],
+                    }
+                )
+            return FakeAStockResponse({"data": {"fastNewsList": []}})
+
+        def close(self) -> None:
+            pass
+
+    from app.providers import a_stock_data
+
+    monkeypatch.setattr(a_stock_data.httpx, "Client", lambda: FakeAStockClient())
+
+    with TestClient(app) as client:
+        client.put(
+            "/api/data-sources/options",
+            json={
+                "market_provider": "fake",
+                "news_provider": "fake",
+                "review_sources": ["a_stock_ths_hot"],
+                "fallback_enabled": True,
+            },
+        )
+        response = client.post("/api/reports/close", json={"trade_date": "2026-05-26"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    review_sources = payload["provider_status"]["review_sources"]
+    assert review_sources[0]["source"] == "a-stock-data 同花顺热点"
+    assert review_sources[0]["status"] == "success"
 
 
 def test_create_close_report_api_persists_report_metadata(
@@ -322,6 +513,7 @@ def test_report_generator_writes_named_close_report_files(tmp_path: Path) -> Non
     assert result.report.title == "2026-05-26-全日盘后复盘"
     assert (result.assets.root / "2026-05-26-全日盘后复盘.html").exists()
     assert (result.assets.root / "2026-05-26-全日盘后复盘.png").exists()
+    assert (result.assets.root / "2026-05-26-全日盘后复盘.pdf").exists()
 
 
 def test_report_generator_can_generate_midday_report(tmp_path: Path) -> None:
@@ -356,7 +548,7 @@ def test_midday_report_html_uses_afternoon_review_language(tmp_path: Path) -> No
 
     assert "2026-05-26-午间复盘" in html
     assert "午间参考" in html
-    assert "明日操作思路" in html
+    assert "明日盘中检查清单" in html
     assert "下午最优策略（一句话）" in html
     assert "自选股观察" not in html
     assert "盘后 / 隔夜消息梳理" not in html
@@ -428,6 +620,8 @@ def test_report_generator_exports_png(tmp_path: Path) -> None:
 
     assert result.assets.report_png.exists()
     assert result.assets.report_png.read_bytes() == b"fake-png"
+    assert result.assets.report_pdf.exists()
+    assert result.assets.report_pdf.read_bytes() == b"fake-pdf"
 
 
 def test_report_generator_writes_neutral_llm_metadata(tmp_path: Path) -> None:
@@ -461,17 +655,13 @@ def test_mobile_report_renderer_contains_core_sections(tmp_path: Path) -> None:
     )
 
     expected_titles = [
-        "核心结论",
-        "指数与市场情绪",
+        "今日一句话结论",
+        "市场状态与情绪",
         "昨日预判验证",
-        "板块详细分析",
-        "资金轮动路径",
-        "板块持续性排序",
-        "明日操作思路",
-        "盘后 / 隔夜消息梳理",
-        "去弱留强排序",
-        "最实战的结论",
-        "上证指数中期走势研判",
+        "主线与轮动板块",
+        "明日盘中检查清单",
+        "风险与失效条件",
+        "证据附录",
     ]
 
     assert "2026-05-26-全日盘后复盘" in html
@@ -557,28 +747,25 @@ def test_mobile_report_renderer_uses_review_analysis_v2_article_order(tmp_path: 
     html = render_mobile_report_html(result.report)
 
     expected_order = [
-        "核心结论",
-        "指数与市场情绪",
+        "今日一句话结论",
+        "市场状态与情绪",
         "昨日预判验证",
-        "板块详细分析",
-        "资金轮动路径",
-        "板块持续性排序",
-        "明日操作思路",
-        "盘后 / 隔夜消息梳理",
-        "去弱留强排序",
-        "最实战的结论",
-        "上证指数中期走势研判",
+        "主线与轮动板块",
+        "明日盘中检查清单",
+        "风险与失效条件",
+        "证据附录",
     ]
     positions = [html.index(text) for text in expected_order]
 
     assert positions == sorted(positions)
-    assert html.count("指数与市场情绪") == 1
+    assert html.count("市场状态与情绪") == 1
     assert html.count("昨日预判验证") == 1
     assert "市场阶段" in html
-    assert "主线扩散" in html
+    assert any(label in html for label in ("主线扩散", "结构性反弹", "修复", "分化震荡", "退潮/风险释放"))
     assert "市场阶段 · mainline_expansion" not in html
     assert "资金轮动路径" in html
-    assert "明日操作思路" in html
+    assert "明日盘中检查清单" in html
+    assert "上证指数中期走势研判" not in html
 
 
 def test_mobile_report_renderer_groups_sector_detail_into_scannable_blocks(
@@ -1175,6 +1362,53 @@ class PowerOnlyReviewSourceProvider:
                 market_notes=["电力板块早盘走强，粤电力Ａ涨停。"],
             )
         ]
+
+
+class ThsdkReviewSourceProvider:
+    def collect(self, trade_date: str) -> list[ReviewSourceResult]:
+        return [
+            ReviewSourceResult(
+                source="THSDK",
+                source_url="thsdk://local",
+                status="success",
+                themes=[
+                    ReviewThemeEvidence(
+                        name="机器人概念",
+                        stocks=[
+                            ReviewStockEvidence(
+                                name="天健集团",
+                                code="000090.SZ",
+                                pct_change=10.0,
+                                note="2连板",
+                                source="THSDK",
+                            )
+                        ],
+                        source="THSDK",
+                    )
+                ],
+                hot_stocks=[],
+                market_notes=["THSDK问财今日连板返回16条高度样例"],
+            )
+        ]
+
+
+def test_report_generator_uses_thsdk_theme_stocks_as_auxiliary_confirmation(
+    tmp_path: Path,
+) -> None:
+    generator = ReportGenerator(
+        reports_root=tmp_path,
+        market_provider=ConflictingRawAndScoredMarketProvider(),
+        news_provider=FakeNewsProvider(),
+        llm_provider=FakeLLMProvider(),
+        review_source_provider=ThsdkReviewSourceProvider(),
+    )
+
+    result = generator.generate_close_report("2026-05-26")
+
+    robot = next(sector for sector in result.report.sectors if sector.name == "机器人")
+    assert robot.review_sources == ["THSDK"]
+    assert any(stock.name == "天健集团" and "THSDK" in stock.tags for stock in robot.top_stocks)
+    assert any("THSDK问财今日连板" in note for note in robot.review_notes)
 
 
 def test_report_generator_keeps_tickflow_top_sectors_when_review_source_confirms_only_one(

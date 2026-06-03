@@ -41,6 +41,16 @@ export function ReportPreview({ result }: { result: CreateReportResponse }) {
               打开 PNG
             </a>
           )}
+          {assets.pdf_url && (
+            <a
+              className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-200"
+              href={reportAssetUrl(assets.pdf_url)}
+              rel="noreferrer"
+              target="_blank"
+            >
+              打开 PDF
+            </a>
+          )}
           <span className="rounded-full bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white">{assets.version}</span>
           <span
             className={`rounded-full px-3 py-1.5 text-xs font-semibold ${
@@ -148,6 +158,7 @@ export function ReportPreview({ result }: { result: CreateReportResponse }) {
         <div>资产目录：{assets.root}</div>
         <div>HTML：{assets.html}</div>
         <div>PNG：{assets.png}</div>
+        <div>PDF：{assets.pdf}</div>
       </footer>
     </article>
   );

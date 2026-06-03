@@ -1,6 +1,6 @@
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import UTC
+from datetime import UTC, date, timedelta
 from pathlib import Path
 import shutil
 from urllib.parse import quote
@@ -16,8 +16,21 @@ from app.db.models import Report, ReportKindModel, ReportStatusModel
 from app.db.session import get_engine, init_db, session_scope
 from app.providers.factory import create_provider_bundle
 from app.providers.ocr import OcrExtractError
+from app.providers.runtime_config import (
+    RuntimeProviderConfigInput,
+    build_data_source_options_payload,
+    config_status_items,
+    get_runtime_provider_config,
+    save_runtime_provider_config,
+)
 from app.services.assets import report_kind_label
 from app.services.report_generator import ReportGenerator
+from app.services.weekly_report_generator import (
+    TickFlowWeeklyDataClient,
+    WeeklyGeneratedReport,
+    WeeklyReportGenerator,
+    WEEKLY_REPORT_ALGORITHM_VERSION,
+)
 from app.watchlist.ocr_service import (
     OcrPreviewNotFoundError,
     UnsupportedOcrImageError,
@@ -155,45 +168,13 @@ def get_latest_watchlist() -> dict[str, object]:
 @app.get("/api/config/status")
 def get_config_status() -> dict[str, object]:
     settings = get_settings()
-    tickflow_enabled = settings.market_provider == "tickflow" or settings.tickflow_provider == "tickflow"
-    anspire_enabled = settings.news_provider == "anspire"
-    review_sources_enabled = settings.review_sources_enabled
+    config = get_runtime_provider_config(app.state.engine, settings)
+    base_items = config_status_items(config, settings)
     watchlist_enabled = settings.report_watchlist_enabled
     ocr_is_fake = settings.ocr_provider == "fake"
     return {
         "items": [
-            _status_item(
-                name="TickFlow",
-                role="主源 · 行情",
-                configured=bool(settings.tickflow_api_key),
-                enabled=tickflow_enabled,
-                status=_external_status(tickflow_enabled, bool(settings.tickflow_api_key)),
-                detail=f"MARKET_PROVIDER={settings.market_provider} · TICKFLOW_PROVIDER={settings.tickflow_provider}",
-            ),
-            _status_item(
-                name="Anspire",
-                role="主源 · 新闻",
-                configured=bool(settings.anspire_api_key),
-                enabled=anspire_enabled,
-                status=_external_status(anspire_enabled, bool(settings.anspire_api_key)),
-                detail=f"NEWS_PROVIDER={settings.news_provider}",
-            ),
-            _status_item(
-                name="同花顺复盘",
-                role="辅助源 · 题材复盘",
-                configured=bool(settings.ths_fupan_url),
-                enabled=review_sources_enabled,
-                status="ready" if review_sources_enabled else "disabled",
-                detail="REVIEW_SOURCES_ENABLED=true" if review_sources_enabled else "REVIEW_SOURCES_ENABLED=false",
-            ),
-            _status_item(
-                name="东方财富涨停复盘",
-                role="辅助源 · 涨停质量",
-                configured=bool(settings.eastmoney_ztfp_url),
-                enabled=review_sources_enabled,
-                status="ready" if review_sources_enabled else "disabled",
-                detail="REVIEW_SOURCES_ENABLED=true" if review_sources_enabled else "REVIEW_SOURCES_ENABLED=false",
-            ),
+            *base_items,
             _status_item(
                 name="自选股模块",
                 role="本地 · 自选股观察",
@@ -214,6 +195,22 @@ def get_config_status() -> dict[str, object]:
     }
 
 
+@app.get("/api/data-sources/options")
+def get_data_source_options() -> dict[str, object]:
+    settings = get_settings()
+    config = get_runtime_provider_config(app.state.engine, settings)
+    return build_data_source_options_payload(config, settings)
+
+
+@app.put("/api/data-sources/options")
+def update_data_source_options(request: RuntimeProviderConfigInput) -> dict[str, object]:
+    try:
+        config = save_runtime_provider_config(app.state.engine, request)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return build_data_source_options_payload(config, get_settings())
+
+
 def _external_status(enabled: bool, configured: bool) -> str:
     if not enabled:
         return "disabled"
@@ -227,24 +224,32 @@ def list_reports() -> dict[str, object]:
     with session_scope(app.state.engine) as session:
         rows = session.query(Report).order_by(Report.created_at.desc(), Report.id.desc()).limit(50).all()
         return {
-            "items": [
-                {
-                    "id": row.id,
-                    "trade_date": row.trade_date,
-                    "kind": row.kind.value,
-                    "kind_label": report_kind_label(row.kind.value),
-                    "version": row.version,
-                    "status": row.status.value,
-                    "asset_dir": row.asset_dir,
-                    "html": str(Path(row.asset_dir) / "report.html"),
-                    "png": str(Path(row.asset_dir) / "report.png"),
-                    "html_url": _asset_url(Path(row.asset_dir) / "report.html"),
-                    "png_url": _asset_url(Path(row.asset_dir) / "report.png"),
-                    "created_at": _china_time_iso(row.created_at),
-                }
-                for row in rows
-            ]
+            "items": [_report_list_item(row) for row in rows]
         }
+
+
+def _report_list_item(row: Report) -> dict[str, object]:
+    asset_dir = Path(row.asset_dir)
+    html_path = asset_dir / "report.html"
+    png_path = asset_dir / "report.png"
+    pdf_path = asset_dir / "report.pdf"
+    item = {
+        "id": row.id,
+        "trade_date": row.trade_date,
+        "kind": row.kind.value,
+        "kind_label": report_kind_label(row.kind.value),
+        "version": row.version,
+        "status": row.status.value,
+        "asset_dir": row.asset_dir,
+        "html": str(html_path),
+        "png": str(png_path),
+        "pdf": str(pdf_path) if pdf_path.exists() else None,
+        "html_url": _asset_url(html_path),
+        "png_url": _asset_url(png_path),
+        "pdf_url": _asset_url(pdf_path) if pdf_path.exists() else None,
+        "created_at": _china_time_iso(row.created_at),
+    }
+    return item
 
 
 def _china_time_iso(value: object) -> str | None:
@@ -287,9 +292,91 @@ def create_midday_report(request: CreateCloseReportRequest) -> dict[str, object]
     return _create_report_response(request, report_kind="midday")
 
 
+@app.post("/api/reports/weekly")
+def create_weekly_report(request: CreateCloseReportRequest) -> dict[str, object]:
+    settings = get_settings()
+    start_date, end_date = _week_range(request.trade_date)
+    result = _generate_weekly_report(start_date, end_date, Path(settings.reports_root), settings)
+    status = (
+        ReportStatusModel.READY_FOR_REVIEW
+        if not result.validation_errors
+        else ReportStatusModel.VALIDATION_FAILED
+    )
+    with session_scope(app.state.engine) as session:
+        session.add(
+            Report(
+                trade_date=result.trade_date,
+                kind=ReportKindModel.WEEKLY,
+                version=result.assets.version,
+                status=status,
+                asset_dir=str(result.assets.root),
+                algorithm_versions={"weekly_report": WEEKLY_REPORT_ALGORITHM_VERSION},
+            )
+        )
+    return _weekly_report_response(result)
+
+
+def _week_range(end_date: str) -> tuple[str, str]:
+    parsed = date.fromisoformat(end_date)
+    start = parsed - timedelta(days=parsed.weekday())
+    return start.isoformat(), parsed.isoformat()
+
+
+def _generate_weekly_report(
+    start_date: str,
+    end_date: str,
+    reports_root: Path,
+    settings: object,
+) -> WeeklyGeneratedReport:
+    client = TickFlowWeeklyDataClient(
+        api_key=getattr(settings, "tickflow_api_key", ""),
+        base_url=getattr(settings, "tickflow_base_url", "https://api.tickflow.org"),
+        timeout_seconds=getattr(settings, "provider_timeout_seconds", 120),
+    )
+    with create_provider_bundle(settings) as providers:
+        generator = WeeklyReportGenerator(
+            reports_root=reports_root,
+            tickflow_client=client,
+            news_provider=providers.news_provider,
+        )
+        return generator.generate_weekly_report(start_date, end_date)
+
+
+def _weekly_report_response(result: WeeklyGeneratedReport) -> dict[str, object]:
+    label = report_kind_label("weekly")
+    return {
+        "report": {
+            "trade_date": result.trade_date,
+            "kind": "weekly",
+            "title": f"{result.start_date} 至 {result.end_date} {label}",
+            "summary": result.summary,
+            "algorithm_versions": {"weekly_report": WEEKLY_REPORT_ALGORITHM_VERSION},
+        },
+        "validation": {
+            "is_valid": not result.validation_errors,
+            "errors": result.validation_errors,
+        },
+        "assets": {
+            "root": str(result.assets.root),
+            "version": result.assets.version,
+            "html": str(result.assets.report_html),
+            "png": str(result.assets.report_png),
+            "pdf": str(result.assets.report_pdf),
+            "named_html": str(result.assets.root / f"{result.trade_date}-{label}.html"),
+            "named_png": str(result.assets.root / f"{result.trade_date}-{label}.png"),
+            "named_pdf": str(result.assets.root / f"{result.trade_date}-{label}.pdf"),
+            "html_url": _asset_url(result.assets.report_html),
+            "png_url": _asset_url(result.assets.report_png),
+            "pdf_url": _asset_url(result.assets.report_pdf),
+        },
+        "provider_status": result.provider_status,
+    }
+
+
 def _create_report_response(request: CreateCloseReportRequest, report_kind: str) -> dict[str, object]:
     settings = get_settings()
-    with create_provider_bundle(settings) as providers:
+    runtime_config = get_runtime_provider_config(app.state.engine, settings)
+    with create_provider_bundle(settings, runtime_config=runtime_config) as providers:
         generator = ReportGenerator(
             reports_root=Path(settings.reports_root),
             market_provider=providers.market_provider,
@@ -336,10 +423,13 @@ def _create_report_response(request: CreateCloseReportRequest, report_kind: str)
             "version": result.assets.version,
             "html": str(result.assets.report_html),
             "png": str(result.assets.report_png),
+            "pdf": str(result.assets.report_pdf),
             "named_html": str(result.assets.root / f"{result.report.trade_date}-{report_kind_label(result.report.kind.value)}.html"),
             "named_png": str(result.assets.root / f"{result.report.trade_date}-{report_kind_label(result.report.kind.value)}.png"),
+            "named_pdf": str(result.assets.root / f"{result.report.trade_date}-{report_kind_label(result.report.kind.value)}.pdf"),
             "html_url": _asset_url(result.assets.report_html),
             "png_url": _asset_url(result.assets.report_png),
+            "pdf_url": _asset_url(result.assets.report_pdf),
         },
         "provider_status": result.provider_status,
     }
@@ -357,7 +447,7 @@ def _validated_report_asset_path(path: str) -> Path:
         asset_path.relative_to(reports_root)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail="asset path must stay under REPORTS_ROOT") from exc
-    if not asset_path.exists() or asset_path.suffix not in {".html", ".png"}:
+    if not asset_path.exists() or asset_path.suffix not in {".html", ".png", ".pdf"}:
         raise HTTPException(status_code=404, detail="report asset not found")
     return asset_path
 

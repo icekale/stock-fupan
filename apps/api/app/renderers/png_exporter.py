@@ -13,3 +13,18 @@ def export_png(html_path: Path, output_path: Path, width: int = 720) -> None:
             page.screenshot(path=str(output_path), full_page=True)
         finally:
             browser.close()
+
+
+def export_pdf(html_path: Path, output_path: Path, width: int = 720) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch()
+        try:
+            page = browser.new_page(viewport={"width": width, "height": 1280}, device_scale_factor=2)
+            page.goto(html_path.resolve().as_uri(), wait_until="networkidle")
+            height = page.evaluate(
+                "() => Math.ceil(Math.max(document.documentElement.scrollHeight, document.body.scrollHeight))"
+            )
+            page.pdf(path=str(output_path), print_background=True, width=f"{width}px", height=f"{height}px")
+        finally:
+            browser.close()

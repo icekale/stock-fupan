@@ -28,7 +28,7 @@ def generate_structured_review(
     fallback_enabled: bool,
 ) -> tuple[StructuredReviewDTO, StructuredReviewStatus]:
     if provider_mode == "rule":
-        return build_structured_review(report), StructuredReviewStatus(
+        return build_structured_review(report, llm_provider=llm_provider), StructuredReviewStatus(
             provider="rule",
             status="success",
             fallback_used=False,
@@ -43,7 +43,7 @@ def generate_structured_review(
         reason = str(exc) or exc.__class__.__name__
         if not fallback_enabled:
             raise
-        return build_structured_review(report), StructuredReviewStatus(
+        return build_structured_review(report, llm_provider=llm_provider), StructuredReviewStatus(
             provider="llm",
             status="fallback",
             fallback_used=True,

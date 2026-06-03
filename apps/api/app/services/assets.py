@@ -44,6 +44,10 @@ class AssetPaths:
         return self.root / "report.png"
 
     @property
+    def report_pdf(self) -> Path:
+        return self.root / "report.pdf"
+
+    @property
     def notes(self) -> Path:
         return self.root / "notes.json"
 
@@ -97,6 +101,7 @@ def report_kind_label(kind: str) -> str:
     labels = {
         "close": "全日盘后复盘",
         "midday": "午间复盘",
+        "weekly": "周报复盘",
     }
     return labels.get(kind, kind)
 
@@ -105,9 +110,11 @@ def create_named_report_copies(paths: AssetPaths, trade_date: str, kind: str) ->
     label = report_kind_label(kind)
     html_path = paths.root / f"{trade_date}-{label}.html"
     png_path = paths.root / f"{trade_date}-{label}.png"
+    pdf_path = paths.root / f"{trade_date}-{label}.pdf"
     shutil.copyfile(paths.report_html, html_path)
     shutil.copyfile(paths.report_png, png_path)
-    return {"html": html_path, "png": png_path}
+    shutil.copyfile(paths.report_pdf, pdf_path)
+    return {"html": html_path, "png": png_path, "pdf": pdf_path}
 
 
 def write_json(path: Path, payload: Any) -> None:

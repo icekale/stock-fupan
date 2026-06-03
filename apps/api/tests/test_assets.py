@@ -123,19 +123,40 @@ def test_write_json_outputs_pretty_utf8(tmp_path: Path) -> None:
     assert "机器人" in paths.snapshot.read_text(encoding="utf-8")
 
 
-def test_report_kind_label_maps_close_and_midday() -> None:
+def test_report_kind_label_maps_close_midday_and_weekly() -> None:
     assert report_kind_label("close") == "全日盘后复盘"
     assert report_kind_label("midday") == "午间复盘"
+    assert report_kind_label("weekly") == "周报复盘"
 
 
 def test_create_named_report_copies_uses_chinese_report_names(tmp_path: Path) -> None:
     paths = AssetPaths(root=tmp_path, version="v001")
     paths.report_html.write_text("<html>report</html>", encoding="utf-8")
     paths.report_png.write_bytes(b"png")
+    paths.report_pdf.write_bytes(b"pdf")
 
     copies = create_named_report_copies(paths, trade_date="2026-05-27", kind="midday")
 
     assert copies["html"].name == "2026-05-27-午间复盘.html"
     assert copies["png"].name == "2026-05-27-午间复盘.png"
+    assert copies["pdf"].name == "2026-05-27-午间复盘.pdf"
     assert copies["html"].read_text(encoding="utf-8") == "<html>report</html>"
     assert copies["png"].read_bytes() == b"png"
+    assert copies["pdf"].read_bytes() == b"pdf"
+
+
+def test_create_named_report_copies_uses_weekly_report_name(tmp_path: Path) -> None:
+    paths = AssetPaths(root=tmp_path, version="v001")
+    paths.report_html.write_text("<html>weekly</html>", encoding="utf-8")
+    paths.report_png.write_bytes(b"weekly-png")
+    paths.report_pdf.write_bytes(b"weekly-pdf")
+
+    copies = create_named_report_copies(
+        paths,
+        trade_date="2026-05-25_2026-05-29",
+        kind="weekly",
+    )
+
+    assert copies["html"].name == "2026-05-25_2026-05-29-周报复盘.html"
+    assert copies["png"].name == "2026-05-25_2026-05-29-周报复盘.png"
+    assert copies["pdf"].name == "2026-05-25_2026-05-29-周报复盘.pdf"

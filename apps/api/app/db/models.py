@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, Enum, ForeignKey, Integer, String
+from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, Integer, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -13,6 +13,7 @@ class Base(DeclarativeBase):
 class ReportKindModel(StrEnum):
     CLOSE = "close"
     MIDDAY = "midday"
+    WEEKLY = "weekly"
 
 
 class ReportStatusModel(StrEnum):
@@ -40,6 +41,24 @@ class Report(Base):
     )
     asset_dir: Mapped[str] = mapped_column(String(1024))
     algorithm_versions: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+
+
+class RuntimeProviderConfig(Base):
+    __tablename__ = "runtime_provider_config"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    market_provider: Mapped[str] = mapped_column(String(64))
+    news_provider: Mapped[str] = mapped_column(String(64))
+    review_sources: Mapped[list[str]] = mapped_column(JSON, default=list)
+    fallback_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )

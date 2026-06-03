@@ -11,6 +11,8 @@ from app.providers.market import FakeMarketDataProvider
 from app.providers.news import FakeNewsProvider
 from app.providers.tickflow import FakeTickFlowProvider
 from app.services import report_generator as report_generator_module
+from app.services.weekly_report_generator import WeeklyGeneratedReport
+from app.services.assets import AssetPaths
 
 
 @pytest.fixture(autouse=True)
@@ -25,7 +27,12 @@ def isolate_settings_and_png_export(monkeypatch: pytest.MonkeyPatch):
         assert html_path.exists()
         output_path.write_bytes(b"fake-png")
 
+    def fake_export_pdf(html_path: Path, output_path: Path) -> None:
+        assert html_path.exists()
+        output_path.write_bytes(b"fake-pdf")
+
     monkeypatch.setattr(report_generator_module, "export_png", fake_export_png, raising=False)
+    monkeypatch.setattr(report_generator_module, "export_pdf", fake_export_pdf, raising=False)
     yield
     get_settings.cache_clear()
 
@@ -59,11 +66,14 @@ def test_generate_report_cli_writes_report_and_prints_paths(
 
     captured = capsys.readouterr()
     report_html = tmp_path / "2026-05-26" / "close" / "v001" / "report.html"
+    report_pdf = tmp_path / "2026-05-26" / "close" / "v001" / "report.pdf"
     snapshot = tmp_path / "2026-05-26" / "close" / "v001" / "snapshot.json"
     assert exit_code == 0
     assert report_html.exists()
+    assert report_pdf.exists()
     assert snapshot.exists()
     assert f"HTML: {report_html}" in captured.out
+    assert f"PDF: {report_pdf}" in captured.out
     assert f"Snapshot: {snapshot}" in captured.out
     assert "Validation: ok" in captured.out
     assert "Provider market: success" in captured.out
@@ -90,6 +100,46 @@ def test_generate_report_cli_can_write_midday_report(
 
     assert exit_code == 0
     assert (tmp_path / "2026-05-26" / "midday" / "v001" / "2026-05-26-午间复盘.html").exists()
+    assert (tmp_path / "2026-05-26" / "midday" / "v001" / "2026-05-26-午间复盘.pdf").exists()
+
+
+def test_generate_report_cli_can_write_weekly_report(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.cli import generate_report
+
+    def fake_weekly(start_date: str, end_date: str, reports_root: Path, settings: object):
+        root = reports_root / f"{start_date}_{end_date}" / "weekly" / "v001"
+        root.mkdir(parents=True)
+        assets = AssetPaths(root=root, version="v001")
+        assets.report_html.write_text("<html>weekly</html>", encoding="utf-8")
+        assets.report_png.write_bytes(b"png")
+        assets.report_pdf.write_bytes(b"pdf")
+        (root / f"{start_date}_{end_date}-周报复盘.html").write_text("weekly", encoding="utf-8")
+        return WeeklyGeneratedReport(
+            trade_date=f"{start_date}_{end_date}",
+            start_date=start_date,
+            end_date=end_date,
+            assets=assets,
+            validation_errors=[],
+            provider_status={},
+            summary={"algorithm_versions": {"weekly_report": "weekly_report_daily_dimensions_v2"}},
+        )
+
+    monkeypatch.setattr(generate_report, "_generate_weekly_report", fake_weekly)
+
+    exit_code = generate_report.main([
+        "--date",
+        "2026-05-29",
+        "--kind",
+        "weekly",
+        "--reports-root",
+        str(tmp_path),
+    ])
+
+    assert exit_code == 0
+    assert (tmp_path / "2026-05-25_2026-05-29" / "weekly" / "v001" / "2026-05-25_2026-05-29-周报复盘.html").exists()
 
 
 def test_generate_report_cli_returns_nonzero_for_invalid_report(

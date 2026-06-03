@@ -271,3 +271,16 @@ def test_provider_bundle_includes_enabled_review_sources() -> None:
         "同花顺复盘",
         "东方财富涨停复盘",
     ]
+
+
+def test_provider_bundle_includes_thsdk_when_enabled() -> None:
+    settings = Settings(review_sources_enabled=True, thsdk_enabled=True)
+
+    bundle = create_provider_bundle(settings)
+
+    assert bundle.review_source_provider is not None
+    assert [provider.source_name for provider in bundle.review_source_provider.providers] == [
+        "同花顺复盘",
+        "东方财富涨停复盘",
+        "THSDK",
+    ]

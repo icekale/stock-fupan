@@ -10,6 +10,7 @@ from app.schemas.structured_review import HistoricalThemeReview
 class ReportKind(StrEnum):
     CLOSE = "close"
     MIDDAY = "midday"
+    WEEKLY = "weekly"
 
 
 class ReportStatus(StrEnum):

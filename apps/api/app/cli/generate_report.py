@@ -1,5 +1,6 @@
 import argparse
 import os
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Sequence
 
@@ -11,6 +12,12 @@ from app.db.session import create_sqlite_engine, init_db
 from app.db.session import session_scope
 from app.providers.factory import create_provider_bundle
 from app.services.report_generator import GeneratedReport, ReportGenerator
+from app.services.weekly_report_generator import (
+    TickFlowWeeklyDataClient,
+    WeeklyGeneratedReport,
+    WeeklyReportGenerator,
+    WEEKLY_REPORT_ALGORITHM_VERSION,
+)
 from app.watchlist.service import WatchlistImportService
 
 
@@ -21,7 +28,7 @@ def validate_generated_report(result: GeneratedReport) -> tuple[bool, list[str]]
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Generate a local A-share review report.")
     parser.add_argument("--date", required=True, help="Trade date in YYYY-MM-DD format.")
-    parser.add_argument("--kind", choices=("close", "midday"), default="close", help="Report kind.")
+    parser.add_argument("--kind", choices=("close", "midday", "weekly"), default="close", help="Report kind.")
     parser.add_argument("--reports-root", help="Override REPORTS_ROOT for this run.")
     args = parser.parse_args(argv)
 
@@ -29,6 +36,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     get_settings.cache_clear()
     settings = get_settings()
     reports_root = Path(args.reports_root) if args.reports_root else Path(settings.reports_root)
+    if args.kind == "weekly":
+        start_date, end_date = _week_range(args.date)
+        result = _generate_weekly_report(start_date, end_date, reports_root, settings)
+        _persist_weekly_report_metadata(settings, result, is_valid=not result.validation_errors)
+        _print_weekly_result(result)
+        return 0 if not result.validation_errors else 1
+
     watchlist_service = _create_watchlist_service(settings)
 
     with create_provider_bundle(settings) as providers:
@@ -68,6 +82,32 @@ def _create_watchlist_service(settings: object) -> WatchlistImportService | None
     )
 
 
+def _week_range(end_date: str) -> tuple[str, str]:
+    parsed = date.fromisoformat(end_date)
+    start = parsed - timedelta(days=parsed.weekday())
+    return start.isoformat(), parsed.isoformat()
+
+
+def _generate_weekly_report(
+    start_date: str,
+    end_date: str,
+    reports_root: Path,
+    settings: object,
+) -> WeeklyGeneratedReport:
+    client = TickFlowWeeklyDataClient(
+        api_key=getattr(settings, "tickflow_api_key", ""),
+        base_url=getattr(settings, "tickflow_base_url", "https://api.tickflow.org"),
+        timeout_seconds=getattr(settings, "provider_timeout_seconds", 120),
+    )
+    news_provider = create_provider_bundle(settings).news_provider
+    generator = WeeklyReportGenerator(
+        reports_root=reports_root,
+        tickflow_client=client,
+        news_provider=news_provider,
+    )
+    return generator.generate_weekly_report(start_date, end_date)
+
+
 def _persist_report_metadata(settings: object, result: GeneratedReport, is_valid: bool) -> None:
     engine = create_sqlite_engine(str(settings.database_url))
     init_db(engine)
@@ -81,6 +121,27 @@ def _persist_report_metadata(settings: object, result: GeneratedReport, is_valid
                 status=status,
                 asset_dir=str(result.assets.root),
                 algorithm_versions=result.report.algorithm_versions,
+            )
+        )
+
+
+def _persist_weekly_report_metadata(
+    settings: object,
+    result: WeeklyGeneratedReport,
+    is_valid: bool,
+) -> None:
+    engine = create_sqlite_engine(str(settings.database_url))
+    init_db(engine)
+    status = ReportStatusModel.READY_FOR_REVIEW if is_valid else ReportStatusModel.VALIDATION_FAILED
+    with session_scope(engine) as session:
+        session.add(
+            Report(
+                trade_date=result.trade_date,
+                kind=ReportKindModel.WEEKLY,
+                version=result.assets.version,
+                status=status,
+                asset_dir=str(result.assets.root),
+                algorithm_versions={"weekly_report": WEEKLY_REPORT_ALGORITHM_VERSION},
             )
         )
 
@@ -104,12 +165,22 @@ def _load_env_file(path: Path, protected_keys: set[str]) -> None:
 
 def _print_result(result: GeneratedReport, is_valid: bool, errors: list[str]) -> None:
     print(f"HTML: {result.assets.report_html}")
+    print(f"PDF: {result.assets.report_pdf}")
     print(f"Snapshot: {result.assets.snapshot}")
     print(f"Validation: {'ok' if is_valid else 'failed'}")
     for error in errors:
         print(f"- {error}")
     _print_provider_status(result.provider_status)
     print(f"Structured review: {result.structured_review_status.get('provider')}")
+
+
+def _print_weekly_result(result: WeeklyGeneratedReport) -> None:
+    print(f"HTML: {result.assets.report_html}")
+    print(f"PDF: {result.assets.report_pdf}")
+    print(f"Snapshot: {result.assets.snapshot}")
+    print(f"Validation: {'ok' if not result.validation_errors else 'failed'}")
+    for error in result.validation_errors:
+        print(f"- {error}")
 
 
 def _print_provider_status(provider_status: dict[str, object]) -> None:

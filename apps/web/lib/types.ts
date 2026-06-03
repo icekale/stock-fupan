@@ -157,7 +157,7 @@ export type WatchlistObservation = {
   notes: string[];
 };
 
-export type ReportKind = "close" | "midday";
+export type ReportKind = "close" | "midday" | "weekly";
 
 export type ReportDTO = {
   trade_date: string;
@@ -211,10 +211,13 @@ export type CreateReportResponse = {
     version: string;
     html: string;
     png: string;
+    pdf?: string | null;
     named_html?: string;
     named_png?: string;
+    named_pdf?: string;
     html_url?: string;
     png_url?: string;
+    pdf_url?: string | null;
   };
   provider_status: ProviderStatusSummary;
 };
@@ -229,8 +232,10 @@ export type ReportListItem = {
   asset_dir: string;
   html: string;
   png: string;
+  pdf: string | null;
   html_url: string;
   png_url: string;
+  pdf_url: string | null;
   created_at: string | null;
 };
 
@@ -243,7 +248,7 @@ export type DeleteReportResponse = {
   id: number;
 };
 
-export type ConfigStatusState = "ready" | "missing_key" | "disabled" | "local";
+export type ConfigStatusState = "ready" | "missing_key" | "disabled" | "local" | "experimental";
 
 export type ConfigStatusItem = {
   name: string;
@@ -256,4 +261,45 @@ export type ConfigStatusItem = {
 
 export type ConfigStatusResponse = {
   items: ConfigStatusItem[];
+};
+
+export type DataSourceSelectionMode = "single" | "multiple";
+
+export type DataSourceOptionItem = {
+  key: string;
+  label: string;
+  role: string;
+  configured: boolean;
+  enabled: boolean;
+  status: ConfigStatusState;
+  requires_key: boolean;
+  experimental: boolean;
+  detail: string;
+};
+
+export type DataSourceOptionCategory = {
+  key: "market_provider" | "news_provider" | "review_sources";
+  label: string;
+  selection: DataSourceSelectionMode;
+  options: DataSourceOptionItem[];
+};
+
+export type DataSourceOptionsCurrent = {
+  market_provider: string;
+  news_provider: string;
+  review_sources: string[];
+  fallback_enabled: boolean;
+  updated_at: string | null;
+};
+
+export type DataSourceOptionsResponse = {
+  current: DataSourceOptionsCurrent;
+  categories: DataSourceOptionCategory[];
+};
+
+export type DataSourceOptionsUpdate = {
+  market_provider: string;
+  news_provider: string;
+  review_sources: string[];
+  fallback_enabled: boolean;
 };

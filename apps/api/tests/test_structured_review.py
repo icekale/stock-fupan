@@ -36,6 +36,7 @@ from app.schemas.structured_review import (
 )
 from app.services.structured_review_builder import build_structured_review
 from app.services.structured_review_generator import generate_structured_review
+from app.services.catalyst_summarizer import summarize_catalysts
 
 
 def test_structured_review_serializes_core_modules() -> None:
@@ -284,7 +285,7 @@ def test_build_structured_review_derives_core_modules_from_report() -> None:
     assert review.sector_reviews[0].sector == "机器人"
     assert review.sector_reviews[0].logic_points
     assert review.sector_reviews[0].sustainability_analysis
-    assert review.sector_reviews[0].sustainability == "high"
+    assert review.sector_reviews[0].sustainability == "medium"
     assert review.sustainability_ranking[0].sector == "机器人"
     assert "机器人" in review.action_discipline.final_view
     assert review.after_hours_news.domestic_catalysts
@@ -585,6 +586,151 @@ def test_build_structured_review_keeps_news_evidence_compact() -> None:
     assert "\n" not in evidence
     assert len(evidence) <= 72
     assert "联系电话" not in evidence
+
+
+def test_build_structured_review_summarizes_deep_dive_catalysts() -> None:
+    report = _fake_report()
+    report.sectors[0] = report.sectors[0].model_copy(
+        update={
+            "name": "电力",
+            "news_summaries": [
+                "A股电力板块反复活跃 华电能源2连板、京能电力等跟涨 2026年05月29日 18:30 财经网站转载，电力板块低开高走，晋控电力、华能国际、山南电A、粤电力A、华能蒙电等多股涨停，珈伟新能涨超11%，板块资金回流明显。"
+            ],
+            "review_notes": [
+                "THSDK问财今日涨停返回67条前排样例",
+                "THSDK问财今日连板返回16条高度样例",
+            ],
+        }
+    )
+
+    review = build_structured_review(report)
+
+    catalysts = review.sector_deep_dives[0].catalysts
+    assert len(catalysts) <= 2
+    assert all(len(item) <= 36 for item in catalysts)
+    assert not any("晋控电力、华能国际、山南电A、粤电力A、华能蒙电" in item for item in catalysts)
+    assert not any("2026年" in item or "18:30" in item or "财经网站" in item for item in catalysts)
+    assert "问财确认67条涨停前排，板块扩散强" in catalysts
+    assert "问财确认16条连板高度，留意前排承接" in catalysts
+
+
+class CatalystSummaryLLM:
+    def summarize_catalysts(self, sector_name: str, evidence: list[str]) -> list[str]:
+        assert sector_name == "电力"
+        assert evidence
+        return ["AI摘要：电力前排涨停", "AI摘要：连板高度确认"]
+
+
+class BrokenCatalystSummaryLLM:
+    def summarize_catalysts(self, sector_name: str, evidence: list[str]) -> list[str]:
+        return ["政策端形成'顶层设计+资金支", "资金支持+税收优惠'的全"]
+
+
+def test_catalyst_summarizer_prefers_ai_when_available() -> None:
+    result = summarize_catalysts(
+        ["电力板块低开高走，晋控电力、华能国际、粤电力A等多股涨停。"],
+        sector_name="电力",
+        llm_provider=CatalystSummaryLLM(),
+    )
+
+    assert result == ["AI摘要：电力前排涨停", "AI摘要：连板高度确认"]
+
+
+def test_catalyst_summarizer_rejects_truncated_ai_fragments() -> None:
+    result = summarize_catalysts(
+        ["Anspire新闻：半导体多股涨停，资金持续回流 2026年06月02日 18:30 财联社。"],
+        sector_name="半导体",
+        trade_date="2026-06-02",
+        llm_provider=BrokenCatalystSummaryLLM(),
+    )
+
+    assert result == ["多股涨停，资金回流，前排强度明确"]
+
+
+def test_catalyst_summarizer_avoids_truncated_policy_fragments() -> None:
+    result = summarize_catalysts(
+        [
+            (
+                "骑牛看熊 2026年06月01日 11:50 湖北 "
+                "半导体板块近期的连续上涨并非短期炒作，"
+                "政策端形成'顶层设计+资金支持+税收优惠'的全方位支撑体系，"
+                "国产替代提速、AI需求爆发、资金流入五大因素共振。"
+            )
+        ],
+        sector_name="半导体",
+        trade_date="2026-06-02",
+    )
+
+    assert result == ["政策全方位支撑，国产替代与AI需求共振"]
+
+
+def test_catalyst_summarizer_drops_generic_listicle_titles() -> None:
+    result = summarize_catalysts(
+        [
+            "Anspire新闻：2026年机器人龙头股名单一览，机器人概念上市公司股票有哪些？",
+            "Anspire新闻：机器人概念有望翻倍，相关股票名录请收藏",
+        ],
+        sector_name="机器人",
+    )
+
+    assert result == ["消息面仅作观察，缺少明确催化"]
+
+
+def test_catalyst_summarizer_extracts_compact_logic_from_news() -> None:
+    result = summarize_catalysts(
+        [
+            "Anspire新闻：AI服务器升级打开产业空间 A股PCB概念股强势 生益电子、生益科技等多股涨停，资金持续回流。",
+            "Anspire新闻：半导体板块全产业链多点开花，24只半导体股创新高，先进封装、存储芯片方向活跃。",
+        ],
+        sector_name="PCB",
+    )
+
+    assert result == ["AI服务器升级打开产业空间，PCB获资金确认", "多股涨停，资金回流，前排强度明确"]
+    assert all(16 <= len(item) <= 24 for item in result)
+    assert not any("Anspire" in item or "概念股强势" in item for item in result)
+
+
+def test_catalyst_summarizer_uses_fallback_for_weak_headlines() -> None:
+    result = summarize_catalysts(
+        [
+            "Anspire新闻：环保服务行业公司助力＂碳中和＂，12只有望翻倍龙头一览 环保概念风口来了。",
+            "Anspire新闻：环保行业周报：生态补偿+大气防治 环境监测迎需求共振 11:15 和讯。",
+            "Anspire新闻：风格突变！002491，垂直涨停！新能源、新材料，涨涨涨！",
+            "Anspire新闻：收评：三大指数集体下跌 半导体、MicroLED、金属新材料跌幅居前。",
+        ],
+        sector_name="环保",
+    )
+
+    assert result == ["消息面仅作观察，缺少明确催化"]
+
+
+def test_catalyst_summarizer_filters_stale_or_undated_headlines() -> None:
+    result = summarize_catalysts(
+        [
+            "Anspire新闻：A股新材料概念股整理!(3/25) 南方财富网 2026-04-25 14:03 截至4月25日，新材料概念股名单。",
+            "Anspire新闻：A股收评：三大指数集体下跌 半导体、MicroLED、金属新材料跌幅居前 2026年05月29日 15:20。",
+            "Anspire新闻：新材料多股涨停，资金持续回流 2026年06月02日 18:30 财联社。",
+            "Anspire新闻：球形硅微粉：全球缺口扩大，高端缺口显著。",
+        ],
+        sector_name="新材料",
+        trade_date="2026-06-02",
+    )
+
+    assert result == ["多股涨停，资金回流，前排强度明确"]
+
+
+def test_catalyst_summarizer_rejects_future_article_even_when_body_mentions_trade_date() -> None:
+    result = summarize_catalysts(
+        [
+            "Anspire新闻：半导体产业链继续反弹 2026-06-03 13:04 发布，截至2026年6月2日，半导体设备ETF近1月累计上涨。"
+        ],
+        sector_name="半导体",
+        trade_date="2026-06-02",
+    )
+
+    assert result == ["消息面仅作观察，缺少明确催化"]
+
+
 class SuccessfulStructuredLLM:
     provider_name = "openai"
 
@@ -681,3 +827,64 @@ def test_structured_review_uses_front_row_stocks_and_review_sources_in_sector_an
     assert "同花顺复盘" in "\n".join(sector.logic_points)
     assert "前排" in sector.next_day_view
     assert review.practical_conclusion.headline.startswith("明日最实战")
+
+
+def test_structured_review_applies_hard_evidence_gates_and_limits_deep_dives() -> None:
+    report = _fake_report()
+    report.trade_date = "2026-06-02"
+    report.sectors = [
+        SectorCandidate(
+            name="新材料",
+            score=86,
+            rank=1,
+            pct_change=10.44,
+            reason="综合评分靠前",
+            top_stocks=[
+                StockCandidate(code="300398.SZ", name="飞凯材料", pct_change=20.0, turnover_cny=2_115_000_000),
+                StockCandidate(code="603330.SH", name="天洋新材", pct_change=10.0, turnover_cny=68_000_000),
+                StockCandidate(code="002171.SZ", name="楚江新材", pct_change=9.9, turnover_cny=1_241_000_000),
+                StockCandidate(code="002171.SZ", name="楚江新材", pct_change=9.9, turnover_cny=1_241_000_000),
+            ],
+            news_summaries=[
+                "Anspire新闻：A股新材料概念股整理!(3/25) 南方财富网 2026-04-25 14:03 截至4月25日。",
+            "Anspire新闻：新材料多股涨停，资金持续回流 2026年06月02日 18:30 财联社。",
+            ],
+            review_sources=["同花顺复盘"],
+            review_notes=["同花顺复盘确认新材料前排扩散。"],
+            capital_evidence=report.sectors[0].capital_evidence,
+        ),
+        SectorCandidate(
+            name="半导体",
+            score=73,
+            rank=2,
+            pct_change=5.2,
+            reason="轮动强度靠前",
+            top_stocks=[StockCandidate(code="688008.SH", name="澜起科技", pct_change=8.0)],
+            news_summaries=["Anspire新闻：半导体ETF开盘涨0.33%，重仓股表现分化。"],
+        ),
+        SectorCandidate(
+            name="环保",
+            score=57,
+            rank=3,
+            pct_change=2.1,
+            reason="修复观察",
+            news_summaries=["Anspire新闻：环保行业周报：城市更新规划 生态修复获政策加码 2026-06-01 08:00。"],
+        ),
+        SectorCandidate(name="机器人", score=54, rank=4, pct_change=1.5, reason="价格异动"),
+    ]
+
+    review = build_structured_review(report)
+
+    deep_dives = review.sector_deep_dives
+    assert [item.sector for item in deep_dives] == ["新材料", "半导体"]
+    assert deep_dives[0].rating == "high"
+    assert deep_dives[1].rating == "medium"
+    assert deep_dives[0].catalysts == ["多股涨停，资金回流，前排强度明确"]
+    assert deep_dives[0].core_stocks == ["飞凯材料", "天洋新材", "楚江新材"]
+    assert all(len(item.catalysts) <= 3 for item in deep_dives)
+    assert all(len(item.core_stocks) <= 3 for item in deep_dives)
+    assert all(len(item.watch_signals) <= 3 for item in deep_dives)
+    assert all(len(item.avoid_signals) <= 2 for item in deep_dives)
+    assert not any("概念股整理" in item for item in deep_dives[0].catalysts)
+    assert review.sustainability_ranking[1].rating == "medium"
+    assert review.sustainability_ranking[2].rating == "low"

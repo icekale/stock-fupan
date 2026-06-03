@@ -24,6 +24,9 @@ class LLMProvider(Protocol):
     def generate_structured_review(self, seed: dict[str, object]) -> StructuredReviewDTO:
         raise NotImplementedError
 
+    def summarize_catalysts(self, sector_name: str, evidence: list[str]) -> list[str]:
+        raise NotImplementedError
+
 
 class FakeLLMProvider:
     def generate_narrative(self, seed: dict[str, object]) -> ReportNarrative:
@@ -83,6 +86,11 @@ class FakeLLMProvider:
         from app.services.structured_review_builder import build_structured_review_from_seed
 
         return build_structured_review_from_seed(seed)
+
+    def summarize_catalysts(self, sector_name: str, evidence: list[str]) -> list[str]:
+        from app.services.catalyst_summarizer import summarize_catalysts
+
+        return summarize_catalysts(evidence, sector_name=sector_name, llm_provider=None)
 
 
 class LLMFallbackError(RuntimeError):
@@ -166,3 +174,44 @@ class OpenAILLMProvider:
             return StructuredReviewDTO.model_validate(payload)
         except ValidationError as exc:
             raise LLMFallbackError("OpenAI 结构化复盘字段校验失败") from exc
+
+    def summarize_catalysts(self, sector_name: str, evidence: list[str]) -> list[str]:
+        if not self.api_key:
+            raise LLMFallbackError("OPENAI_API_KEY 未配置")
+        client = self.client or OpenAI(api_key=self.api_key, base_url=self.base_url)
+        prompt = {
+            "sector": sector_name,
+            "evidence": evidence,
+            "rules": [
+                "只基于 evidence，总结为 1-2 条中文短句",
+                "每条 18-32 个汉字左右",
+                "抓住事件、涨停/连板、高度、资金确认中的重点",
+                "不得新增 evidence 中没有的事实",
+            ],
+        }
+        try:
+            completion = client.chat.completions.create(
+                model=self.model_name,
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "你是A股复盘文案压缩助手，只输出 JSON：{\"items\":[\"...\"]}。",
+                    },
+                    {"role": "user", "content": json.dumps(prompt, ensure_ascii=False)},
+                ],
+                response_format={"type": "json_object"},
+                temperature=0.1,
+            )
+            content = completion.choices[0].message.content
+        except Exception as exc:
+            raise LLMFallbackError(_safe_error("OpenAI 催化摘要失败", exc)) from exc
+        if not content:
+            raise LLMFallbackError("OpenAI 催化摘要返回空内容")
+        try:
+            payload = json.loads(content)
+        except json.JSONDecodeError as exc:
+            raise LLMFallbackError("OpenAI 催化摘要 JSON 解析失败") from exc
+        items = payload.get("items")
+        if not isinstance(items, list):
+            raise LLMFallbackError("OpenAI 催化摘要字段缺失")
+        return [str(item) for item in items if str(item).strip()][:2]
