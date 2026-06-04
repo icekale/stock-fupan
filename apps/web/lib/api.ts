@@ -12,7 +12,14 @@ import type {
   WatchlistOcrPreviewResult,
 } from "./types";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+function defaultApiBaseUrl(): string {
+  if (typeof window !== "undefined" && window.location.hostname) {
+    return `${window.location.protocol}//${window.location.hostname}:8000`;
+  }
+  return "http://localhost:8000";
+}
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? defaultApiBaseUrl();
 
 export async function createCloseReport(tradeDate: string): Promise<CreateReportResponse> {
   return createReport(tradeDate, "close");

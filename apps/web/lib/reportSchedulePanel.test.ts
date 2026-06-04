@@ -13,6 +13,9 @@ test("home page exposes scheduled report generation controls", () => {
   assert.match(pageSource, /handleSaveReportSchedule/);
   assert.match(apiSource, /getReportScheduleStatus/);
   assert.match(apiSource, /updateReportScheduleStatus/);
+  assert.match(apiSource, /defaultApiBaseUrl/);
+  assert.match(apiSource, /window\.location\.hostname/);
+  assert.doesNotMatch(apiSource, /\?\?\s*"http:\/\/localhost:8000"/);
   assert.match(typesSource, /ReportScheduleStatus/);
   assert.match(typesSource, /ReportScheduleUpdate/);
   assert.match(panelSource, /role="switch"/);
