@@ -8,6 +8,16 @@ from app.db.session import create_sqlite_engine, init_db, session_scope
 from app.services.report_schedule import run_due_report_schedule
 
 
+def test_report_schedule_status_allows_unraid_web_origin(client) -> None:
+    response = client.get(
+        "/api/report-schedule/status",
+        headers={"Origin": "http://192.168.5.28:3000"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "http://192.168.5.28:3000"
+
+
 class RecordingGenerator:
     def __init__(self) -> None:
         self.calls: list[str] = []
