@@ -244,17 +244,15 @@ def test_anspire_provider_sanitizes_request_failures() -> None:
     assert "Authorization" not in message
 
 
-def test_provider_factory_rejects_tickflow_market_provider() -> None:
+def test_provider_factory_normalizes_legacy_tickflow_market_provider() -> None:
     settings = Settings(
         market_provider="tickflow",
-        news_provider="anspire",
-        provider_fallback_enabled=False,
-        anspire_api_key="secret-key",
-        tickflow_api_key="tk-test-local",
+        news_provider="fake",
     )
 
-    with pytest.raises(ValueError, match="Unsupported MARKET_PROVIDER"):
-        create_provider_bundle(settings)
+    bundle = create_provider_bundle(settings)
+
+    assert isinstance(bundle.market_provider, AStockMarketDataProvider)
 
 
 def test_provider_factory_can_force_fake_providers() -> None:

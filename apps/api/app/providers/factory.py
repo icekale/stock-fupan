@@ -89,7 +89,9 @@ def _create_market_provider(
     settings: Settings,
     runtime_config: RuntimeProviderConfigState | None = None,
 ) -> MarketDataProvider:
-    market_provider = str(_runtime_value(runtime_config, "market_provider", settings.market_provider))
+    market_provider = _normalize_market_provider(
+        str(_runtime_value(runtime_config, "market_provider", settings.market_provider))
+    )
     if market_provider == "fake":
         return FakeMarketDataProvider()
     if market_provider == "a_stock":
@@ -97,6 +99,12 @@ def _create_market_provider(
             timeout_seconds=settings.provider_timeout_seconds,
         )
     raise ValueError(f"Unsupported MARKET_PROVIDER: {market_provider}")
+
+
+def _normalize_market_provider(value: str) -> str:
+    if value == "tickflow":
+        return "a_stock"
+    return value
 
 
 def _create_news_provider(
