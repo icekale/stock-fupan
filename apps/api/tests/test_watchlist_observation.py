@@ -1,4 +1,4 @@
-from app.providers.tickflow import WatchlistQuote
+from app.providers.quotes import WatchlistQuote
 from app.services.watchlist_observation import build_watchlist_observation
 from app.watchlist.parser import WatchlistItem
 

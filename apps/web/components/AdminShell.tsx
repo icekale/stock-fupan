@@ -37,7 +37,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
           </nav>
 
           <div className="mt-8 rounded-3xl border border-white/10 bg-white/5 p-4 text-xs leading-6 text-slate-400">
-            数据源优先级：TickFlow + Anspire 为主源，同花顺 / 东方财富作为复盘辅助。
+            数据源优先级：A-Stock + Anspire 为主源，同花顺 / 东方财富作为复盘辅助。
           </div>
         </aside>
 

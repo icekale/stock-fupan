@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     structured_review_fallback_enabled: bool = True
     anspire_api_key: str = ""
     anspire_base_url: str = "https://plugin.anspire.cn/api/ntsearch/search"
-    market_provider: str = "tickflow"
+    market_provider: str = "a_stock"
     news_provider: str = "anspire"
     provider_fallback_enabled: bool = True
     provider_timeout_seconds: float = 12

@@ -6,17 +6,220 @@ import uuid
 from typing import Any
 
 import httpx
+from pydantic import BaseModel, Field
 
-from app.providers.market import ProviderFallbackError
+from app.providers.market import MarketBreadth, MarketCloseSnapshot, ProviderFallbackError
+from app.providers.quotes import WatchlistQuote
 from app.providers.review_sources import (
     ReviewSourceResult,
     ReviewStockEvidence,
     ReviewThemeEvidence,
 )
-from app.schemas.report import DragonTigerSeat, DragonTigerStock, DragonTigerSummary, NewsItem
+from app.rules.scoring import RawSectorInput
+from app.schemas.report import DragonTigerSeat, DragonTigerStock, DragonTigerSummary, IndexSnapshot, NewsItem
 
 
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/117.0.0.0 Safari/537.36"
+TENCENT_QUOTE_URL = "https://qt.gtimg.cn/q="
+EASTMONEY_INDUSTRY_URLS = (
+    "https://push2.eastmoney.com/api/qt/clist/get",
+    "https://push2delay.eastmoney.com/api/qt/clist/get",
+)
+A_STOCK_INDEX_QUERY_CODES = ("sh000001", "sz399001", "sz399006")
+A_STOCK_DISPLAY_INDEX_CODES = {"000001", "399006"}
+A_STOCK_TURNOVER_INDEX_CODES = {"000001", "399001"}
+
+
+class AStockMarketQuote(BaseModel):
+    symbol: str
+    name: str
+    pct_change: float
+    last_price: float | None = None
+    turnover_cny: float | None = None
+    turnover_rate: float | None = None
+    capital_strength: str | None = None
+    tags: list[str] = Field(default_factory=list)
+
+
+class AStockMarketDataProvider:
+    provider_name = "a_stock"
+
+    def __init__(
+        self,
+        timeout_seconds: float = 12,
+        http_client: object | None = None,
+        top_n: int = 20,
+    ) -> None:
+        self.timeout_seconds = timeout_seconds
+        self._owns_client = http_client is None
+        self.http_client = http_client or httpx.Client()
+        self.top_n = top_n
+        self.industry_urls = EASTMONEY_INDUSTRY_URLS
+        self.eastmoney_max_attempts = 3
+        self.eastmoney_min_interval_seconds = 1.0
+        self._eastmoney_last_call = [0.0]
+        self._sector_frontline_stocks: dict[str, list[AStockMarketQuote]] = {}
+
+    def close(self) -> None:
+        if self._owns_client:
+            self.http_client.close()
+
+    def get_close_snapshot(self, trade_date: str) -> MarketCloseSnapshot:
+        indices, index_turnover_cny = self._fetch_indices()
+        sectors, breadth, sector_turnover_cny = self._fetch_industry_snapshot()
+        turnover_cny = index_turnover_cny or sector_turnover_cny
+        if not indices:
+            raise ProviderFallbackError("a-stock-data 腾讯行情指数数据不足")
+        if not sectors:
+            raise ProviderFallbackError("a-stock-data 东财行业排名数据不足")
+        return MarketCloseSnapshot(
+            trade_date=trade_date,
+            indices=indices,
+            breadth=breadth,
+            turnover_cny=turnover_cny,
+            market_state_tags=_a_stock_market_tags(breadth, turnover_cny),
+            raw_sectors=sectors,
+        )
+
+    def get_sector_frontline_stocks(self, sector_name: str) -> list[AStockMarketQuote]:
+        return list(self._sector_frontline_stocks.get(sector_name, []))
+
+    def _fetch_indices(self) -> tuple[list[IndexSnapshot], float]:
+        query = ",".join(A_STOCK_INDEX_QUERY_CODES)
+        try:
+            response = self.http_client.get(
+                f"{TENCENT_QUOTE_URL}{query}",
+                headers={"User-Agent": UA},
+                timeout=self.timeout_seconds,
+            )
+            response.raise_for_status()
+        except Exception as exc:
+            raise ProviderFallbackError(
+                f"a-stock-data 腾讯行情指数请求失败: {exc.__class__.__name__}"
+            ) from exc
+        return _parse_tencent_indices(response.text)
+
+    def _fetch_industry_snapshot(self) -> tuple[list[RawSectorInput], MarketBreadth, float]:
+        try:
+            rows = _eastmoney_industry_rows(
+                self.http_client,
+                self.industry_urls,
+                self.timeout_seconds,
+                page_size=max(self.top_n, 100),
+                max_attempts=self.eastmoney_max_attempts,
+                min_interval_seconds=self.eastmoney_min_interval_seconds,
+                last_call=self._eastmoney_last_call,
+            )
+        except Exception as exc:
+            raise ProviderFallbackError(
+                f"a-stock-data 东财行业排名请求失败: {exc.__class__.__name__}"
+            ) from exc
+        if not rows:
+            return [], MarketBreadth(up_count=0, down_count=0, limit_up_count=0, limit_down_count=0), 0.0
+
+        sectors: list[RawSectorInput] = []
+        self._sector_frontline_stocks = {}
+        total_up = 0
+        total_down = 0
+        total_turnover = 0.0
+        limit_up_proxy = 0
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            up_count = _to_int(row.get("f104"))
+            down_count = _to_int(row.get("f105"))
+            turnover_cny = _to_float_value(row.get("f6")) or 0.0
+            leader_change = _to_float_value(row.get("f136")) or _to_float_value(row.get("f3")) or 0.0
+            total_up += up_count
+            total_down += down_count
+            total_turnover += turnover_cny
+            if leader_change >= 9.8:
+                limit_up_proxy += 1
+        for row in rows[: self.top_n]:
+            if not isinstance(row, dict):
+                continue
+            name = str(row.get("f14") or "").strip()
+            if not name:
+                continue
+            pct_change = _to_float_value(row.get("f3")) or 0.0
+            up_count = _to_int(row.get("f104"))
+            down_count = _to_int(row.get("f105"))
+            turnover_cny = _to_float_value(row.get("f6")) or 0.0
+            leader = str(row.get("f128") or row.get("f140") or "").strip()
+            leader_code = str(row.get("f140") or "").strip()
+            leader_change = _to_float_value(row.get("f136")) or pct_change
+            stock_up_ratio = up_count / (up_count + down_count) if (up_count + down_count) else 0.0
+            sectors.append(
+                RawSectorInput(
+                    name=name,
+                    pct_change=pct_change,
+                    limit_up_count=up_count,
+                    stock_up_ratio=stock_up_ratio,
+                    turnover_change=min(turnover_cny / 10_000_000_000, 1.0),
+                    news_weight=min(max(pct_change / 8, 0.0), 1.0),
+                )
+            )
+            if leader:
+                self._sector_frontline_stocks[name] = [
+                    AStockMarketQuote(
+                        symbol=_normalize_a_share_symbol(leader_code),
+                        name=leader,
+                        pct_change=leader_change,
+                        turnover_cny=turnover_cny,
+                        capital_strength=_a_stock_capital_strength(turnover_cny, leader_change),
+                        tags=["a-stock前排"],
+                    )
+                ]
+
+        return (
+            sectors,
+            MarketBreadth(
+                up_count=total_up,
+                down_count=total_down,
+                limit_up_count=limit_up_proxy,
+                limit_down_count=0,
+            ),
+            round(total_turnover / 100_000_000, 2),
+        )
+
+
+class AStockQuoteProvider:
+    provider_name = "a_stock"
+
+    def __init__(
+        self,
+        timeout_seconds: float = 12,
+        http_client: object | None = None,
+    ) -> None:
+        self.timeout_seconds = timeout_seconds
+        self._owns_client = http_client is None
+        self.http_client = http_client or httpx.Client()
+
+    def close(self) -> None:
+        if self._owns_client:
+            self.http_client.close()
+
+    def get_quotes(self, symbols: list[str]) -> list[WatchlistQuote]:
+        if not symbols:
+            return []
+        query = ",".join(_tencent_quote_code(symbol) for symbol in symbols)
+        try:
+            response = self.http_client.get(
+                f"{TENCENT_QUOTE_URL}{query}",
+                headers={"User-Agent": UA},
+                timeout=self.timeout_seconds,
+            )
+            response.raise_for_status()
+        except Exception as exc:
+            raise ProviderFallbackError(
+                f"a-stock-data 腾讯自选股行情请求失败: {exc.__class__.__name__}"
+            ) from exc
+        quote_by_code = _parse_tencent_watchlist_quotes(response.text)
+        return [
+            quote_by_code[_normalize_a_share_symbol(_symbol_code(symbol))]
+            for symbol in symbols
+            if _normalize_a_share_symbol(_symbol_code(symbol)) in quote_by_code
+        ]
 
 
 class AStockThsHotProvider:
@@ -117,7 +320,7 @@ class AStockIndustryRankProvider:
         self._owns_client = http_client is None
         self.http_client = http_client or httpx.Client()
         self.top_n = top_n
-        self.source_url = "https://push2delay.eastmoney.com/api/qt/clist/get"
+        self.source_url = "https://push2.eastmoney.com/api/qt/clist/get"
 
     def close(self) -> None:
         if self._owns_client:
@@ -134,9 +337,9 @@ class AStockIndustryRankProvider:
                 "np": "1",
                 "fltt": "2",
                 "invt": "2",
-                "fs": "m:90+t:3",
+                "fs": "m:90+t:2",
                 "fid": "f3",
-                "fields": "f2,f3,f4,f12,f13,f14,f104,f105,f128,f136,f140,f141,f207",
+                "fields": "f2,f3,f4,f6,f12,f13,f14,f104,f105,f128,f136,f140,f141,f207",
                 "ut": "bd1d9ddb04089700cf9c27f6f7426281",
             },
             timeout=self.timeout_seconds,
@@ -577,6 +780,216 @@ def _dragon_tiger_market_notes(summary: DragonTigerSummary) -> list[str]:
         summary.conclusion,
         *summary.risk_notes[:1],
     ]
+
+
+def _parse_tencent_indices(text: str) -> tuple[list[IndexSnapshot], float]:
+    index_names = {"000001": "上证指数", "399006": "创业板指"}
+    indices: list[IndexSnapshot] = []
+    turnover_cny = 0.0
+    for line in text.strip().split(";"):
+        if not line.strip() or "=" not in line or '"' not in line:
+            continue
+        values = line.split('"')[1].split("~")
+        if len(values) < 38:
+            continue
+        code = values[2]
+        amount_wan = _to_float_value(values[37]) or 0.0
+        if code in A_STOCK_TURNOVER_INDEX_CODES:
+            turnover_cny += amount_wan * 10_000
+        if code not in A_STOCK_DISPLAY_INDEX_CODES:
+            continue
+        close = _to_float_value(values[3])
+        pct_change = _to_float_value(values[32])
+        if close is None or pct_change is None:
+            continue
+        indices.append(
+            IndexSnapshot(
+                name=values[1] or index_names[code],
+                code=code,
+                close=close,
+                pct_change=pct_change,
+            )
+        )
+    return indices, round(turnover_cny / 100_000_000, 2)
+
+
+def _parse_tencent_watchlist_quotes(text: str) -> dict[str, WatchlistQuote]:
+    quotes: dict[str, WatchlistQuote] = {}
+    for line in text.strip().split(";"):
+        if not line.strip() or "=" not in line or '"' not in line:
+            continue
+        values = line.split('"')[1].split("~")
+        if len(values) < 39:
+            continue
+        code = values[2]
+        symbol = _normalize_a_share_symbol(code)
+        pct_change = _to_float_value(values[32])
+        last_price = _to_float_value(values[3])
+        amount_wan = _to_float_value(values[37])
+        turnover_rate = _to_float_value(values[38])
+        turnover_cny = amount_wan * 10_000 if amount_wan is not None else None
+        quotes[symbol] = WatchlistQuote(
+            symbol=symbol,
+            name=values[1] or None,
+            last_price=last_price,
+            pct_change=pct_change,
+            turnover_cny=turnover_cny,
+            turnover_rate=turnover_rate,
+            capital_strength=_stock_quote_capital_strength(turnover_cny, turnover_rate, pct_change),
+        )
+    return quotes
+
+
+def _eastmoney_industry_rows(
+    http_client: object,
+    urls: tuple[str, ...] | list[str],
+    timeout_seconds: float,
+    page_size: int = 100,
+    max_attempts: int = 1,
+    min_interval_seconds: float = 0.0,
+    last_call: list[float] | None = None,
+) -> list[dict[str, Any]]:
+    response = _eastmoney_get(
+        http_client,
+        urls,
+        headers={"User-Agent": UA, "Referer": "https://quote.eastmoney.com/"},
+        params={
+            "pn": "1",
+            "pz": str(page_size),
+            "po": "1",
+            "np": "1",
+            "fltt": "2",
+            "invt": "2",
+            "fs": "m:90+t:2",
+            "fid": "f3",
+            "fields": "f2,f3,f4,f6,f12,f13,f14,f104,f105,f128,f136,f140,f141,f207",
+            "ut": "bd1d9ddb04089700cf9c27f6f7426281",
+        },
+        timeout_seconds=timeout_seconds,
+        max_attempts=max_attempts,
+        min_interval_seconds=min_interval_seconds,
+        last_call=last_call,
+    )
+    payload = response.json()
+    rows = payload.get("data", {}).get("diff", []) if isinstance(payload, dict) else []
+    return rows if isinstance(rows, list) else []
+
+
+def _eastmoney_get(
+    http_client: object,
+    urls: tuple[str, ...] | list[str],
+    headers: dict[str, str],
+    params: dict[str, str],
+    timeout_seconds: float,
+    max_attempts: int,
+    min_interval_seconds: float,
+    last_call: list[float] | None,
+) -> object:
+    attempts = max(1, max_attempts)
+    state = last_call if last_call is not None else [0.0]
+    error: Exception | None = None
+    for url in urls:
+        for attempt in range(attempts):
+            _throttle_eastmoney(min_interval_seconds, state)
+            try:
+                response = http_client.get(
+                    url,
+                    headers=headers,
+                    params=params,
+                    timeout=timeout_seconds,
+                )
+                response.raise_for_status()
+                return response
+            except Exception as exc:
+                error = exc
+                if attempt == attempts - 1:
+                    break
+    if error is not None:
+        raise error
+    raise ProviderFallbackError("东财请求失败")
+
+
+def _throttle_eastmoney(min_interval_seconds: float, last_call: list[float]) -> None:
+    now = time.time()
+    wait_seconds = min_interval_seconds - (now - last_call[0])
+    if wait_seconds > 0:
+        time.sleep(wait_seconds)
+    last_call[0] = time.time()
+
+
+def _to_int(value: object) -> int:
+    parsed = _to_float_value(value)
+    return int(parsed) if parsed is not None else 0
+
+
+def _normalize_a_share_symbol(code: str) -> str:
+    normalized = code.strip()
+    if not normalized:
+        return ""
+    if "." in normalized:
+        return normalized
+    if normalized.startswith(("6", "9")):
+        return f"{normalized}.SH"
+    if normalized.startswith("8"):
+        return f"{normalized}.BJ"
+    return f"{normalized}.SZ"
+
+
+def _symbol_code(symbol: str) -> str:
+    return symbol.strip().split(".", 1)[0]
+
+
+def _tencent_quote_code(symbol: str) -> str:
+    code = _symbol_code(symbol)
+    exchange = symbol.strip().split(".", 1)[1].upper() if "." in symbol.strip() else ""
+    if exchange == "SH" or code.startswith(("6", "9")):
+        return f"sh{code}"
+    if exchange == "BJ" or code.startswith("8"):
+        return f"bj{code}"
+    return f"sz{code}"
+
+
+def _a_stock_market_tags(breadth: MarketBreadth, turnover_cny: float) -> list[str]:
+    if breadth.up_count > breadth.down_count * 1.5:
+        breadth_tag = "普涨"
+    elif breadth.down_count > breadth.up_count * 1.5:
+        breadth_tag = "普跌"
+    else:
+        breadth_tag = "分化"
+    return [breadth_tag, "放量" if turnover_cny >= 10000 else "缩量"]
+
+
+def _a_stock_capital_strength(turnover_cny: float | None, pct_change: float | None) -> str | None:
+    if turnover_cny is None:
+        return None
+    turnover_yi = turnover_cny / 100_000_000
+    change = pct_change or 0.0
+    if turnover_yi >= 30 and change >= 5:
+        return "强"
+    if turnover_yi >= 10:
+        return "温和放量"
+    return "一般"
+
+
+def _stock_quote_capital_strength(
+    turnover_cny: float | None,
+    turnover_rate: float | None,
+    pct_change: float | None,
+) -> str | None:
+    if turnover_cny is None and turnover_rate is None:
+        return None
+    turnover_yi = (turnover_cny or 0) / 100_000_000
+    rate = turnover_rate or 0
+    change = pct_change or 0
+    if turnover_yi >= 30 and rate >= 20 and change >= 5:
+        return "高换手强承接"
+    if turnover_yi >= 10 or (rate >= 8 and change >= 5):
+        return "强"
+    if turnover_yi >= 3 or rate >= 5:
+        return "温和放量"
+    if rate >= 25 and change < 5:
+        return "高换手分歧"
+    return "一般"
 
 
 def _to_float_value(value: object) -> float | None:

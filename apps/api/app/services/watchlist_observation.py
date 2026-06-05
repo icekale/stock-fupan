@@ -1,4 +1,4 @@
-from app.providers.tickflow import WatchlistQuote
+from app.providers.quotes import WatchlistQuote
 from app.schemas.report import SectorCandidate, WatchlistMatch, WatchlistObservation
 from app.watchlist.parser import WatchlistItem
 
@@ -23,7 +23,7 @@ def build_watchlist_observation(
     strongest = sorted(quoted_matches, key=lambda match: match.pct_change or 0, reverse=True)[:5]
     weakest = sorted(quoted_matches, key=lambda match: match.pct_change or 0)[:5]
     sector_matches = _sector_matches(matches, sectors)
-    notes = [] if quotes else ["TickFlow 未返回自选股行情，已保留导入列表"]
+    notes = [] if quotes else ["行情源未返回自选股行情，已保留导入列表"]
     if not sector_matches:
         notes.append("暂未匹配到板块内自选股")
     return WatchlistObservation(

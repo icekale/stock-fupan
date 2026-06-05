@@ -92,10 +92,10 @@ def _curated_sources(sources: list[str]) -> list[str]:
 
 
 def _primary_basis(report: ReportDTO, sector: SectorCandidate) -> list[str]:
-    basis = [f"TickFlow行情：强度{sector.score:.1f}、排名{sector.rank}、板块涨幅{sector.pct_change:+.2f}%"]
+    basis = [f"行情强度：强度{sector.score:.1f}、排名{sector.rank}、板块涨幅{sector.pct_change:+.2f}%"]
     capital_evidence = _capital_evidence_for_sector(sector)
     if capital_evidence is not None:
-        basis.append(f"TickFlow资金：{capital_evidence.summary}，资金强度{capital_evidence.strength}")
+        basis.append(f"前排资金：{capital_evidence.summary}，资金强度{capital_evidence.strength}")
     dragon_tiger_basis = _dragon_tiger_basis(report, sector)
     if dragon_tiger_basis is not None:
         basis.append(dragon_tiger_basis)

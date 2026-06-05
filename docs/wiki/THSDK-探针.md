@@ -1,6 +1,6 @@
 # THSDK 探针
 
-`thsdk` 是实验性同花顺辅助源，默认关闭。开启 `THSDK_ENABLED=true` 后，会作为辅助复盘源参与报告证据，不替代 TickFlow / Anspire。
+`thsdk` 是实验性同花顺辅助源，默认关闭。开启 `THSDK_ENABLED=true` 后，会作为辅助复盘源参与报告证据，不替代 a-stock-data / Anspire。
 
 ## 目标
 
@@ -48,7 +48,7 @@ uv run python scripts/probe_thsdk.py
 
 - 至少两类探测项稳定返回真实数据。
 - `wencai_nlp`、`ths_concept` 或 `market_data_block` 至少一项可用。
-- 失败时能清楚返回原因，不影响 TickFlow / Anspire 主流程。
+- 失败时能清楚返回原因，不影响 a-stock-data / Anspire 主流程。
 - Unraid 容器内也能跑通。
 
 ## 报告接入方式
@@ -62,7 +62,7 @@ uv run python scripts/probe_thsdk.py
 
 数据源优先级保持不变：
 
-1. TickFlow：主行情源。
+1. a-stock-data：主行情源。
 2. Anspire：主新闻源。
 3. 同花顺复盘 / 东方财富涨停复盘：辅助复盘源。
 4. THSDK：实验性同花顺问财/概念辅助源，默认关闭。

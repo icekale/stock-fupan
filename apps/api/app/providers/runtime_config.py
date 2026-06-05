@@ -12,7 +12,7 @@ from app.db.models import RuntimeProviderConfig
 from app.db.session import session_scope
 
 
-MarketProviderKey = Literal["tickflow", "fake"]
+MarketProviderKey = Literal["a_stock", "fake"]
 NewsProviderKey = Literal["anspire", "eastmoney_global", "fake"]
 ReviewSourceKey = Literal[
     "ths_fupan",
@@ -23,7 +23,7 @@ ReviewSourceKey = Literal[
     "a_stock_dragon_tiger",
 ]
 
-MARKET_PROVIDER_KEYS = {"tickflow", "fake"}
+MARKET_PROVIDER_KEYS = {"a_stock", "fake"}
 NEWS_PROVIDER_KEYS = {"anspire", "eastmoney_global", "fake"}
 REVIEW_SOURCE_KEYS = {
     "ths_fupan",
@@ -58,8 +58,14 @@ def get_runtime_provider_config(engine: Engine, settings: Settings) -> RuntimePr
         ).first()
         if row is None:
             return default_runtime_provider_config(settings)
+        market_provider = _supported_or_default(
+            row.market_provider,
+            MARKET_PROVIDER_KEYS,
+            settings.market_provider,
+            "a_stock",
+        )
         return RuntimeProviderConfigState(
-            market_provider=row.market_provider,
+            market_provider=market_provider,
             news_provider=row.news_provider,
             review_sources=list(row.review_sources or []),
             fallback_enabled=bool(row.fallback_enabled),
@@ -136,6 +142,19 @@ def _dedupe_review_sources(values: list[str]) -> list[str]:
     return output
 
 
+def _supported_or_default(
+    value: str,
+    supported: set[str],
+    settings_value: str,
+    fallback: str,
+) -> str:
+    if value in supported:
+        return value
+    if settings_value in supported:
+        return settings_value
+    return fallback
+
+
 @dataclass(frozen=True)
 class ProviderOption:
     key: str
@@ -149,7 +168,7 @@ class ProviderOption:
 
 
 PROVIDER_OPTIONS: tuple[ProviderOption, ...] = (
-    ProviderOption("tickflow", "market_provider", "TickFlow", "主源 · 行情", True, "tickflow_api_key"),
+    ProviderOption("a_stock", "market_provider", "A-Stock", "主源 · a-stock-data 行情"),
     ProviderOption("fake", "market_provider", "Fake", "本地 · 行情占位", False, None, False, True),
     ProviderOption("anspire", "news_provider", "Anspire", "主源 · 新闻", True, "anspire_api_key"),
     ProviderOption("eastmoney_global", "news_provider", "东财全球资讯", "增强源 · 7x24 新闻"),

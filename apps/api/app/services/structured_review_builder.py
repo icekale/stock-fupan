@@ -481,7 +481,7 @@ def _build_sector_review(sector: SectorCandidate, next_session: str = "明日") 
     review_evidence = _compact_news_evidence(sector.review_notes, max_length=96)
     front_row_text = _front_row_stock_text(sector)
     source_text = "、".join(sector.review_sources) if sector.review_sources else "复盘源暂未确认"
-    capital_text = sector.capital_evidence.summary if sector.capital_evidence else "TickFlow资金/换手证据不足"
+    capital_text = sector.capital_evidence.summary if sector.capital_evidence else "行情资金/换手证据不足"
     return StructuredSectorReview(
         sector=sector.name,
         headline=f"{sector.name}：{_headline_suffix(rating)}",

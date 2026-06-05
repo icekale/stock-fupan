@@ -10,7 +10,7 @@
 - 可见性：Private
 - 分支：`main`
 - 当前提交包含：
-  - TickFlow-only 行情路径。
+  - a-stock-data 日报行情路径。
   - 参考 HTML 风格报告。
   - 每日报告命令 `make report DATE=YYYY-MM-DD`。
   - 次日强势概率与观察条件。

@@ -9,8 +9,8 @@ from app.providers.factory import ProviderBundle
 from app.providers.llm import FakeLLMProvider
 from app.providers.market import FakeMarketDataProvider
 from app.providers.news import FakeNewsProvider
+from app.providers.quotes import FakeQuoteProvider
 from app.providers.runtime_config import RuntimeProviderConfigInput, save_runtime_provider_config
-from app.providers.tickflow import FakeTickFlowProvider
 from app.services import report_generator as report_generator_module
 from app.services.weekly_report_generator import WeeklyGeneratedReport
 from app.services.assets import AssetPaths
@@ -44,7 +44,7 @@ def _fake_bundle() -> ProviderBundle:
         news_provider=FakeNewsProvider(),
         llm_provider=FakeLLMProvider(),
         ocr_provider=object(),
-        tickflow_provider=FakeTickFlowProvider(),
+        quote_provider=FakeQuoteProvider(),
         review_source_provider=None,
     )
 

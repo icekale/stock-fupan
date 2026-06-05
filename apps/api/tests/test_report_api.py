@@ -20,7 +20,7 @@ from app.providers.market import (
 from app.rules.scoring import RawSectorInput
 from app.providers.news import FakeNewsProvider
 from app.providers.review_sources import ReviewSourceResult, ReviewStockEvidence, ReviewThemeEvidence
-from app.providers.tickflow import FakeTickFlowProvider, WatchlistQuote
+from app.providers.quotes import FakeQuoteProvider, WatchlistQuote
 from app.renderers.html_renderer import render_mobile_report_html
 from app.rules.scoring import score_sectors
 from app.rules.validation import validate_narrative_facts
@@ -121,7 +121,7 @@ def test_create_weekly_report_api_returns_generated_report(tmp_path: Path, monke
             end_date=end_date,
             assets=assets,
             validation_errors=[],
-            provider_status={"weekly_tickflow": {"status": "success"}},
+            provider_status={"weekly_market": {"status": "success"}},
             summary={"title": f"{start_date} 至 {end_date} 周报复盘"},
         )
 
@@ -226,13 +226,11 @@ def test_report_api_deletes_report_row_and_asset_dir(tmp_path: Path, monkeypatch
 
 
 def test_config_status_api_returns_sanitized_provider_state(monkeypatch) -> None:
-    monkeypatch.setenv("MARKET_PROVIDER", "tickflow")
+    monkeypatch.setenv("MARKET_PROVIDER", "a_stock")
     monkeypatch.setenv("NEWS_PROVIDER", "anspire")
-    monkeypatch.setenv("TICKFLOW_PROVIDER", "tickflow")
     monkeypatch.setenv("REVIEW_SOURCES_ENABLED", "true")
     monkeypatch.setenv("REPORT_WATCHLIST_ENABLED", "false")
     monkeypatch.setenv("OCR_PROVIDER", "fake")
-    monkeypatch.setenv("TICKFLOW_API_KEY", "tk_secret_should_not_leak")
     monkeypatch.setenv("ANSPIRE_API_KEY", "sk-secret-should-not-leak")
     get_settings.cache_clear()
 
@@ -242,9 +240,9 @@ def test_config_status_api_returns_sanitized_provider_state(monkeypatch) -> None
     assert response.status_code == 200
     payload = response.json()
     items = {item["name"]: item for item in payload["items"]}
-    assert items["TickFlow"]["status"] == "ready"
-    assert items["TickFlow"]["configured"] is True
-    assert items["TickFlow"]["enabled"] is True
+    assert items["A-Stock"]["status"] == "ready"
+    assert items["A-Stock"]["configured"] is True
+    assert items["A-Stock"]["enabled"] is True
     assert items["Anspire"]["status"] == "ready"
     assert items["同花顺复盘"]["status"] == "ready"
     assert items["东方财富涨停复盘"]["status"] == "ready"
@@ -252,7 +250,6 @@ def test_config_status_api_returns_sanitized_provider_state(monkeypatch) -> None
     assert items["THSDK"]["enabled"] is False
     assert items["自选股模块"]["status"] == "disabled"
     assert items["OCR"]["status"] == "local"
-    assert "tk_secret_should_not_leak" not in response.text
     assert "sk-secret-should-not-leak" not in response.text
 
 
@@ -271,9 +268,8 @@ def test_config_status_api_marks_thsdk_experimental_when_enabled(monkeypatch) ->
 
 
 def test_data_source_options_api_returns_current_options(monkeypatch) -> None:
-    monkeypatch.setenv("MARKET_PROVIDER", "tickflow")
+    monkeypatch.setenv("MARKET_PROVIDER", "a_stock")
     monkeypatch.setenv("NEWS_PROVIDER", "anspire")
-    monkeypatch.setenv("TICKFLOW_API_KEY", "tk_secret_should_not_leak")
     monkeypatch.setenv("ANSPIRE_API_KEY", "")
     get_settings.cache_clear()
 
@@ -282,7 +278,7 @@ def test_data_source_options_api_returns_current_options(monkeypatch) -> None:
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["current"]["market_provider"] == "tickflow"
+    assert payload["current"]["market_provider"] == "a_stock"
     assert payload["current"]["news_provider"] == "anspire"
     categories = {category["key"]: category for category in payload["categories"]}
     assert categories["market_provider"]["selection"] == "single"
@@ -291,11 +287,10 @@ def test_data_source_options_api_returns_current_options(monkeypatch) -> None:
     news_options = {item["key"]: item for item in categories["news_provider"]["options"]}
     assert news_options["anspire"]["status"] == "missing_key"
     assert news_options["eastmoney_global"]["status"] == "ready"
-    assert "tk_secret_should_not_leak" not in response.text
 
 
 def test_data_source_options_api_saves_runtime_config(monkeypatch) -> None:
-    monkeypatch.setenv("MARKET_PROVIDER", "tickflow")
+    monkeypatch.setenv("MARKET_PROVIDER", "a_stock")
     monkeypatch.setenv("NEWS_PROVIDER", "anspire")
     get_settings.cache_clear()
 
@@ -303,7 +298,7 @@ def test_data_source_options_api_saves_runtime_config(monkeypatch) -> None:
         save_response = client.put(
             "/api/data-sources/options",
             json={
-                "market_provider": "tickflow",
+                "market_provider": "a_stock",
                 "news_provider": "eastmoney_global",
                 "review_sources": ["a_stock_ths_hot", "a_stock_industry_rank"],
                 "fallback_enabled": False,
@@ -325,7 +320,7 @@ def test_data_source_options_api_rejects_unknown_provider() -> None:
         response = client.put(
             "/api/data-sources/options",
             json={
-                "market_provider": "tickflow",
+                "market_provider": "a_stock",
                 "news_provider": "unknown",
                 "review_sources": [],
                 "fallback_enabled": True,
@@ -334,6 +329,22 @@ def test_data_source_options_api_rejects_unknown_provider() -> None:
 
     assert response.status_code == 422
     assert "Unsupported NEWS_PROVIDER" in response.text
+
+
+def test_data_source_options_api_rejects_tickflow_market_provider() -> None:
+    with TestClient(app) as client:
+        response = client.put(
+            "/api/data-sources/options",
+            json={
+                "market_provider": "tickflow",
+                "news_provider": "anspire",
+                "review_sources": [],
+                "fallback_enabled": False,
+            },
+        )
+
+    assert response.status_code == 422
+    assert "Unsupported MARKET_PROVIDER" in response.text
 
 
 def test_create_close_report_api_returns_provider_status(tmp_path: Path, monkeypatch) -> None:
@@ -1156,7 +1167,7 @@ class FrontlineStockMarketProvider(ConflictingRawAndScoredMarketProvider):
         ]
 
 
-def test_report_generator_merges_tickflow_frontline_stocks_into_strong_sectors(
+def test_report_generator_merges_market_frontline_stocks_into_strong_sectors(
     tmp_path: Path,
 ) -> None:
     generator = ReportGenerator(
@@ -1178,7 +1189,7 @@ def test_report_generator_merges_tickflow_frontline_stocks_into_strong_sectors(
     assert semiconductor.capital_evidence.front_row_turnover_cny == 22_200_000_000
     assert semiconductor.capital_evidence.avg_turnover_rate == 13.0
     assert "前排成交额合计222.00亿" in semiconductor.capital_evidence.summary
-    assert "TickFlow前排" in semiconductor.top_stocks[0].tags
+    assert "行情前排" in semiconductor.top_stocks[0].tags
     snapshot = json.loads(result.assets.snapshot.read_text(encoding="utf-8"))
     snapshot_sector = next(
         sector for sector in snapshot["report"]["sectors"] if sector["name"] == "半导体"
@@ -1235,8 +1246,8 @@ class TodayPowerMarketProvider:
         ]
 
 
-class HistoricalThemeTickFlowProvider:
-    provider_name = "tickflow"
+class HistoricalThemeQuoteProvider:
+    provider_name = "a_stock"
 
     def __init__(self) -> None:
         self.requested_symbols: list[str] = []
@@ -1328,14 +1339,14 @@ def test_report_generator_tracks_previous_strong_themes_not_in_today_top(tmp_pat
 
 
 def test_report_generator_tracks_previous_reference_html_themes(tmp_path: Path) -> None:
-    tickflow = HistoricalThemeTickFlowProvider()
+    quote_provider = HistoricalThemeQuoteProvider()
     generator = ReportGenerator(
         reports_root=tmp_path,
         market_provider=TodayPowerMarketProvider(),
         news_provider=FakeNewsProvider(),
         llm_provider=FakeLLMProvider(),
         previous_review_html_path=Path("/Users/kale/Downloads/2026-05-26_structured_review.html"),
-        tickflow_provider=tickflow,
+        quote_provider=quote_provider,
     )
 
     result = generator.generate_close_report("2026-05-27")
@@ -1354,8 +1365,8 @@ def test_report_generator_tracks_previous_reference_html_themes(tmp_path: Path) 
     assert any("中大力德" in item for item in robot.evidence)
     assert any("宝鼎科技" in item for item in pcb.evidence)
     assert all("连板晋级率" not in item for item in [*robot.evidence, *pcb.evidence])
-    assert "600584.SH" in tickflow.requested_symbols
-    assert "002896.SZ" in tickflow.requested_symbols
+    assert "600584.SH" in quote_provider.requested_symbols
+    assert "002896.SZ" in quote_provider.requested_symbols
     assert any("长电科技 600584.SH 今日-3.20%" in item for item in advanced.current_stock_checks)
     assert any("中大力德 002896.SZ 今日+4.60%" in item for item in robot.current_stock_checks)
 
@@ -1380,9 +1391,9 @@ class StaticWatchlistService:
         )
 
 
-class ExplodingTickFlowProvider:
+class ExplodingQuoteProvider:
     def get_quotes(self, symbols: list[str]):
-        raise AssertionError(f"TickFlow should not be called: {symbols}")
+        raise AssertionError(f"Quote provider should not be called: {symbols}")
 
 
 def test_report_generator_disables_watchlist_by_default(tmp_path: Path) -> None:
@@ -1393,31 +1404,34 @@ def test_report_generator_disables_watchlist_by_default(tmp_path: Path) -> None:
         news_provider=FakeNewsProvider(),
         llm_provider=FakeLLMProvider(),
         watchlist_service=watchlist_service,
-        tickflow_provider=ExplodingTickFlowProvider(),
+        quote_provider=ExplodingQuoteProvider(),
     )
 
     result = generator.generate_close_report("2026-05-26")
 
     assert watchlist_service.called is False
     assert result.report.watchlist_observation is None
-    assert result.provider_status["market_tickflow"] == result.provider_status["market"]
-    assert result.provider_status["watchlist_tickflow"] == {
-        "provider": "tickflow",
+    assert result.provider_status["market_quote"] == result.provider_status["market"]
+    assert result.provider_status["watchlist_quote"] == {
+        "provider": "quote",
         "status": "disabled",
         "fallback_used": False,
         "reason": "自选股模块未开启",
     }
-    assert result.provider_status["tickflow"] == {
-        "provider": "tickflow",
+    assert result.provider_status["quote"] == {
+        "provider": "quote",
         "status": "disabled",
         "fallback_used": False,
         "reason": "自选股模块未开启",
     }
+    assert "tickflow" not in result.provider_status
+    assert "market_tickflow" not in result.provider_status
+    assert "watchlist_tickflow" not in result.provider_status
     html = render_mobile_report_html(result.report)
     assert "自选股观察" not in html
 
 
-def test_report_generator_writes_watchlist_observation_and_tickflow_status_when_enabled(
+def test_report_generator_writes_watchlist_observation_and_quote_status_when_enabled(
     tmp_path: Path,
 ) -> None:
     generator = ReportGenerator(
@@ -1426,7 +1440,7 @@ def test_report_generator_writes_watchlist_observation_and_tickflow_status_when_
         news_provider=FakeNewsProvider(),
         llm_provider=FakeLLMProvider(),
         watchlist_service=StaticWatchlistService(),
-        tickflow_provider=FakeTickFlowProvider(),
+        quote_provider=FakeQuoteProvider(),
         watchlist_enabled=True,
     )
 
@@ -1434,21 +1448,21 @@ def test_report_generator_writes_watchlist_observation_and_tickflow_status_when_
 
     assert result.report.watchlist_observation is not None
     assert result.report.watchlist_observation.total_count == 2
-    assert result.provider_status["watchlist_tickflow"] == {
-        "provider": "fake_tickflow",
+    assert result.provider_status["watchlist_quote"] == {
+        "provider": "fake_quote",
         "status": "success",
         "fallback_used": False,
         "reason": None,
     }
-    assert result.provider_status["tickflow"] == {
-        "provider": "fake_tickflow",
+    assert result.provider_status["quote"] == {
+        "provider": "fake_quote",
         "status": "success",
         "fallback_used": False,
         "reason": None,
     }
     snapshot = json.loads(result.assets.snapshot.read_text(encoding="utf-8"))
     assert snapshot["report"]["watchlist_observation"]["total_count"] == 2
-    assert snapshot["provider_status"]["tickflow"] == result.provider_status["tickflow"]
+    assert snapshot["provider_status"]["quote"] == result.provider_status["quote"]
 
 
 def test_mobile_report_renderer_contains_watchlist_section(tmp_path: Path) -> None:
@@ -1458,7 +1472,7 @@ def test_mobile_report_renderer_contains_watchlist_section(tmp_path: Path) -> No
         news_provider=FakeNewsProvider(),
         llm_provider=FakeLLMProvider(),
         watchlist_service=StaticWatchlistService(),
-        tickflow_provider=FakeTickFlowProvider(),
+        quote_provider=FakeQuoteProvider(),
         watchlist_enabled=True,
     )
 
@@ -1680,7 +1694,7 @@ def test_report_generator_uses_thsdk_theme_stocks_as_auxiliary_confirmation(
     assert any("THSDK问财今日连板" in note for note in robot.review_notes)
 
 
-def test_report_generator_keeps_tickflow_top_sectors_when_review_source_confirms_only_one(
+def test_report_generator_keeps_market_top_sectors_when_review_source_confirms_only_one(
     tmp_path: Path,
 ) -> None:
     generator = ReportGenerator(

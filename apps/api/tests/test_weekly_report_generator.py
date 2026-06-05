@@ -1,17 +1,17 @@
 from pathlib import Path
 
-from app.services.weekly_report_generator import WeeklyReportGenerator
+from app.services.weekly_report_generator import AStockWeeklyDataClient, WeeklyReportGenerator
 
 
-class FakeWeeklyTickFlowClient:
-    provider_name = "tickflow"
+class FakeWeeklyMarketClient:
+    provider_name = "a_stock"
 
     def get_weekly_market_data(self, start_date: str, end_date: str):
         assert start_date == "2026-05-25"
         assert end_date == "2026-05-29"
         return {
             "meta": {
-                "source": "TickFlow",
+                "source": "a-stock-data",
                 "range": "2026-05-25..2026-05-29",
                 "symbol_count": 4,
                 "stock_rows": 4,
@@ -157,6 +157,73 @@ class FakeWeeklyNewsProvider:
         ]
 
 
+class WeeklyAStockResponse:
+    def __init__(self, payload: object | None = None, text: str = "") -> None:
+        self.payload = payload
+        self.text = text
+
+    def raise_for_status(self) -> None:
+        pass
+
+    def json(self) -> object:
+        return self.payload
+
+
+class WeeklyAStockHttpClient:
+    def __init__(self) -> None:
+        self.requests: list[str] = []
+
+    def get(self, url: str, **kwargs: object) -> WeeklyAStockResponse:
+        self.requests.append(url)
+        if "qt.gtimg.cn" in url:
+            return WeeklyAStockResponse(
+                text=(
+                    'v_sh600726="1~华电能源~600726~7.20~6.80~6.90~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0.40~5.88~7.25~6.75~0~0~736000~2.26~0~0~0~0~0~0~0~0~0~0~1.22~0~0~0";\n'
+                    'v_sz000539="51~粤电力Ａ~000539~6.60~6.20~6.30~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0.40~6.45~6.65~6.10~0~0~468000~4.56~0~0~0~0~0~0~0~0~0~0~1.55~0~0~0";\n'
+                    'v_sh000001="1~上证指数~000001~4068.00~4100.00~4110.00~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~-32.00~-0.78~4120.00~4050.00~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0";\n'
+                    'v_sz399006="51~创业板指~399006~4037.00~4000.00~4010.00~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~37.00~0.93~4050.00~3990.00~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0~0";'
+                )
+            )
+        params = kwargs.get("params")
+        code = params["code"] if isinstance(params, dict) else ""
+        payloads = {
+            "600726": "2026-05-25,4.47,5.00,5.10,4.40,1000,1200000000;2026-05-29,6.55,7.20,7.20,6.40,2000,7360000000",
+            "000539": "2026-05-25,4.87,5.20,5.30,4.80,1000,1000000000;2026-05-29,6.00,6.60,6.60,5.90,1500,4680000000",
+            "000001": "2026-05-25,4152.0,4120.0,4160.0,4100.0,0,100000000000;2026-05-29,4100.0,4068.0,4120.0,4050.0,0,120000000000",
+            "399006": "2026-05-25,4021.0,4070.0,4080.0,4000.0,0,80000000000;2026-05-29,4120.0,4037.0,4140.0,4000.0,0,85000000000",
+        }
+        return WeeklyAStockResponse(
+            payload={
+                "Result": {
+                    "newMarketData": {
+                        "keys": ["time", "open", "close", "high", "low", "volume", "amount"],
+                        "marketData": payloads.get(code, ""),
+                    }
+                }
+            }
+        )
+
+    def close(self) -> None:
+        pass
+
+
+def test_a_stock_weekly_client_builds_summary_from_public_sources() -> None:
+    client = AStockWeeklyDataClient(
+        http_client=WeeklyAStockHttpClient(),
+        symbols=(("600726.SH", "华电能源"), ("000539.SZ", "粤电力Ａ")),
+        index_symbols=(("000001.SH", "上证指数"), ("399006.SZ", "创业板指")),
+    )
+
+    summary = client.get_weekly_market_data("2026-05-25", "2026-05-29")
+
+    assert summary["meta"]["source"] == "a-stock-data"
+    assert summary["meta"]["symbol_count"] == 2
+    assert summary["meta"]["stock_rows"] == 2
+    assert summary["indices"]["000001.SH"]["name"] == "上证指数"
+    assert summary["breadth"]["2026-05-29"]["up_count"] == 2
+    assert summary["theme_stats"]["电力"]["top_week"][0]["name"] == "华电能源"
+
+
 def test_weekly_generator_writes_real_data_assets(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setattr(
         "app.services.weekly_report_generator.export_png",
@@ -168,7 +235,7 @@ def test_weekly_generator_writes_real_data_assets(tmp_path: Path, monkeypatch) -
     )
     generator = WeeklyReportGenerator(
         reports_root=tmp_path,
-        tickflow_client=FakeWeeklyTickFlowClient(),
+        market_client=FakeWeeklyMarketClient(),
         news_provider=FakeWeeklyNewsProvider(),
     )
 
@@ -182,7 +249,7 @@ def test_weekly_generator_writes_real_data_assets(tmp_path: Path, monkeypatch) -
     assert (result.assets.root / "2026-05-25_2026-05-29-周报复盘.html").exists()
     html = result.assets.report_html.read_text(encoding="utf-8")
     assert "2026-05-25 至 2026-05-29 周报复盘" in html
-    assert "TickFlow 覆盖 4/4 只" in html
+    assert "a-stock-data 覆盖 4/4 只" in html
     assert "电力" in html
     assert "华电能源" in html
     assert "最强主线：电力" in html
@@ -203,7 +270,7 @@ def test_weekly_report_uses_daily_review_analysis_dimensions(tmp_path: Path, mon
     )
     generator = WeeklyReportGenerator(
         reports_root=tmp_path,
-        tickflow_client=FakeWeeklyTickFlowClient(),
+        market_client=FakeWeeklyMarketClient(),
         news_provider=FakeWeeklyNewsProvider(),
     )
 

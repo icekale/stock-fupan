@@ -49,7 +49,7 @@ def test_next_day_prediction_schema_serializes_core_fields() -> None:
         source_basis=["同花顺复盘", "东方财富涨停复盘"],
         evidence_notes=["两家复盘源共同确认 PCB 强势。"],
         market_quality_basis=["东方财富涨停复盘：封板率64.21%"],
-        primary_basis=["TickFlow行情：强度82.0、排名1、板块涨幅+4.50%", "Anspire新闻：1条催化"],
+        primary_basis=["行情强度：强度82.0、排名1、板块涨幅+4.50%", "Anspire新闻：1条催化"],
         secondary_basis=["辅助复盘：同花顺复盘、东方财富涨停复盘"],
     )
 
@@ -60,7 +60,7 @@ def test_next_day_prediction_schema_serializes_core_fields() -> None:
     assert payload["front_row_stocks"][0]["name"] == "胜宏科技"
     assert payload["score_breakdown"]["total"] == 76
     assert payload["market_quality_basis"] == ["东方财富涨停复盘：封板率64.21%"]
-    assert payload["primary_basis"] == ["TickFlow行情：强度82.0、排名1、板块涨幅+4.50%", "Anspire新闻：1条催化"]
+    assert payload["primary_basis"] == ["行情强度：强度82.0、排名1、板块涨幅+4.50%", "Anspire新闻：1条催化"]
     assert payload["secondary_basis"] == ["辅助复盘：同花顺复盘、东方财富涨停复盘"]
 
 
@@ -155,7 +155,7 @@ def test_no_curated_evidence_produces_insufficient_prediction() -> None:
     assert "证据不足" in predictions[0].headline
 
 
-def test_tickflow_and_anspire_are_primary_sources_for_prediction() -> None:
+def test_market_and_anspire_are_primary_sources_for_prediction() -> None:
     report = _prediction_report(
         [
             _sector(
@@ -189,7 +189,7 @@ def test_tickflow_and_anspire_are_primary_sources_for_prediction() -> None:
     assert prediction.continuation_probability is not None
     assert prediction.score_breakdown is not None
     assert prediction.score_breakdown.market_strength > prediction.score_breakdown.review_confirmation
-    assert "TickFlow行情：强度86.0、排名1、板块涨幅+4.80%" in prediction.primary_basis
+    assert "行情强度：强度86.0、排名1、板块涨幅+4.80%" in prediction.primary_basis
     assert "Anspire新闻：1条催化" in prediction.primary_basis
     assert prediction.secondary_basis == []
     assert "复盘源缺失" in prediction.risk_labels

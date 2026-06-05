@@ -35,7 +35,7 @@ from app.services.report_schedule import (
     update_report_schedule_status,
 )
 from app.services.weekly_report_generator import (
-    TickFlowWeeklyDataClient,
+    AStockWeeklyDataClient,
     WeeklyGeneratedReport,
     WeeklyReportGenerator,
     WEEKLY_REPORT_ALGORITHM_VERSION,
@@ -168,7 +168,7 @@ def _generate_scheduled_close_report(trade_date: str, settings: object):
             structured_review_provider=settings.structured_review_provider,
             structured_review_fallback_enabled=settings.structured_review_fallback_enabled,
             watchlist_service=_watchlist_service(),
-            tickflow_provider=providers.tickflow_provider,
+            quote_provider=providers.quote_provider,
             watchlist_enabled=settings.report_watchlist_enabled,
             review_source_provider=providers.review_source_provider,
             previous_review_html_path=settings.previous_review_html_path,
@@ -407,15 +407,13 @@ def _generate_weekly_report(
     reports_root: Path,
     settings: object,
 ) -> WeeklyGeneratedReport:
-    client = TickFlowWeeklyDataClient(
-        api_key=getattr(settings, "tickflow_api_key", ""),
-        base_url=getattr(settings, "tickflow_base_url", "https://api.tickflow.org"),
+    client = AStockWeeklyDataClient(
         timeout_seconds=getattr(settings, "provider_timeout_seconds", 120),
     )
     with create_provider_bundle(settings) as providers:
         generator = WeeklyReportGenerator(
             reports_root=reports_root,
-            tickflow_client=client,
+            market_client=client,
             news_provider=providers.news_provider,
         )
         return generator.generate_weekly_report(start_date, end_date)
@@ -466,7 +464,7 @@ def _create_report_response(request: CreateCloseReportRequest, report_kind: str)
             structured_review_provider=settings.structured_review_provider,
             structured_review_fallback_enabled=settings.structured_review_fallback_enabled,
             watchlist_service=_watchlist_service(),
-            tickflow_provider=providers.tickflow_provider,
+            quote_provider=providers.quote_provider,
             watchlist_enabled=settings.report_watchlist_enabled,
             review_source_provider=providers.review_source_provider,
             previous_review_html_path=settings.previous_review_html_path,

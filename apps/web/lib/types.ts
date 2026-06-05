@@ -213,10 +213,10 @@ export type SectorProviderStatus = ProviderStatus & {
 
 export type ProviderStatusSummary = {
   market: ProviderStatus;
-  market_tickflow?: ProviderStatus;
+  market_quote?: ProviderStatus;
   news: SectorProviderStatus[];
-  tickflow?: ProviderStatus;
-  watchlist_tickflow?: ProviderStatus;
+  quote?: ProviderStatus;
+  watchlist_quote?: ProviderStatus;
   review_sources?: Array<ProviderStatus & { source?: string }>;
 };
 

@@ -7,15 +7,15 @@
 ## 项目核心原则
 
 - **HTML 是第一产物**：最终报告以 `report.html` 为核心，PNG/JSON/数据库都是辅助资产。
-- **不要 fake 内容**：生产级报告默认使用 TickFlow 行情、Anspire 新闻、同花顺/东方财富复盘源；真实数据失败时应显式失败。
-- **TickFlow-only 行情**：已放弃 AkShare，行情路径统一使用 TickFlow。
+- **不要 fake 内容**：生产级报告默认使用 a-stock-data 行情、Anspire 新闻、同花顺/东方财富复盘源；真实数据失败时应显式失败。
+- **a-stock-data 行情**：日报、自选股报价与周报默认走 a-stock-data；TickFlow 旧模块仅保留为历史兼容代码，不再作为后台选项。
 - **本地部署优先**：结构化数据进入 SQLite，HTML/PNG/快照 JSON 进入本地文件目录。
 - **自选股默认关闭**：自选股模块需要显式开启，避免影响主报告质量。
 
 ## Wiki 导航
 
 - [[快速开始]]：本地安装、配置和一键生成报告。
-- [[数据源与环境变量]]：TickFlow、Anspire、复盘源、LLM、OCR、自选股配置。
+- [[数据源与环境变量]]：a-stock-data、Anspire、复盘源、LLM、OCR、自选股配置。
 - [[每日报告生成流程]]：`make report DATE=YYYY-MM-DD` 的完整流程与输出说明。
 - [[HTML 报告结构]]：报告模块、视觉风格、次日预测与仓位建议。
 - [[开发与测试]]：后端、前端、测试、lint、Docker build。
