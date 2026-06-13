@@ -21,6 +21,7 @@
 - 判断自选股是否触发趋势风险、负面新闻风险、严重异动警告。
 - 把每日重要变化通过企业微信、飞书、Telegram、邮件发送给用户。
 - 在系统内保留历史复盘记录，方便回看“当时为什么关注”和“后来发生了什么”。
+- AI 摘要层支持 OpenAI/GPT 和 DeepSeek，不把具体模型写死在复盘业务里。
 
 不做：
 
@@ -42,6 +43,49 @@
 5. 通知发送层：统一生成消息，再分发到企业微信、飞书、Telegram、邮件。
 
 这个方案比把功能继续塞进日报更清晰，也比写独立脚本更容易维护和回溯。
+
+## AI 提供商设计
+
+AI 层使用统一接口，不让复盘服务直接依赖某一家模型：
+
+`AIReviewProvider.generate_watchlist_review(seed) -> WatchlistAIReview`
+
+第一版支持：
+
+- OpenAI/GPT。
+- DeepSeek。
+- 本地规则 fallback。
+
+DeepSeek 采用 OpenAI 兼容接口接入，配置上和 OpenAI 分开：
+
+- `AI_PROVIDER`: `openai`、`deepseek`、`fake`
+- `OPENAI_API_KEY`
+- `OPENAI_BASE_URL`
+- `OPENAI_MODEL`
+- `DEEPSEEK_API_KEY`
+- `DEEPSEEK_BASE_URL`
+- `DEEPSEEK_MODEL`
+
+默认建议：
+
+- OpenAI 默认使用现有 `gpt-4.1-mini` 配置。
+- DeepSeek 默认 base URL 使用官方 OpenAI 兼容地址。
+- DeepSeek 模型名不写死到业务代码，由 `.env` 配置决定，避免模型版本变更后需要改业务代码。
+
+AI 失败策略：
+
+- 模型请求失败时，不影响规则复盘结果保存。
+- AI 摘要失败时，复盘页面显示规则计算结果和失败原因。
+- 如果 `structured_review_fallback_enabled` 或后续 `watchlist_ai_fallback_enabled` 开启，则回退到规则摘要。
+- 复盘结果记录本次使用的 AI provider、model、fallback 状态，方便排查质量差异。
+
+AI 输出约束：
+
+- 只基于输入事实总结。
+- 不编造未提供的数据、新闻、资金流。
+- 不输出确定性买卖建议。
+- 输出结构化 JSON，再由后端校验。
+- 结论统一写成“观察条件、风险提醒、关注优先级”。
 
 ## 数据模型
 
