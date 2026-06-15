@@ -7,6 +7,7 @@ from app.db.models import WatchlistImport, WatchlistItemModel
 from app.db.session import session_scope
 from app.services.assets import write_json
 from app.watchlist.parser import WatchlistItem, parse_watchlist_text
+from app.watchlist.pool_service import WatchlistPoolService
 
 
 class WatchlistImportResult(BaseModel):
@@ -55,6 +56,8 @@ class WatchlistImportService:
                     )
                 )
             import_id = record.id
+
+        WatchlistPoolService(self.engine).upsert_items(parsed.items)
 
         return WatchlistImportResult(
             import_id=import_id,

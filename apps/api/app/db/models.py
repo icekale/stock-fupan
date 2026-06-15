@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, Integer, String
+from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -123,3 +123,65 @@ class WatchlistItemModel(Base):
     name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     display_order: Mapped[int] = mapped_column(Integer)
     import_record: Mapped[WatchlistImport] = relationship(back_populates="items")
+
+
+class WatchlistStock(Base):
+    __tablename__ = "watchlist_stocks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String(16), unique=True, index=True)
+    code: Mapped[str] = mapped_column(String(8), index=True)
+    exchange: Mapped[str] = mapped_column(String(4))
+    name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    tags: Mapped[list[str]] = mapped_column(JSON, default=list)
+    entry_reason: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    planned_buy_price: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    invalid_condition: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    themes: Mapped[list[str]] = mapped_column(JSON, default=list)
+    last_review_conclusion: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    today_risk_hint: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+    groups: Mapped[list["WatchlistGroup"]] = relationship(
+        secondary="watchlist_stock_groups",
+        back_populates="stocks",
+    )
+
+
+class WatchlistGroup(Base):
+    __tablename__ = "watchlist_groups"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
+    stocks: Mapped[list[WatchlistStock]] = relationship(
+        secondary="watchlist_stock_groups",
+        back_populates="groups",
+    )
+
+
+class WatchlistStockGroup(Base):
+    __tablename__ = "watchlist_stock_groups"
+    __table_args__ = (UniqueConstraint("stock_id", "group_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    stock_id: Mapped[int] = mapped_column(ForeignKey("watchlist_stocks.id"), index=True)
+    group_id: Mapped[int] = mapped_column(ForeignKey("watchlist_groups.id"), index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC)
+    )
