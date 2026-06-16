@@ -9,12 +9,12 @@ import shutil
 from urllib.parse import quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import FastAPI, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
-from app.config import get_settings
+from app.config import Settings, get_settings
 from app.db.models import Report, ReportKindModel, ReportStatusModel
 from app.db.session import get_engine, init_db, session_scope
 from app.providers.factory import create_provider_bundle
@@ -34,6 +34,7 @@ from app.services.report_schedule import (
     run_due_report_schedule,
     update_report_schedule_status,
 )
+from app.services.tickflow_health import check_tickflow_health
 from app.services.weekly_report_generator import (
     AStockWeeklyDataClient,
     WeeklyGeneratedReport,
@@ -119,6 +120,15 @@ logger = logging.getLogger(__name__)
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/api/tickflow/health")
+def tickflow_health(settings: Settings = Depends(get_settings)) -> dict[str, object]:
+    return check_tickflow_health(
+        api_key=settings.tickflow_api_key,
+        base_url=settings.tickflow_base_url,
+        timeout_seconds=settings.provider_timeout_seconds,
+    )
 
 
 def _watchlist_service() -> WatchlistImportService:
