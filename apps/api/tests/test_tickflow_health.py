@@ -17,8 +17,12 @@ def test_tickflow_health_missing_key_is_disabled() -> None:
         "status": "disabled",
         "base_url": "https://api.tickflow.org",
         "timeout_seconds": 12,
+        "realtime": "missing_key",
+        "daily_kline": "missing_key",
         "minute_kline": "missing_key",
+        "latency_ms": None,
         "last_error": "TICKFLOW_API_KEY 未配置",
+        "fallback_source": "local",
     }
 
 
@@ -34,8 +38,12 @@ def test_tickflow_health_configured_is_ready_without_live_check() -> None:
         "status": "ready",
         "base_url": "https://api.tickflow.org",
         "timeout_seconds": 8,
+        "realtime": "not_checked",
+        "daily_kline": "not_checked",
         "minute_kline": "not_checked",
+        "latency_ms": None,
         "last_error": None,
+        "fallback_source": None,
     }
 
 
@@ -56,6 +64,10 @@ def test_tickflow_health_endpoint_uses_settings() -> None:
         "status": "ready",
         "base_url": "https://api.example.test",
         "timeout_seconds": 3,
+        "realtime": "not_checked",
+        "daily_kline": "not_checked",
         "minute_kline": "not_checked",
+        "latency_ms": None,
         "last_error": None,
+        "fallback_source": None,
     }
