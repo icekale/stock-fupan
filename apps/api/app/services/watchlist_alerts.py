@@ -11,6 +11,7 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from app.db.models import WatchlistAlertEvent, WatchlistStock
 from app.db.session import session_scope
+from app.services.notification import NotificationMessage
 
 
 @dataclass
@@ -205,6 +206,62 @@ def list_watchlist_alert_events(engine: Engine) -> list[dict[str, Any]]:
         return [_row_to_dto(row).model_dump(mode="json") for row in rows]
 
 
+def dispatch_watchlist_alert_notifications(
+    engine: Engine,
+    *,
+    notification_service: object,
+    now: datetime | None = None,
+) -> dict[str, object]:
+    sent_at = _as_utc(now or datetime.now(UTC))
+    with session_scope(engine) as session:
+        rows = (
+            session.execute(
+                select(WatchlistAlertEvent)
+                .where(WatchlistAlertEvent.status == "active")
+                .order_by(WatchlistAlertEvent.severity.desc(), WatchlistAlertEvent.last_seen_at.desc())
+            )
+            .scalars()
+            .all()
+        )
+        pending = [row for row in rows if _should_notify(row, sent_at)]
+        risk_rows = [row for row in pending if row.event_type == "risk" and row.severity == "high"]
+        opportunity_rows = [row for row in pending if row.event_type == "opportunity"]
+
+        sent_count = 0
+        messages: list[dict[str, object]] = []
+        for row in risk_rows:
+            result = _send_notification(
+                notification_service,
+                NotificationMessage(
+                    title="高危风险提醒",
+                    body=_format_event_body(row),
+                ),
+            )
+            _mark_notified(row, sent_at, result)
+            messages.append({"title": "高危风险提醒", "symbols": [row.symbol]})
+            sent_count += 1
+
+        if opportunity_rows:
+            result = _send_notification(
+                notification_service,
+                NotificationMessage(
+                    title="自选股机会提醒",
+                    body="\n".join(_format_event_body(row) for row in opportunity_rows),
+                ),
+            )
+            for row in opportunity_rows:
+                _mark_notified(row, sent_at, result)
+            messages.append(
+                {
+                    "title": "自选股机会提醒",
+                    "symbols": [row.symbol for row in opportunity_rows],
+                }
+            )
+            sent_count += len(opportunity_rows)
+        session.flush()
+        return {"sent_count": sent_count, "message_count": len(messages), "messages": messages}
+
+
 def build_watchlist_alert_event_inputs(
     engine: Engine,
     *,
@@ -374,6 +431,43 @@ def _stock_to_input(stock: WatchlistStock) -> WatchlistAlertInput:
         last_review_conclusion=stock.last_review_conclusion,
         today_risk_hint=stock.today_risk_hint,
     )
+
+
+def _should_notify(row: WatchlistAlertEvent, now: datetime) -> bool:
+    if row.sent_at is not None:
+        return False
+    if row.acknowledged_at is not None:
+        return False
+    if row.muted_until is not None and _as_utc(row.muted_until) > now:
+        return False
+    return True
+
+
+def _send_notification(notification_service: object, message: NotificationMessage) -> list[dict[str, str]]:
+    send_all = getattr(notification_service, "send_all")
+    results = send_all(message)
+    return [
+        {
+            "channel": str(getattr(result, "channel", "")),
+            "status": str(getattr(result, "status", "")),
+            "detail": str(getattr(result, "detail", "")),
+        }
+        for result in results
+    ]
+
+
+def _mark_notified(
+    row: WatchlistAlertEvent,
+    sent_at: datetime,
+    result: list[dict[str, str]],
+) -> None:
+    row.sent_at = sent_at
+    row.notification_status = {"sent": True, "channels": result}
+
+
+def _format_event_body(row: WatchlistAlertEvent) -> str:
+    name = row.name or row.symbol
+    return f"{name}（{row.symbol}）：{row.trigger_reason}"
 
 
 def _payload_hash(payload: dict[str, Any]) -> str:

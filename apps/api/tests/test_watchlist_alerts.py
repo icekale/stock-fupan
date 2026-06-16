@@ -2,12 +2,15 @@ from datetime import UTC, datetime
 
 from app.db.models import WatchlistAlertEvent
 from app.db.session import create_sqlite_engine, init_db, session_scope
+from app.services.notification import NotificationMessage, NotificationResult
 from app.services.watchlist_alerts import (
     WatchlistAlertInput,
     build_watchlist_alert_events,
+    dispatch_watchlist_alert_notifications,
     list_watchlist_alert_events,
     upsert_watchlist_alert_events,
 )
+from app.services.watchlist_ai_review import RuleWatchlistAIReviewProvider
 
 
 def _alert_input(
@@ -46,6 +49,15 @@ def _alert_input(
         },
         risk_signals=[],
     )
+
+
+class RecordingNotificationService:
+    def __init__(self) -> None:
+        self.messages: list[NotificationMessage] = []
+
+    def send_all(self, message: NotificationMessage) -> list[NotificationResult]:
+        self.messages.append(message)
+        return [NotificationResult(channel="test", status="sent", detail="sent")]
 
 
 def test_alert_engine_creates_high_risk_for_holding_ma_break():
@@ -167,6 +179,71 @@ def test_upsert_watchlist_alert_events_accepts_naive_datetimes(tmp_path):
     listed = list_watchlist_alert_events(engine)
     assert len(listed) == 1
     assert listed[0]["last_seen_at"] == "2026-06-15T14:30:00+00:00"
+
+
+def test_rule_ai_commentary_summarizes_alert_events():
+    provider = RuleWatchlistAIReviewProvider()
+
+    result = provider.generate_alert_commentary(
+        {
+            "events": [
+                {
+                    "symbol": "600519.SH",
+                    "name": "贵州茅台",
+                    "event_type": "risk",
+                    "trigger_reason": "跌破MA5",
+                }
+            ]
+        }
+    )
+
+    assert result["summary"] == "本次触发 1 条自选股提醒。"
+    assert result["comments"]["600519.SH"].startswith("贵州茅台触发risk")
+
+
+def test_dispatch_watchlist_alert_notifications_sends_and_marks_events(tmp_path):
+    engine = create_sqlite_engine(f"sqlite:///{tmp_path / 'alerts.db'}")
+    init_db(engine)
+    now = datetime(2026, 6, 15, 10, 0, tzinfo=UTC)
+    risk = build_watchlist_alert_events(
+        items=[_alert_input()],
+        trade_date="2026-06-15",
+        mode="intraday_morning",
+        source_status={"tickflow": "ready"},
+        now=now,
+    )
+    opportunity_item = _alert_input(symbol="000001.SZ", status="观察中", pct_change=4.0)
+    opportunity_item.name = "平安银行"
+    opportunity_item.metrics["close"] = 108.0
+    opportunity_item.metrics["ma5"] = 105.0
+    opportunity_item.metrics["volume_ratio_5d"] = 2.0
+    opportunity = build_watchlist_alert_events(
+        items=[opportunity_item],
+        trade_date="2026-06-15",
+        mode="daily_review",
+        source_status={"tickflow": "ready"},
+        now=now,
+    )
+    upsert_watchlist_alert_events(engine, risk + opportunity)
+    notification_service = RecordingNotificationService()
+
+    result = dispatch_watchlist_alert_notifications(
+        engine,
+        notification_service=notification_service,
+        now=datetime(2026, 6, 15, 10, 5, tzinfo=UTC),
+    )
+
+    assert result["sent_count"] == 2
+    assert [message.title for message in notification_service.messages] == [
+        "高危风险提醒",
+        "自选股机会提醒",
+    ]
+    assert "贵州茅台" in notification_service.messages[0].body
+    assert "平安银行" in notification_service.messages[1].body
+    with session_scope(engine) as session:
+        rows = session.query(WatchlistAlertEvent).order_by(WatchlistAlertEvent.symbol).all()
+        assert all(row.sent_at is not None for row in rows)
+        assert all(row.notification_status["sent"] is True for row in rows)
 
 
 def test_watchlist_alert_event_model_persists_payload(tmp_path):
