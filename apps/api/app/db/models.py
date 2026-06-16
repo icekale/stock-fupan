@@ -189,6 +189,7 @@ class WatchlistStockGroup(Base):
 
 class WatchlistAlertEvent(Base):
     __tablename__ = "watchlist_alert_events"
+    __table_args__ = (UniqueConstraint("trigger_key", "payload_hash"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     stock_id: Mapped[int | None] = mapped_column(

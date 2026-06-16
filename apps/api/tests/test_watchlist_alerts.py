@@ -113,12 +113,15 @@ def test_upsert_watchlist_alert_events_dedupes_by_trigger_key_and_payload_hash(t
         now=first_seen,
     )
     second = build_watchlist_alert_events(
-        items=[_alert_input()],
+        items=[_alert_input(pct_change=-5.7)],
         trade_date="2026-06-15",
         mode="intraday_afternoon",
         source_status={"tickflow": "ready"},
         now=second_seen,
     )
+    second[0].market_snapshot["close"] = 99.5
+
+    assert first[0].payload_hash == second[0].payload_hash
 
     created = upsert_watchlist_alert_events(engine, first)
     updated = upsert_watchlist_alert_events(engine, second)
@@ -130,12 +133,40 @@ def test_upsert_watchlist_alert_events_dedupes_by_trigger_key_and_payload_hash(t
         assert len(rows) == 1
         assert rows[0].first_seen_at == first_seen.replace(tzinfo=None)
         assert rows[0].last_seen_at == second_seen.replace(tzinfo=None)
+        assert rows[0].market_snapshot["pct_change"] == -5.7
+        assert rows[0].market_snapshot["close"] == 99.5
         assert rows[0].status == "active"
     listed = list_watchlist_alert_events(engine)
     assert [event["trigger_key"] for event in listed] == [
         "600519.SH:risk:plan_invalid_or_ma_break"
     ]
     assert listed[0]["last_seen_at"] == second_seen.isoformat()
+
+
+def test_upsert_watchlist_alert_events_accepts_naive_datetimes(tmp_path):
+    engine = create_sqlite_engine(f"sqlite:///{tmp_path / 'alerts.db'}")
+    init_db(engine)
+    first = build_watchlist_alert_events(
+        items=[_alert_input()],
+        trade_date="2026-06-15",
+        mode="intraday_morning",
+        source_status={"tickflow": "ready"},
+        now=datetime(2026, 6, 15, 10, 0),
+    )
+    second = build_watchlist_alert_events(
+        items=[_alert_input()],
+        trade_date="2026-06-15",
+        mode="intraday_afternoon",
+        source_status={"tickflow": "ready"},
+        now=datetime(2026, 6, 15, 14, 30),
+    )
+
+    upsert_watchlist_alert_events(engine, first)
+    upsert_watchlist_alert_events(engine, second)
+
+    listed = list_watchlist_alert_events(engine)
+    assert len(listed) == 1
+    assert listed[0]["last_seen_at"] == "2026-06-15T14:30:00+00:00"
 
 
 def test_watchlist_alert_event_model_persists_payload(tmp_path):

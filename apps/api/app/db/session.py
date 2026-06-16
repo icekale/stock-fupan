@@ -24,6 +24,7 @@ def get_engine() -> Engine:
 def init_db(engine: Engine) -> None:
     Base.metadata.create_all(bind=engine)
     _ensure_report_quality_columns(engine)
+    _ensure_watchlist_alert_constraints(engine)
 
 
 def _ensure_report_quality_columns(engine: Engine) -> None:
@@ -42,6 +43,27 @@ def _ensure_report_quality_columns(engine: Engine) -> None:
             connection.execute(text("ALTER TABLE reports ADD COLUMN quality_summary VARCHAR(512)"))
         if "quality_gate" not in columns:
             connection.execute(text("ALTER TABLE reports ADD COLUMN quality_gate JSON"))
+
+
+def _ensure_watchlist_alert_constraints(engine: Engine) -> None:
+    if engine.dialect.name != "sqlite":
+        return
+    with engine.begin() as connection:
+        tables = {
+            row[0]
+            for row in connection.execute(
+                text("SELECT name FROM sqlite_master WHERE type='table'")
+            )
+        }
+        if "watchlist_alert_events" not in tables:
+            return
+        connection.execute(
+            text(
+                "CREATE UNIQUE INDEX IF NOT EXISTS "
+                "ix_watchlist_alert_events_trigger_payload "
+                "ON watchlist_alert_events (trigger_key, payload_hash)"
+            )
+        )
 
 
 @contextmanager

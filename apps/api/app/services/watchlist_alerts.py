@@ -7,6 +7,7 @@ import json
 from typing import Any
 
 from sqlalchemy import Engine, select
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from app.db.models import WatchlistAlertEvent, WatchlistStock
 from app.db.session import session_scope
@@ -85,11 +86,64 @@ def upsert_watchlist_alert_events(
     with session_scope(engine) as session:
         persisted: list[WatchlistAlertEventDTO] = []
         for event in events:
+            normalized_event = _normalize_event_datetimes(event)
+            if session.bind is not None and session.bind.dialect.name == "sqlite":
+                stmt = sqlite_insert(WatchlistAlertEvent).values(
+                    stock_id=normalized_event.stock_id,
+                    symbol=normalized_event.symbol,
+                    name=normalized_event.name,
+                    event_type=normalized_event.event_type,
+                    severity=normalized_event.severity,
+                    status="active",
+                    trigger_key=normalized_event.trigger_key,
+                    payload_hash=normalized_event.payload_hash,
+                    trigger_reason=normalized_event.trigger_reason,
+                    ai_comment=None,
+                    rule_snapshot=normalized_event.rule_snapshot,
+                    market_snapshot=normalized_event.market_snapshot,
+                    source_status=normalized_event.source_status,
+                    notification_status=normalized_event.notification_status,
+                    first_seen_at=normalized_event.first_seen_at,
+                    last_seen_at=normalized_event.last_seen_at,
+                )
+                stmt = stmt.on_conflict_do_update(
+                    index_elements=[
+                        WatchlistAlertEvent.trigger_key,
+                        WatchlistAlertEvent.payload_hash,
+                    ],
+                    set_={
+                        "stock_id": normalized_event.stock_id,
+                        "symbol": normalized_event.symbol,
+                        "name": normalized_event.name,
+                        "event_type": normalized_event.event_type,
+                        "severity": normalized_event.severity,
+                        "status": "active",
+                        "trigger_reason": normalized_event.trigger_reason,
+                        "rule_snapshot": normalized_event.rule_snapshot,
+                        "market_snapshot": normalized_event.market_snapshot,
+                        "source_status": normalized_event.source_status,
+                        "notification_status": normalized_event.notification_status,
+                        "last_seen_at": normalized_event.last_seen_at,
+                    },
+                )
+                session.execute(stmt)
+                row = (
+                    session.execute(
+                        select(WatchlistAlertEvent).where(
+                            WatchlistAlertEvent.trigger_key == normalized_event.trigger_key,
+                            WatchlistAlertEvent.payload_hash == normalized_event.payload_hash,
+                        )
+                    )
+                    .scalars()
+                    .one()
+                )
+                persisted.append(_row_to_dto(row))
+                continue
             row = (
                 session.execute(
                     select(WatchlistAlertEvent).where(
-                        WatchlistAlertEvent.trigger_key == event.trigger_key,
-                        WatchlistAlertEvent.payload_hash == event.payload_hash,
+                        WatchlistAlertEvent.trigger_key == normalized_event.trigger_key,
+                        WatchlistAlertEvent.payload_hash == normalized_event.payload_hash,
                     )
                 )
                 .scalars()
@@ -97,41 +151,41 @@ def upsert_watchlist_alert_events(
             )
             if row is None:
                 row = WatchlistAlertEvent(
-                    stock_id=event.stock_id,
-                    symbol=event.symbol,
-                    name=event.name,
-                    event_type=event.event_type,
-                    severity=event.severity,
+                    stock_id=normalized_event.stock_id,
+                    symbol=normalized_event.symbol,
+                    name=normalized_event.name,
+                    event_type=normalized_event.event_type,
+                    severity=normalized_event.severity,
                     status="active",
-                    trigger_key=event.trigger_key,
-                    payload_hash=event.payload_hash,
-                    trigger_reason=event.trigger_reason,
+                    trigger_key=normalized_event.trigger_key,
+                    payload_hash=normalized_event.payload_hash,
+                    trigger_reason=normalized_event.trigger_reason,
                     ai_comment=None,
-                    rule_snapshot=event.rule_snapshot,
-                    market_snapshot=event.market_snapshot,
-                    source_status=event.source_status,
-                    notification_status=event.notification_status,
-                    first_seen_at=event.first_seen_at,
-                    last_seen_at=event.last_seen_at,
+                    rule_snapshot=normalized_event.rule_snapshot,
+                    market_snapshot=normalized_event.market_snapshot,
+                    source_status=normalized_event.source_status,
+                    notification_status=normalized_event.notification_status,
+                    first_seen_at=normalized_event.first_seen_at,
+                    last_seen_at=normalized_event.last_seen_at,
                 )
                 session.add(row)
                 session.flush()
             else:
-                row.stock_id = event.stock_id
-                row.symbol = event.symbol
-                row.name = event.name
-                row.event_type = event.event_type
-                row.severity = event.severity
+                row.stock_id = normalized_event.stock_id
+                row.symbol = normalized_event.symbol
+                row.name = normalized_event.name
+                row.event_type = normalized_event.event_type
+                row.severity = normalized_event.severity
                 row.status = "active"
-                row.trigger_reason = event.trigger_reason
-                row.rule_snapshot = event.rule_snapshot
-                row.market_snapshot = event.market_snapshot
-                row.source_status = event.source_status
-                row.notification_status = event.notification_status
-                row.last_seen_at = event.last_seen_at
+                row.trigger_reason = normalized_event.trigger_reason
+                row.rule_snapshot = normalized_event.rule_snapshot
+                row.market_snapshot = normalized_event.market_snapshot
+                row.source_status = normalized_event.source_status
+                row.notification_status = normalized_event.notification_status
+                row.last_seen_at = normalized_event.last_seen_at
                 first_seen_at = _ensure_aware_datetime(row.first_seen_at)
-                if first_seen_at is None or event.first_seen_at < first_seen_at:
-                    row.first_seen_at = event.first_seen_at
+                if first_seen_at is None or normalized_event.first_seen_at < first_seen_at:
+                    row.first_seen_at = normalized_event.first_seen_at
             persisted.append(_row_to_dto(row))
         return persisted
 
@@ -254,18 +308,12 @@ def _event(
     now: datetime,
 ) -> WatchlistAlertEventDTO:
     trigger_key = f"{item.symbol}:{event_type}:{rule_id}"
-    hash_snapshot = {
-        key: value
-        for key, value in market_snapshot.items()
-        if key not in {"mode"}
-    }
     payload_hash = _payload_hash(
         {
             "event_type": event_type,
-            "market_snapshot": hash_snapshot,
             "rule_id": rule_id,
             "symbol": item.symbol,
-            "trigger_reason": trigger_reason,
+            "trade_date": market_snapshot.get("trade_date"),
         }
     )
     rule_snapshot = {
@@ -363,3 +411,23 @@ def _ensure_aware_datetime(value: datetime | None) -> datetime | None:
     if value.tzinfo is None:
         return value.replace(tzinfo=UTC)
     return value
+
+
+def _normalize_event_datetimes(event: WatchlistAlertEventDTO) -> WatchlistAlertEventDTO:
+    return WatchlistAlertEventDTO(
+        stock_id=event.stock_id,
+        symbol=event.symbol,
+        name=event.name,
+        event_type=event.event_type,
+        severity=event.severity,
+        status=event.status,
+        trigger_key=event.trigger_key,
+        payload_hash=event.payload_hash,
+        trigger_reason=event.trigger_reason,
+        rule_snapshot=event.rule_snapshot,
+        market_snapshot=event.market_snapshot,
+        source_status=event.source_status,
+        notification_status=event.notification_status,
+        first_seen_at=_as_utc(event.first_seen_at),
+        last_seen_at=_as_utc(event.last_seen_at),
+    )
