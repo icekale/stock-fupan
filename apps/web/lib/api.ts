@@ -8,6 +8,10 @@ import type {
   ReportScheduleUpdate,
   ReportKind,
   ReportListResponse,
+  TickFlowHealthStatus,
+  WatchlistAlertEvent,
+  WatchlistAlertListResponse,
+  WatchlistAlertScheduleStatus,
   WatchlistImportResult,
   WatchlistOcrPreviewResult,
 } from "./types";
@@ -102,6 +106,55 @@ export async function updateReportScheduleStatus(
     throw new Error(`保存定时生成状态失败：${response.status} ${await response.text()}`);
   }
   return response.json() as Promise<ReportScheduleStatus>;
+}
+
+export async function listWatchlistAlerts(): Promise<WatchlistAlertListResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/watchlist-alerts`);
+  if (!response.ok) {
+    throw new Error(`读取提醒列表失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<WatchlistAlertListResponse>;
+}
+
+export async function runWatchlistAlerts(
+  mode: string,
+  tradeDate: string,
+): Promise<Record<string, unknown>> {
+  const response = await fetch(`${API_BASE_URL}/api/watchlist-alerts/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode, trade_date: tradeDate }),
+  });
+  if (!response.ok) {
+    throw new Error(`运行提醒失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<Record<string, unknown>>;
+}
+
+export async function acknowledgeWatchlistAlert(alertId: number): Promise<WatchlistAlertEvent> {
+  const response = await fetch(`${API_BASE_URL}/api/watchlist-alerts/${alertId}/ack`, {
+    method: "POST",
+  });
+  if (!response.ok) {
+    throw new Error(`标记提醒失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<WatchlistAlertEvent>;
+}
+
+export async function getWatchlistAlertSchedule(): Promise<WatchlistAlertScheduleStatus> {
+  const response = await fetch(`${API_BASE_URL}/api/watchlist-alert-schedule/status`);
+  if (!response.ok) {
+    throw new Error(`读取提醒计划失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<WatchlistAlertScheduleStatus>;
+}
+
+export async function getTickFlowHealth(): Promise<TickFlowHealthStatus> {
+  const response = await fetch(`${API_BASE_URL}/api/tickflow/health`);
+  if (!response.ok) {
+    throw new Error(`读取TickFlow健康状态失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<TickFlowHealthStatus>;
 }
 
 export async function getDataSourceOptions(): Promise<DataSourceOptionsResponse> {

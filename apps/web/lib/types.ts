@@ -313,6 +313,48 @@ export type ReportScheduleUpdate = {
   timezone: string;
 };
 
+export type WatchlistAlertEvent = {
+  id: number;
+  symbol: string;
+  name: string | null;
+  event_type: "risk" | "opportunity" | "plan" | "intraday" | "stale_review";
+  severity: "high" | "medium" | "low";
+  status: "active" | "sent" | "acknowledged" | "muted" | "resolved";
+  trigger_reason: string;
+  ai_comment: string | null;
+  source_status: Record<string, unknown>;
+  market_snapshot: Record<string, unknown>;
+  rule_snapshot: Record<string, unknown>;
+  notification_status: Record<string, unknown>;
+  first_seen_at: string;
+  last_seen_at: string;
+};
+
+export type WatchlistAlertListResponse = {
+  items: WatchlistAlertEvent[];
+};
+
+export type WatchlistAlertScheduleStatus = {
+  enabled: boolean;
+  morning_time: string;
+  afternoon_time: string;
+  review_time: string;
+  timezone: string;
+  last_run_at: string | null;
+  last_result: Record<string, unknown> | null;
+};
+
+export type TickFlowHealthStatus = {
+  configured: boolean;
+  status: string;
+  realtime_quotes: string;
+  daily_kline: string;
+  minute_kline: string;
+  latency_ms: number | null;
+  last_error: string | null;
+  fallback_source: string | null;
+};
+
 export type DataSourceSelectionMode = "single" | "multiple";
 
 export type DataSourceOptionItem = {
