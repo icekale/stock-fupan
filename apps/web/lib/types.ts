@@ -315,6 +315,7 @@ export type ReportScheduleUpdate = {
 
 export type WatchlistAlertEvent = {
   id: number;
+  stock_id: number | null;
   symbol: string;
   name: string | null;
   event_type: "risk" | "opportunity" | "plan" | "intraday" | "stale_review";
@@ -328,6 +329,7 @@ export type WatchlistAlertEvent = {
   notification_status: Record<string, unknown>;
   first_seen_at: string;
   last_seen_at: string;
+  muted_until?: string | null;
 };
 
 export type WatchlistAlertListResponse = {
@@ -347,12 +349,59 @@ export type WatchlistAlertScheduleStatus = {
 export type TickFlowHealthStatus = {
   configured: boolean;
   status: string;
+  base_url?: string;
+  timeout_seconds?: number;
   realtime_quotes: string;
   daily_kline: string;
   minute_kline: string;
   latency_ms: number | null;
   last_error: string | null;
   fallback_source: string | null;
+};
+
+export type WatchlistPoolGroup = {
+  id: number;
+  name: string;
+  is_default: boolean;
+  sort_order: number;
+};
+
+export type WatchlistPoolStock = {
+  id: number;
+  symbol: string;
+  code: string;
+  exchange: string;
+  name: string | null;
+  status: "观察中" | "持有中";
+  tags: string[];
+  entry_reason: string | null;
+  planned_buy_price: string | null;
+  invalid_condition: string | null;
+  themes: string[];
+  last_review_conclusion: string | null;
+  today_risk_hint: string | null;
+  groups: WatchlistPoolGroup[];
+};
+
+export type WatchlistPoolState = {
+  groups: WatchlistPoolGroup[];
+  stocks: WatchlistPoolStock[];
+};
+
+export type WatchlistStockPayload = {
+  symbol?: string;
+  code?: string | null;
+  exchange?: string | null;
+  name?: string | null;
+  group_ids?: number[];
+  tags?: string[];
+  status?: "观察中" | "持有中";
+  entry_reason?: string | null;
+  planned_buy_price?: string | null;
+  invalid_condition?: string | null;
+  themes?: string[];
+  last_review_conclusion?: string | null;
+  today_risk_hint?: string | null;
 };
 
 export type DataSourceSelectionMode = "single" | "multiple";

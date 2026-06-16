@@ -23,6 +23,7 @@ class WatchlistStockDto(BaseModel):
     code: str
     exchange: str
     name: str | None = None
+    status: str = "观察中"
     tags: list[str] = Field(default_factory=list)
     entry_reason: str | None = None
     planned_buy_price: str | None = None
@@ -126,6 +127,36 @@ class WatchlistPoolService:
             session.flush()
             return _stock_dto(stock)
 
+    def get_stock(self, stock_id: int | str) -> WatchlistStockDto:
+        with session_scope(self.engine) as session:
+            return _stock_dto(self._get_stock(session, stock_id))
+
+    def update_stock_identity(
+        self,
+        stock_id: int | str,
+        *,
+        symbol: str | None = None,
+        code: str | None = None,
+        exchange: str | None = None,
+        name: str | None = None,
+    ) -> WatchlistStockDto:
+        with session_scope(self.engine) as session:
+            stock = self._get_stock(session, stock_id)
+            normalized = None
+            if symbol is not None or code is not None or exchange is not None:
+                normalized = _normalize_symbol(
+                    symbol or stock.symbol,
+                    code=code or stock.code,
+                    exchange=exchange or stock.exchange,
+                )
+                stock.symbol = normalized["symbol"]
+                stock.code = normalized["code"]
+                stock.exchange = normalized["exchange"]
+            if name is not None:
+                stock.name = name
+            session.flush()
+            return _stock_dto(stock)
+
     def upsert_items(self, items: list[WatchlistItem]) -> None:
         with session_scope(self.engine) as session:
             self.upsert_items_in_session(session, items)
@@ -172,6 +203,16 @@ class WatchlistPoolService:
         with session_scope(self.engine) as session:
             stock = self._get_stock(session, stock_id)
             stock.tags = _clean_list(tags)
+            session.flush()
+            return _stock_dto(stock)
+
+    def set_stock_status(self, stock_id: int | str, status: str) -> WatchlistStockDto:
+        cleaned = status.strip()
+        if cleaned not in {"观察中", "持有中"}:
+            raise ValueError("股票状态仅支持 观察中 或 持有中")
+        with session_scope(self.engine) as session:
+            stock = self._get_stock(session, stock_id)
+            stock.status = cleaned
             session.flush()
             return _stock_dto(stock)
 
@@ -263,6 +304,7 @@ class WatchlistPoolService:
                 code=code,
                 exchange=exchange,
                 name=name,
+                status="观察中",
                 tags=[],
                 themes=[],
             )
@@ -317,6 +359,7 @@ def _stock_dto(stock: WatchlistStock) -> WatchlistStockDto:
         code=stock.code,
         exchange=stock.exchange,
         name=stock.name,
+        status=stock.status or "观察中",
         tags=stock.tags or [],
         entry_reason=stock.entry_reason,
         planned_buy_price=stock.planned_buy_price,

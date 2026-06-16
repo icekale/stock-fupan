@@ -133,6 +133,7 @@ class WatchlistStock(Base):
     code: Mapped[str] = mapped_column(String(8), index=True)
     exchange: Mapped[str] = mapped_column(String(4))
     name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="观察中", index=True)
     tags: Mapped[list[str]] = mapped_column(JSON, default=list)
     entry_reason: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     planned_buy_price: Mapped[str | None] = mapped_column(String(128), nullable=True)

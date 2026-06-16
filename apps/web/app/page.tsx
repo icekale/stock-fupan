@@ -278,6 +278,29 @@ export default function HomePage() {
           </div>
         </header>
 
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">Independent Watchlist System</p>
+              <h2 className="mt-1 text-xl font-black text-slate-950">独立选股与自选股管理</h2>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
+                自选股、提醒中心和数据源健康检查已经独立成工作区，和日报生成分开管理。
+              </p>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-3">
+              <a className="rounded-xl bg-slate-950 px-4 py-2.5 text-center text-sm font-bold text-white transition hover:bg-slate-800 active:translate-y-px" href="/watchlist">
+                自选股池
+              </a>
+              <a className="rounded-xl bg-slate-100 px-4 py-2.5 text-center text-sm font-bold text-slate-700 transition hover:bg-slate-200 active:translate-y-px" href="/watchlist-alerts">
+                提醒中心
+              </a>
+              <a className="rounded-xl bg-slate-100 px-4 py-2.5 text-center text-sm font-bold text-slate-700 transition hover:bg-slate-200 active:translate-y-px" href="/settings">
+                设置
+              </a>
+            </div>
+          </div>
+        </section>
+
         <div className="grid gap-6 xl:grid-cols-[390px_minmax(0,1fr)]">
           <aside className="space-y-6">
             <section id="generate" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">

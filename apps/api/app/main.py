@@ -43,9 +43,11 @@ from app.services.watchlist_alert_schedule import (
     update_watchlist_alert_schedule_status,
 )
 from app.services.watchlist_alerts import (
+    acknowledge_watchlist_alert_event,
     build_watchlist_alert_event_inputs,
     build_watchlist_alert_events,
     list_watchlist_alert_events,
+    mute_watchlist_alert_event,
     upsert_watchlist_alert_events,
 )
 from app.services.weekly_report_generator import (
@@ -59,6 +61,7 @@ from app.watchlist.ocr_service import (
     UnsupportedOcrImageError,
     WatchlistOcrService,
 )
+from app.watchlist.pool_service import WatchlistPoolService
 from app.watchlist.service import WatchlistImportService
 
 
@@ -73,6 +76,42 @@ class ImportWatchlistTextRequest(BaseModel):
 
 class ConfirmOcrPreviewRequest(BaseModel):
     preview_id: str
+
+
+class WatchlistGroupRequest(BaseModel):
+    name: str
+
+
+class WatchlistStockCreateRequest(BaseModel):
+    symbol: str
+    code: str | None = None
+    exchange: str | None = None
+    name: str | None = None
+    group_ids: list[int] | None = None
+    tags: list[str] | None = None
+    status: str | None = None
+    entry_reason: str | None = None
+    planned_buy_price: str | None = None
+    invalid_condition: str | None = None
+    themes: list[str] | None = None
+    last_review_conclusion: str | None = None
+    today_risk_hint: str | None = None
+
+
+class WatchlistStockUpdateRequest(BaseModel):
+    symbol: str | None = None
+    code: str | None = None
+    exchange: str | None = None
+    name: str | None = None
+    group_ids: list[int] | None = None
+    tags: list[str] | None = None
+    status: str | None = None
+    entry_reason: str | None = None
+    planned_buy_price: str | None = None
+    invalid_condition: str | None = None
+    themes: list[str] | None = None
+    last_review_conclusion: str | None = None
+    today_risk_hint: str | None = None
 
 
 class ReportScheduleRequest(BaseModel):
@@ -100,6 +139,10 @@ class WatchlistAlertScheduleRequest(BaseModel):
     afternoon_time: str = "14:30"
     review_time: str = "19:30"
     timezone: str = "Asia/Shanghai"
+
+
+class WatchlistAlertMuteRequest(BaseModel):
+    days: int = 3
 
 
 def _status_item(
@@ -187,6 +230,10 @@ def _watchlist_ocr_service() -> WatchlistOcrService:
     )
 
 
+def _watchlist_pool_service() -> WatchlistPoolService:
+    return WatchlistPoolService(app.state.engine)
+
+
 async def _report_schedule_loop() -> None:
     while True:
         await asyncio.sleep(60)
@@ -230,6 +277,51 @@ def _run_watchlist_alert_scan(mode: str, trade_date: str) -> dict[str, object]:
         "item_count": len(items),
         "event_count": len(persisted),
     }
+
+
+def _update_watchlist_stock_from_request(
+    service: WatchlistPoolService,
+    stock_id: int,
+    request: WatchlistStockCreateRequest | WatchlistStockUpdateRequest,
+):
+    if "symbol" in request.model_fields_set or "code" in request.model_fields_set or "exchange" in request.model_fields_set or "name" in request.model_fields_set:
+        stock = service.update_stock_identity(
+            stock_id,
+            symbol=request.symbol if "symbol" in request.model_fields_set else None,
+            code=request.code if "code" in request.model_fields_set else None,
+            exchange=request.exchange if "exchange" in request.model_fields_set else None,
+            name=request.name if "name" in request.model_fields_set else None,
+        )
+        stock_id = stock.id
+    fields_set = request.model_fields_set
+    plan_fields = {
+        "entry_reason",
+        "planned_buy_price",
+        "invalid_condition",
+        "themes",
+        "last_review_conclusion",
+        "today_risk_hint",
+    }
+    stock = service.get_stock(stock_id)
+    if fields_set & plan_fields:
+        stock = service.update_observation_plan(
+            stock_id,
+            entry_reason=request.entry_reason if "entry_reason" in fields_set else stock.entry_reason,
+            planned_buy_price=request.planned_buy_price if "planned_buy_price" in fields_set else stock.planned_buy_price,
+            invalid_condition=request.invalid_condition if "invalid_condition" in fields_set else stock.invalid_condition,
+            themes=request.themes if "themes" in fields_set else stock.themes,
+            last_review_conclusion=(
+                request.last_review_conclusion if "last_review_conclusion" in fields_set else stock.last_review_conclusion
+            ),
+            today_risk_hint=request.today_risk_hint if "today_risk_hint" in fields_set else stock.today_risk_hint,
+        )
+    if request.group_ids is not None:
+        stock = service.set_stock_groups(stock.id, request.group_ids)
+    if request.tags is not None:
+        stock = service.set_stock_tags(stock.id, request.tags)
+    if request.status is not None:
+        stock = service.set_stock_status(stock.id, request.status)
+    return stock
 
 
 def _run_report_schedule_once() -> dict[str, object]:
@@ -308,6 +400,63 @@ def get_latest_watchlist() -> dict[str, object]:
     return _watchlist_service().get_latest().model_dump(mode="json")
 
 
+@app.get("/api/watchlist-pool")
+def get_watchlist_pool() -> dict[str, object]:
+    return _watchlist_pool_service().get_state().model_dump(mode="json")
+
+
+@app.post("/api/watchlist-pool/groups")
+def create_watchlist_group(request: WatchlistGroupRequest) -> dict[str, object]:
+    try:
+        return _watchlist_pool_service().create_group(request.name).model_dump(mode="json")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.patch("/api/watchlist-pool/groups/{group_id}")
+def rename_watchlist_group(group_id: int, request: WatchlistGroupRequest) -> dict[str, object]:
+    try:
+        return _watchlist_pool_service().rename_group(group_id, request.name).model_dump(mode="json")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.delete("/api/watchlist-pool/groups/{group_id}")
+def delete_watchlist_group(group_id: int) -> dict[str, object]:
+    try:
+        _watchlist_pool_service().delete_group(group_id)
+        return {"deleted": True, "id": group_id}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/watchlist-pool/stocks")
+def create_watchlist_stock(request: WatchlistStockCreateRequest) -> dict[str, object]:
+    service = _watchlist_pool_service()
+    try:
+        stock = service.add_stock(
+            symbol=request.symbol,
+            code=request.code,
+            exchange=request.exchange,
+            name=request.name,
+        )
+        return _update_watchlist_stock_from_request(service, stock.id, request).model_dump(mode="json")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.patch("/api/watchlist-pool/stocks/{stock_id}")
+def update_watchlist_stock(
+    stock_id: int,
+    request: WatchlistStockUpdateRequest,
+) -> dict[str, object]:
+    service = _watchlist_pool_service()
+    try:
+        return _update_watchlist_stock_from_request(service, stock_id, request).model_dump(mode="json")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.get("/api/watchlist-alerts")
 def get_watchlist_alerts() -> dict[str, object]:
     return {"items": list_watchlist_alert_events(app.state.engine)}
@@ -316,6 +465,28 @@ def get_watchlist_alerts() -> dict[str, object]:
 @app.post("/api/watchlist-alerts/run")
 def run_watchlist_alerts(request: RunWatchlistAlertRequest) -> dict[str, object]:
     return _run_watchlist_alert_scan(request.mode, request.trade_date)
+
+
+@app.post("/api/watchlist-alerts/{alert_id}/ack")
+def acknowledge_watchlist_alert(alert_id: int) -> dict[str, object]:
+    try:
+        return acknowledge_watchlist_alert_event(app.state.engine, alert_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/api/watchlist-alerts/{alert_id}/mute")
+def mute_watchlist_alert(alert_id: int, request: WatchlistAlertMuteRequest) -> dict[str, object]:
+    if request.days < 1 or request.days > 30:
+        raise HTTPException(status_code=400, detail="days must be between 1 and 30")
+    try:
+        return mute_watchlist_alert_event(
+            app.state.engine,
+            alert_id,
+            muted_until=datetime.now(UTC) + timedelta(days=request.days),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @app.get("/api/watchlist-alert-schedule/status")

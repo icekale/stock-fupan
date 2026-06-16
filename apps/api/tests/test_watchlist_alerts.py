@@ -6,10 +6,12 @@ from app.services.notification import NotificationMessage, NotificationResult
 from app.services.watchlist_alerts import (
     WatchlistAlertInput,
     build_watchlist_alert_events,
+    build_watchlist_alert_event_inputs,
     dispatch_watchlist_alert_notifications,
     list_watchlist_alert_events,
     upsert_watchlist_alert_events,
 )
+from app.watchlist.pool_service import WatchlistPoolService
 from app.services.watchlist_ai_review import RuleWatchlistAIReviewProvider
 
 
@@ -77,6 +79,18 @@ def test_alert_engine_creates_high_risk_for_holding_ma_break():
     assert [(event.event_type, event.severity) for event in events] == [("risk", "high")]
     assert events[0].trigger_key == "600519.SH:risk:plan_invalid_or_ma_break"
     assert "跌破MA5" in events[0].trigger_reason
+
+
+def test_alert_inputs_keep_durable_pool_status(tmp_path):
+    engine = create_sqlite_engine(f"sqlite:///{tmp_path / 'pool-status.db'}")
+    init_db(engine)
+    service = WatchlistPoolService(engine)
+    stock = service.add_stock(symbol="600563.SH", name="法拉电子")
+    service.set_stock_status(stock.id, "持有中")
+
+    inputs = build_watchlist_alert_event_inputs(engine)
+
+    assert [(item.symbol, item.status) for item in inputs] == [("600563.SH", "持有中")]
 
 
 def test_alert_engine_requires_momentum_plus_volume_for_opportunity():

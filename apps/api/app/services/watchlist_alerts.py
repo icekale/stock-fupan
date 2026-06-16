@@ -35,6 +35,7 @@ class WatchlistAlertInput:
 
 @dataclass(frozen=True)
 class WatchlistAlertEventDTO:
+    id: int | None
     stock_id: int | None
     symbol: str
     name: str | None
@@ -50,12 +51,14 @@ class WatchlistAlertEventDTO:
     notification_status: dict[str, Any]
     first_seen_at: datetime
     last_seen_at: datetime
+    muted_until: datetime | None = None
 
     def model_dump(self, mode: str | None = None) -> dict[str, Any]:
         data = asdict(self)
         if mode == "json":
             data["first_seen_at"] = self.first_seen_at.isoformat()
             data["last_seen_at"] = self.last_seen_at.isoformat()
+            data["muted_until"] = self.muted_until.isoformat() if self.muted_until else None
         return data
 
 
@@ -204,6 +207,40 @@ def list_watchlist_alert_events(engine: Engine) -> list[dict[str, Any]]:
             .all()
         )
         return [_row_to_dto(row).model_dump(mode="json") for row in rows]
+
+
+def acknowledge_watchlist_alert_event(
+    engine: Engine,
+    alert_id: int,
+    *,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    acknowledged_at = _as_utc(now or datetime.now(UTC))
+    with session_scope(engine) as session:
+        row = session.get(WatchlistAlertEvent, alert_id)
+        if row is None:
+            raise ValueError("提醒不存在")
+        row.status = "acknowledged"
+        row.acknowledged_at = acknowledged_at
+        session.flush()
+        return _row_to_dto(row).model_dump(mode="json")
+
+
+def mute_watchlist_alert_event(
+    engine: Engine,
+    alert_id: int,
+    *,
+    muted_until: datetime,
+) -> dict[str, Any]:
+    until = _as_utc(muted_until)
+    with session_scope(engine) as session:
+        row = session.get(WatchlistAlertEvent, alert_id)
+        if row is None:
+            raise ValueError("提醒不存在")
+        row.status = "muted"
+        row.muted_until = until
+        session.flush()
+        return _row_to_dto(row).model_dump(mode="json")
 
 
 def dispatch_watchlist_alert_notifications(
@@ -401,6 +438,7 @@ def _event(
         "trade_mode": market_snapshot.get("mode"),
     }
     return WatchlistAlertEventDTO(
+        id=None,
         stock_id=item.stock_id,
         symbol=item.symbol,
         name=item.name,
@@ -421,6 +459,7 @@ def _event(
 
 def _row_to_dto(row: WatchlistAlertEvent) -> WatchlistAlertEventDTO:
     return WatchlistAlertEventDTO(
+        id=row.id,
         stock_id=row.stock_id,
         symbol=row.symbol,
         name=row.name,
@@ -436,6 +475,7 @@ def _row_to_dto(row: WatchlistAlertEvent) -> WatchlistAlertEventDTO:
         notification_status=row.notification_status or {},
         first_seen_at=_as_utc(row.first_seen_at),
         last_seen_at=_as_utc(row.last_seen_at),
+        muted_until=_as_utc(row.muted_until) if row.muted_until else None,
     )
 
 
@@ -444,7 +484,7 @@ def _stock_to_input(stock: WatchlistStock) -> WatchlistAlertInput:
         stock_id=stock.id,
         symbol=stock.symbol,
         name=stock.name,
-        status="观察中",
+        status=stock.status or "观察中",
         groups=[group.name for group in stock.groups],
         tags=stock.tags or [],
         entry_reason=stock.entry_reason,
@@ -557,6 +597,7 @@ def _ensure_aware_datetime(value: datetime | None) -> datetime | None:
 
 def _normalize_event_datetimes(event: WatchlistAlertEventDTO) -> WatchlistAlertEventDTO:
     return WatchlistAlertEventDTO(
+        id=event.id,
         stock_id=event.stock_id,
         symbol=event.symbol,
         name=event.name,

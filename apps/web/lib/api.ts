@@ -14,6 +14,10 @@ import type {
   WatchlistAlertScheduleStatus,
   WatchlistImportResult,
   WatchlistOcrPreviewResult,
+  WatchlistPoolGroup,
+  WatchlistPoolState,
+  WatchlistPoolStock,
+  WatchlistStockPayload,
 } from "./types";
 
 function defaultApiBaseUrl(): string {
@@ -141,6 +145,18 @@ export async function acknowledgeWatchlistAlert(alertId: number): Promise<Watchl
   return response.json() as Promise<WatchlistAlertEvent>;
 }
 
+export async function muteWatchlistAlert(alertId: number, days: number): Promise<WatchlistAlertEvent> {
+  const response = await fetch(`${API_BASE_URL}/api/watchlist-alerts/${alertId}/mute`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ days }),
+  });
+  if (!response.ok) {
+    throw new Error(`暂不提醒失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<WatchlistAlertEvent>;
+}
+
 export async function getWatchlistAlertSchedule(): Promise<WatchlistAlertScheduleStatus> {
   const response = await fetch(`${API_BASE_URL}/api/watchlist-alert-schedule/status`);
   if (!response.ok) {
@@ -155,6 +171,75 @@ export async function getTickFlowHealth(): Promise<TickFlowHealthStatus> {
     throw new Error(`读取TickFlow健康状态失败：${response.status} ${await response.text()}`);
   }
   return response.json() as Promise<TickFlowHealthStatus>;
+}
+
+export async function getWatchlistPool(): Promise<WatchlistPoolState> {
+  const response = await fetch(`${API_BASE_URL}/api/watchlist-pool`);
+  if (!response.ok) {
+    throw new Error(`读取自选股池失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<WatchlistPoolState>;
+}
+
+export async function createWatchlistGroup(name: string): Promise<WatchlistPoolGroup> {
+  const response = await fetch(`${API_BASE_URL}/api/watchlist-pool/groups`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (!response.ok) {
+    throw new Error(`新增分组失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<WatchlistPoolGroup>;
+}
+
+export async function renameWatchlistGroup(groupId: number, name: string): Promise<WatchlistPoolGroup> {
+  const response = await fetch(`${API_BASE_URL}/api/watchlist-pool/groups/${groupId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (!response.ok) {
+    throw new Error(`重命名分组失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<WatchlistPoolGroup>;
+}
+
+export async function deleteWatchlistGroup(groupId: number): Promise<{ deleted: boolean; id: number }> {
+  const response = await fetch(`${API_BASE_URL}/api/watchlist-pool/groups/${groupId}`, {
+    method: "DELETE",
+  });
+  if (!response.ok) {
+    throw new Error(`删除分组失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<{ deleted: boolean; id: number }>;
+}
+
+export async function createWatchlistStock(payload: WatchlistStockPayload): Promise<WatchlistPoolStock> {
+  const response = await fetch(`${API_BASE_URL}/api/watchlist-pool/stocks`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(`加入自选股失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<WatchlistPoolStock>;
+}
+
+export async function updateWatchlistStock(
+  stockId: number,
+  payload: WatchlistStockPayload,
+): Promise<WatchlistPoolStock> {
+  const response = await fetch(`${API_BASE_URL}/api/watchlist-pool/stocks/${stockId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(`保存自选股失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<WatchlistPoolStock>;
 }
 
 export async function getDataSourceOptions(): Promise<DataSourceOptionsResponse> {

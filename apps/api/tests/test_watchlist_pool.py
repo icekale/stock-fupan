@@ -34,6 +34,19 @@ def test_stock_can_belong_to_multiple_groups(tmp_path: Path) -> None:
     assert [group.name for group in state_stock.groups] == ["动量", "AI"]
 
 
+def test_stock_identity_can_be_updated_without_recreating_stock(tmp_path: Path) -> None:
+    engine = create_sqlite_engine(f"sqlite:///{tmp_path / 'watchlist.db'}")
+    init_db(engine)
+    service = WatchlistPoolService(engine)
+    stock = service.add_stock(symbol="600563.SH", name="法拉电子")
+
+    updated = service.update_stock_identity(stock.id, name="法拉电子股份")
+
+    assert updated.id == stock.id
+    assert updated.symbol == "600563.SH"
+    assert updated.name == "法拉电子股份"
+
+
 def test_deleting_custom_group_keeps_stocks(tmp_path: Path) -> None:
     engine = create_sqlite_engine(f"sqlite:///{tmp_path / 'watchlist.db'}")
     init_db(engine)
