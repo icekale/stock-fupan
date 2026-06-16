@@ -35,6 +35,7 @@ from app.services.report_schedule import (
     update_report_schedule_status,
 )
 from app.services.tickflow_health import check_tickflow_health
+from app.services.watchlist_alerts import list_watchlist_alert_events
 from app.services.weekly_report_generator import (
     AStockWeeklyDataClient,
     WeeklyGeneratedReport,
@@ -232,6 +233,11 @@ def confirm_watchlist_ocr(request: ConfirmOcrPreviewRequest) -> dict[str, object
 @app.get("/api/watchlists/latest")
 def get_latest_watchlist() -> dict[str, object]:
     return _watchlist_service().get_latest().model_dump(mode="json")
+
+
+@app.get("/api/watchlist-alerts")
+def get_watchlist_alerts() -> dict[str, object]:
+    return {"items": list_watchlist_alert_events(app.state.engine)}
 
 
 @app.get("/api/config/status")
