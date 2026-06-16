@@ -33,6 +33,7 @@ class WatchlistImportService:
         raw_path.write_text(content, encoding="utf-8")
         write_json(parsed_path, parsed.model_dump(mode="json"))
 
+        pool_service = WatchlistPoolService(self.engine)
         with session_scope(self.engine) as session:
             record = WatchlistImport(
                 source_type="text",
@@ -55,9 +56,8 @@ class WatchlistImportService:
                         display_order=index,
                     )
                 )
+            pool_service.upsert_items_in_session(session, parsed.items)
             import_id = record.id
-
-        WatchlistPoolService(self.engine).upsert_items(parsed.items)
 
         return WatchlistImportResult(
             import_id=import_id,

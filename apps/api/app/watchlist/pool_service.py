@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 from sqlalchemy import Engine, select
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from app.db.models import WatchlistGroup, WatchlistStock
 from app.db.session import session_scope
@@ -95,6 +96,9 @@ class WatchlistPoolService:
             group = session.get(WatchlistGroup, group_id)
             if group is None:
                 raise ValueError(f"Watchlist group not found: {group_id}")
+            existing = self._find_group_by_name(session, normalized_name)
+            if existing is not None and existing.id != group.id:
+                raise ValueError("分组名已存在")
             group.name = normalized_name
             session.flush()
             return _group_dto(group)
@@ -110,7 +114,7 @@ class WatchlistPoolService:
         normalized = _normalize_symbol(symbol, code=code, exchange=exchange)
         with session_scope(self.engine) as session:
             default_group = self._ensure_default_group(session)
-            stock = self._upsert_stock(
+            stock = self._upsert_stock_in_session(
                 session,
                 symbol=normalized["symbol"],
                 code=normalized["code"],
@@ -124,17 +128,20 @@ class WatchlistPoolService:
 
     def upsert_items(self, items: list[WatchlistItem]) -> None:
         with session_scope(self.engine) as session:
-            default_group = self._ensure_default_group(session)
-            for item in items:
-                stock = self._upsert_stock(
-                    session,
-                    symbol=item.symbol,
-                    code=item.code,
-                    exchange=item.exchange,
-                    name=item.name,
-                )
-                if default_group not in stock.groups:
-                    stock.groups.append(default_group)
+            self.upsert_items_in_session(session, items)
+
+    def upsert_items_in_session(self, session, items: list[WatchlistItem]) -> None:
+        default_group = self._ensure_default_group(session)
+        for item in items:
+            stock = self._upsert_stock_in_session(
+                session,
+                symbol=item.symbol,
+                code=item.code,
+                exchange=item.exchange,
+                name=item.name,
+            )
+            if all(existing.id != default_group.id for existing in stock.groups):
+                stock.groups.append(default_group)
 
     def set_stock_groups(self, stock_id: int | str, group_ids: list[int]) -> WatchlistStockDto:
         with session_scope(self.engine) as session:
@@ -148,7 +155,12 @@ class WatchlistPoolService:
             stock = self._get_stock(session, stock_id)
             group = self._find_group_by_name(session, _clean_name(group_name))
             if group is None:
-                group = WatchlistGroup(name=_clean_name(group_name), is_default=False)
+                sort_orders = session.execute(select(WatchlistGroup.sort_order)).scalars().all()
+                group = WatchlistGroup(
+                    name=_clean_name(group_name),
+                    is_default=False,
+                    sort_order=(max(sort_orders) + 1) if sort_orders else 1,
+                )
                 session.add(group)
                 session.flush()
             if group not in stock.groups:
@@ -213,7 +225,7 @@ class WatchlistPoolService:
         session.flush()
         return group
 
-    def _upsert_stock(
+    def _upsert_stock_in_session(
         self,
         session,
         *,
@@ -222,6 +234,28 @@ class WatchlistPoolService:
         exchange: str,
         name: str | None,
     ) -> WatchlistStock:
+        if session.bind is not None and session.bind.dialect.name == "sqlite":
+            values = {
+                "symbol": symbol,
+                "code": code,
+                "exchange": exchange,
+            }
+            if name is not None:
+                values["name"] = name
+            stmt = sqlite_insert(WatchlistStock).values(**values)
+            update_values = {
+                "code": code,
+                "exchange": exchange,
+            }
+            if name is not None:
+                update_values["name"] = name
+            stmt = stmt.on_conflict_do_update(
+                index_elements=[WatchlistStock.symbol],
+                set_=update_values,
+            )
+            session.execute(stmt)
+            return self._find_stock_by_symbol(session, symbol)  # type: ignore[return-value]
+
         stock = self._find_stock_by_symbol(session, symbol)
         if stock is None:
             stock = WatchlistStock(
@@ -276,7 +310,7 @@ class WatchlistPoolService:
 
 
 def _stock_dto(stock: WatchlistStock) -> WatchlistStockDto:
-    groups = sorted(stock.groups, key=lambda group: group.id)
+    groups = sorted(stock.groups, key=lambda group: (group.sort_order, group.id))
     return WatchlistStockDto(
         id=stock.id,
         symbol=stock.symbol,

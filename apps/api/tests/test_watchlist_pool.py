@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from app.db.models import WatchlistStock
+from app.db.models import WatchlistStock, WatchlistStockGroup
 from app.db.session import create_sqlite_engine, init_db, session_scope
 from app.watchlist.pool_service import WatchlistPoolService
 from app.watchlist.service import WatchlistImportService
@@ -104,3 +104,19 @@ def test_import_text_upserts_durable_stocks(tmp_path: Path) -> None:
     assert [group.name for group in state.stocks[0].groups] == ["自选"]
     with session_scope(engine) as session:
         assert session.query(WatchlistStock).count() == 2
+        assert session.query(WatchlistStockGroup).count() == 2
+
+
+def test_rename_group_rejects_duplicate_name(tmp_path: Path) -> None:
+    engine = create_sqlite_engine(f"sqlite:///{tmp_path / 'watchlist.db'}")
+    init_db(engine)
+    service = WatchlistPoolService(engine)
+    service.create_group("MLCC")
+    duplicate = service.create_group("电力")
+
+    try:
+        service.rename_group(duplicate.id, "MLCC")
+    except ValueError as exc:
+        assert "分组名已存在" in str(exc)
+    else:
+        raise AssertionError("expected ValueError")
