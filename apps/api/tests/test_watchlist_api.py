@@ -57,3 +57,45 @@ def test_watchlist_import_text_api_returns_items(tmp_path: Path, monkeypatch) ->
     assert payload["item_count"] == 2
     assert [item["symbol"] for item in payload["items"]] == ["600000.SH", "000001.SZ"]
     get_settings.cache_clear()
+
+
+def test_watchlist_alert_run_and_schedule_api(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'alerts.db'}")
+    monkeypatch.setenv("WATCHLIST_SNAPSHOT_ROOT", str(tmp_path / "watchlists"))
+    get_settings.cache_clear()
+
+    with TestClient(app) as client:
+        import_response = client.post(
+            "/api/watchlists/import-text",
+            json={"content": "600519 贵州茅台", "source_name": "manual.txt"},
+        )
+        assert import_response.status_code == 200
+
+        run_response = client.post(
+            "/api/watchlist-alerts/run",
+            json={"mode": "daily_review", "trade_date": "2026-06-15"},
+        )
+        assert run_response.status_code == 200
+        assert run_response.json()["status"] == "completed"
+
+        list_response = client.get("/api/watchlist-alerts")
+        assert list_response.status_code == 200
+        assert "items" in list_response.json()
+
+        update_response = client.put(
+            "/api/watchlist-alert-schedule/status",
+            json={
+                "enabled": True,
+                "morning_time": "10:00",
+                "afternoon_time": "14:30",
+                "review_time": "19:30",
+                "timezone": "Asia/Shanghai",
+            },
+        )
+        assert update_response.status_code == 200
+        assert update_response.json()["enabled"] is True
+
+        status_response = client.get("/api/watchlist-alert-schedule/status")
+        assert status_response.status_code == 200
+        assert status_response.json()["enabled"] is True
+    get_settings.cache_clear()

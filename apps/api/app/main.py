@@ -2,7 +2,7 @@ from collections.abc import AsyncIterator
 import asyncio
 from contextlib import asynccontextmanager
 from contextlib import suppress
-from datetime import UTC, date, timedelta
+from datetime import UTC, date, datetime, timedelta
 import logging
 from pathlib import Path
 import shutil
@@ -35,7 +35,18 @@ from app.services.report_schedule import (
     update_report_schedule_status,
 )
 from app.services.tickflow_health import check_tickflow_health
-from app.services.watchlist_alerts import list_watchlist_alert_events
+from app.services.watchlist_alert_schedule import (
+    WatchlistAlertScheduleUpdate,
+    get_watchlist_alert_schedule_status,
+    run_due_watchlist_alert_schedule,
+    update_watchlist_alert_schedule_status,
+)
+from app.services.watchlist_alerts import (
+    build_watchlist_alert_event_inputs,
+    build_watchlist_alert_events,
+    list_watchlist_alert_events,
+    upsert_watchlist_alert_events,
+)
 from app.services.weekly_report_generator import (
     AStockWeeklyDataClient,
     WeeklyGeneratedReport,
@@ -69,6 +80,19 @@ class ReportScheduleRequest(BaseModel):
     timezone: str = "Asia/Shanghai"
 
 
+class RunWatchlistAlertRequest(BaseModel):
+    mode: str = "daily_review"
+    trade_date: str
+
+
+class WatchlistAlertScheduleRequest(BaseModel):
+    enabled: bool
+    morning_time: str = "10:00"
+    afternoon_time: str = "14:30"
+    review_time: str = "19:30"
+    timezone: str = "Asia/Shanghai"
+
+
 def _status_item(
     name: str,
     role: str,
@@ -93,12 +117,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     init_db(engine)
     app.state.engine = engine
     app.state.report_schedule_task = asyncio.create_task(_report_schedule_loop())
+    app.state.watchlist_alert_schedule_task = asyncio.create_task(_watchlist_alert_schedule_loop())
     try:
         yield
     finally:
         app.state.report_schedule_task.cancel()
+        app.state.watchlist_alert_schedule_task.cancel()
         with suppress(asyncio.CancelledError):
             await app.state.report_schedule_task
+        with suppress(asyncio.CancelledError):
+            await app.state.watchlist_alert_schedule_task
 
 
 def _cors_allow_origins() -> list[str]:
@@ -157,6 +185,42 @@ async def _report_schedule_loop() -> None:
             await asyncio.to_thread(_run_report_schedule_once)
         except Exception:
             logger.exception("report schedule tick failed")
+
+
+async def _watchlist_alert_schedule_loop() -> None:
+    while True:
+        await asyncio.sleep(60)
+        try:
+            await asyncio.to_thread(_run_watchlist_alert_schedule_once)
+        except Exception:
+            logger.exception("watchlist alert schedule tick failed")
+
+
+def _run_watchlist_alert_schedule_once() -> dict[str, object]:
+    return run_due_watchlist_alert_schedule(
+        engine=app.state.engine,
+        settings=get_settings(),
+        run_scan=lambda mode, trade_date: _run_watchlist_alert_scan(mode, trade_date),
+    )
+
+
+def _run_watchlist_alert_scan(mode: str, trade_date: str) -> dict[str, object]:
+    items = build_watchlist_alert_event_inputs(app.state.engine)
+    events = build_watchlist_alert_events(
+        items=items,
+        trade_date=trade_date,
+        mode=mode,
+        source_status={"tickflow": "not_checked"},
+        now=datetime.now(UTC),
+    )
+    persisted = upsert_watchlist_alert_events(app.state.engine, events)
+    return {
+        "status": "completed",
+        "mode": mode,
+        "trade_date": trade_date,
+        "item_count": len(items),
+        "event_count": len(persisted),
+    }
 
 
 def _run_report_schedule_once() -> dict[str, object]:
@@ -238,6 +302,25 @@ def get_latest_watchlist() -> dict[str, object]:
 @app.get("/api/watchlist-alerts")
 def get_watchlist_alerts() -> dict[str, object]:
     return {"items": list_watchlist_alert_events(app.state.engine)}
+
+
+@app.post("/api/watchlist-alerts/run")
+def run_watchlist_alerts(request: RunWatchlistAlertRequest) -> dict[str, object]:
+    return _run_watchlist_alert_scan(request.mode, request.trade_date)
+
+
+@app.get("/api/watchlist-alert-schedule/status")
+def get_watchlist_alert_schedule() -> dict[str, object]:
+    return get_watchlist_alert_schedule_status(app.state.engine, get_settings())
+
+
+@app.put("/api/watchlist-alert-schedule/status")
+def update_watchlist_alert_schedule(request: WatchlistAlertScheduleRequest) -> dict[str, object]:
+    try:
+        update = WatchlistAlertScheduleUpdate.model_validate(request.model_dump())
+        return update_watchlist_alert_schedule_status(app.state.engine, get_settings(), update)
+    except (ValueError, ZoneInfoNotFoundError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/config/status")
