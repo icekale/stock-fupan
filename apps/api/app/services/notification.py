@@ -30,8 +30,23 @@ class NotificationService:
     def __init__(self, notifiers: list[Notifier]) -> None:
         self.notifiers = notifiers
 
+    def send_all(self, message: NotificationMessage) -> list[NotificationResult]:
+        results: list[NotificationResult] = []
+        for notifier in self.notifiers:
+            try:
+                results.append(notifier.send(message))
+            except Exception as exc:  # noqa: BLE001 - preserve delivery to later channels.
+                results.append(
+                    NotificationResult(
+                        channel=notifier.channel,
+                        status="failed",
+                        detail=str(exc),
+                    )
+                )
+        return results
+
     def send(self, message: NotificationMessage) -> list[NotificationResult]:
-        return [notifier.send(message) for notifier in self.notifiers]
+        return self.send_all(message)
 
 
 class WebhookNotifier:

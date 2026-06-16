@@ -1,4 +1,5 @@
 from app.services.notification import (
+    NotificationService,
     NotificationMessage,
     NotificationResult,
     WeComNotifier,
@@ -18,6 +19,24 @@ class FakeHttpClient:
 class FakeResponse:
     def raise_for_status(self) -> None:
         pass
+
+
+class FailingNotifier:
+    channel = "wecom"
+
+    def send(self, message: NotificationMessage) -> NotificationResult:
+        raise RuntimeError("timeout")
+
+
+class RecordingNotifier:
+    channel = "feishu"
+
+    def __init__(self) -> None:
+        self.messages: list[NotificationMessage] = []
+
+    def send(self, message: NotificationMessage) -> NotificationResult:
+        self.messages.append(message)
+        return NotificationResult(channel=self.channel, status="sent", detail="sent")
 
 
 class FakeSettings:
@@ -40,9 +59,11 @@ def test_wecom_notifier_sends_markdown_payload() -> None:
         http_client=http_client,
     )
 
-    result = notifier.send(NotificationMessage(title="午盘提醒", body="机会分 82"))
+    result = NotificationService([notifier]).send_all(
+        NotificationMessage(title="午盘提醒", body="机会分 82")
+    )
 
-    assert result == NotificationResult(channel="wecom", status="sent", detail="sent")
+    assert result == [NotificationResult(channel="wecom", status="sent", detail="sent")]
     assert http_client.requests == [
         {
             "url": "https://wecom.example.test/webhook",
@@ -50,6 +71,17 @@ def test_wecom_notifier_sends_markdown_payload() -> None:
             "timeout": 12,
         }
     ]
+
+
+def test_notification_service_continues_after_channel_failure() -> None:
+    successful = RecordingNotifier()
+    message = NotificationMessage(title="风险提醒", body="跌破MA5")
+
+    result = NotificationService([FailingNotifier(), successful]).send_all(message)
+
+    assert result[0] == NotificationResult(channel="wecom", status="failed", detail="timeout")
+    assert result[1] == NotificationResult(channel="feishu", status="sent", detail="sent")
+    assert successful.messages == [message]
 
 
 def test_build_notifiers_from_settings_only_configures_enabled_channels() -> None:
