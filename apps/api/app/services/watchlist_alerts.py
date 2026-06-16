@@ -223,43 +223,66 @@ def dispatch_watchlist_alert_notifications(
             .scalars()
             .all()
         )
-        pending = [row for row in rows if _should_notify(row, sent_at)]
-        risk_rows = [row for row in pending if row.event_type == "risk" and row.severity == "high"]
-        opportunity_rows = [row for row in pending if row.event_type == "opportunity"]
+        pending = [_notification_target(row) for row in rows if _should_notify(row, sent_at)]
 
-        sent_count = 0
-        messages: list[dict[str, object]] = []
-        for row in risk_rows:
-            result = _send_notification(
-                notification_service,
-                NotificationMessage(
-                    title="高危风险提醒",
-                    body=_format_event_body(row),
-                ),
-            )
-            _mark_notified(row, sent_at, result)
-            messages.append({"title": "高危风险提醒", "symbols": [row.symbol]})
-            sent_count += 1
+    risk_rows = [row for row in pending if row["event_type"] == "risk" and row["severity"] == "high"]
+    opportunity_rows = [row for row in pending if row["event_type"] == "opportunity"]
+    deliveries: list[dict[str, object]] = []
 
-        if opportunity_rows:
-            result = _send_notification(
-                notification_service,
-                NotificationMessage(
-                    title="自选股机会提醒",
-                    body="\n".join(_format_event_body(row) for row in opportunity_rows),
-                ),
-            )
-            for row in opportunity_rows:
-                _mark_notified(row, sent_at, result)
-            messages.append(
-                {
-                    "title": "自选股机会提醒",
-                    "symbols": [row.symbol for row in opportunity_rows],
-                }
-            )
-            sent_count += len(opportunity_rows)
+    for row in risk_rows:
+        result = _send_notification(
+            notification_service,
+            NotificationMessage(
+                title="高危风险提醒",
+                body=_format_event_body(row),
+            ),
+        )
+        deliveries.append(
+            {
+                "row_ids": [row["id"]],
+                "title": "高危风险提醒",
+                "symbols": [row["symbol"]],
+                "channels": result,
+            }
+        )
+
+    if opportunity_rows:
+        result = _send_notification(
+            notification_service,
+            NotificationMessage(
+                title="自选股机会提醒",
+                body="\n".join(_format_event_body(row) for row in opportunity_rows),
+            ),
+        )
+        deliveries.append(
+            {
+                "row_ids": [row["id"] for row in opportunity_rows],
+                "title": "自选股机会提醒",
+                "symbols": [row["symbol"] for row in opportunity_rows],
+                "channels": result,
+            }
+        )
+
+    sent_count = 0
+    with session_scope(engine) as session:
+        for delivery in deliveries:
+            sent = _delivery_succeeded(delivery["channels"])
+            row_ids = [int(row_id) for row_id in delivery["row_ids"]]
+            rows_by_id = session.execute(
+                select(WatchlistAlertEvent).where(WatchlistAlertEvent.id.in_(row_ids))
+            ).scalars().all()
+            for row in rows_by_id:
+                _mark_notified(row, sent_at, delivery["channels"], sent=sent)
+                if sent:
+                    sent_count += 1
         session.flush()
-        return {"sent_count": sent_count, "message_count": len(messages), "messages": messages}
+
+    messages = [
+        {"title": delivery["title"], "symbols": delivery["symbols"]}
+        for delivery in deliveries
+        if _delivery_succeeded(delivery["channels"])
+    ]
+    return {"sent_count": sent_count, "message_count": len(messages), "messages": messages}
 
 
 def build_watchlist_alert_event_inputs(
@@ -456,16 +479,41 @@ def _send_notification(notification_service: object, message: NotificationMessag
     ]
 
 
+def _notification_target(row: WatchlistAlertEvent) -> dict[str, object]:
+    return {
+        "id": row.id,
+        "symbol": row.symbol,
+        "name": row.name,
+        "event_type": row.event_type,
+        "severity": row.severity,
+        "trigger_reason": row.trigger_reason,
+    }
+
+
+def _delivery_succeeded(result: object) -> bool:
+    if not isinstance(result, list):
+        return False
+    return any(isinstance(item, dict) and item.get("status") == "sent" for item in result)
+
+
 def _mark_notified(
     row: WatchlistAlertEvent,
     sent_at: datetime,
-    result: list[dict[str, str]],
+    result: object,
+    *,
+    sent: bool,
 ) -> None:
-    row.sent_at = sent_at
-    row.notification_status = {"sent": True, "channels": result}
+    if sent:
+        row.sent_at = sent_at
+    row.notification_status = {"sent": sent, "channels": result}
 
 
-def _format_event_body(row: WatchlistAlertEvent) -> str:
+def _format_event_body(row: object) -> str:
+    if isinstance(row, dict):
+        symbol = str(row.get("symbol") or "")
+        name = str(row.get("name") or symbol)
+        reason = str(row.get("trigger_reason") or "")
+        return f"{name}（{symbol}）：{reason}"
     name = row.name or row.symbol
     return f"{name}（{row.symbol}）：{row.trigger_reason}"
 

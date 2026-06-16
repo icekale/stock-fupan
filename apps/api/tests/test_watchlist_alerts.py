@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from app.db.models import WatchlistAlertEvent
 from app.db.session import create_sqlite_engine, init_db, session_scope
@@ -58,6 +58,11 @@ class RecordingNotificationService:
     def send_all(self, message: NotificationMessage) -> list[NotificationResult]:
         self.messages.append(message)
         return [NotificationResult(channel="test", status="sent", detail="sent")]
+
+
+class FailedNotificationService:
+    def send_all(self, message: NotificationMessage) -> list[NotificationResult]:
+        return [NotificationResult(channel="test", status="failed", detail="timeout")]
 
 
 def test_alert_engine_creates_high_risk_for_holding_ma_break():
@@ -244,6 +249,91 @@ def test_dispatch_watchlist_alert_notifications_sends_and_marks_events(tmp_path)
         rows = session.query(WatchlistAlertEvent).order_by(WatchlistAlertEvent.symbol).all()
         assert all(row.sent_at is not None for row in rows)
         assert all(row.notification_status["sent"] is True for row in rows)
+
+
+def test_dispatch_watchlist_alert_notifications_keeps_failed_events_pending(tmp_path):
+    engine = create_sqlite_engine(f"sqlite:///{tmp_path / 'alerts.db'}")
+    init_db(engine)
+    now = datetime(2026, 6, 15, 10, 0, tzinfo=UTC)
+    events = build_watchlist_alert_events(
+        items=[_alert_input()],
+        trade_date="2026-06-15",
+        mode="intraday_morning",
+        source_status={"tickflow": "ready"},
+        now=now,
+    )
+    upsert_watchlist_alert_events(engine, events)
+
+    result = dispatch_watchlist_alert_notifications(
+        engine,
+        notification_service=FailedNotificationService(),
+        now=datetime(2026, 6, 15, 10, 5, tzinfo=UTC),
+    )
+
+    assert result["sent_count"] == 0
+    with session_scope(engine) as session:
+        row = session.query(WatchlistAlertEvent).one()
+        assert row.sent_at is None
+        assert row.notification_status["sent"] is False
+        assert row.notification_status["channels"][0]["status"] == "failed"
+
+
+def test_dispatch_watchlist_alert_notifications_skips_non_pending_events(tmp_path):
+    engine = create_sqlite_engine(f"sqlite:///{tmp_path / 'alerts.db'}")
+    init_db(engine)
+    now = datetime(2026, 6, 15, 10, 0, tzinfo=UTC)
+    events = build_watchlist_alert_events(
+        items=[
+            _alert_input(symbol="600519.SH"),
+            _alert_input(symbol="000001.SZ"),
+            _alert_input(symbol="000002.SZ"),
+        ],
+        trade_date="2026-06-15",
+        mode="intraday_morning",
+        source_status={"tickflow": "ready"},
+        now=now,
+    )
+    upsert_watchlist_alert_events(engine, events)
+    with session_scope(engine) as session:
+        rows = session.query(WatchlistAlertEvent).order_by(WatchlistAlertEvent.symbol).all()
+        rows[0].sent_at = now
+        rows[1].acknowledged_at = now
+        rows[2].muted_until = now + timedelta(hours=1)
+
+    notification_service = RecordingNotificationService()
+    result = dispatch_watchlist_alert_notifications(
+        engine,
+        notification_service=notification_service,
+        now=now,
+    )
+
+    assert result["sent_count"] == 0
+    assert notification_service.messages == []
+
+
+def test_dispatch_watchlist_alert_notifications_is_idempotent_after_success(tmp_path):
+    engine = create_sqlite_engine(f"sqlite:///{tmp_path / 'alerts.db'}")
+    init_db(engine)
+    now = datetime(2026, 6, 15, 10, 0, tzinfo=UTC)
+    events = build_watchlist_alert_events(
+        items=[_alert_input()],
+        trade_date="2026-06-15",
+        mode="intraday_morning",
+        source_status={"tickflow": "ready"},
+        now=now,
+    )
+    upsert_watchlist_alert_events(engine, events)
+    notification_service = RecordingNotificationService()
+
+    dispatch_watchlist_alert_notifications(engine, notification_service=notification_service, now=now)
+    second = dispatch_watchlist_alert_notifications(
+        engine,
+        notification_service=notification_service,
+        now=now + timedelta(minutes=1),
+    )
+
+    assert second["sent_count"] == 0
+    assert len(notification_service.messages) == 1
 
 
 def test_watchlist_alert_event_model_persists_payload(tmp_path):
