@@ -185,3 +185,38 @@ class WatchlistStockGroup(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC)
     )
+
+
+class WatchlistAlertEvent(Base):
+    __tablename__ = "watchlist_alert_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    stock_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    symbol: Mapped[str] = mapped_column(String(16), index=True)
+    name: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    event_type: Mapped[str] = mapped_column(String(64), index=True)
+    severity: Mapped[str] = mapped_column(String(32), index=True)
+    status: Mapped[str] = mapped_column(String(32), default="active", index=True)
+    trigger_key: Mapped[str] = mapped_column(String(255), index=True)
+    payload_hash: Mapped[str] = mapped_column(String(128), index=True)
+    trigger_reason: Mapped[str] = mapped_column(String(1024))
+    ai_comment: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    rule_snapshot: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    market_snapshot: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    source_status: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    notification_status: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    acknowledged_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    muted_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), index=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
+    )
