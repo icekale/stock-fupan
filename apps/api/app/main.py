@@ -6,13 +6,14 @@ from datetime import UTC, date, datetime, timedelta
 import logging
 from pathlib import Path
 import shutil
+from typing import Literal
 from urllib.parse import quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import Depends, FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from app.config import Settings, get_settings
 from app.db.models import Report, ReportKindModel, ReportStatusModel
@@ -81,8 +82,16 @@ class ReportScheduleRequest(BaseModel):
 
 
 class RunWatchlistAlertRequest(BaseModel):
-    mode: str = "daily_review"
+    mode: Literal["intraday_morning", "intraday_afternoon", "daily_review"] = "daily_review"
     trade_date: str
+
+    @field_validator("trade_date")
+    @classmethod
+    def validate_trade_date(cls, value: str) -> str:
+        if len(value) != 10 or value[4] != "-" or value[7] != "-":
+            raise ValueError("trade_date must use YYYY-MM-DD")
+        date.fromisoformat(value)
+        return value
 
 
 class WatchlistAlertScheduleRequest(BaseModel):

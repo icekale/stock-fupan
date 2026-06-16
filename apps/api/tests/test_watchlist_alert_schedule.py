@@ -51,6 +51,45 @@ def test_schedule_runs_morning_scan_when_due(tmp_path):
     assert result["last_result"]["status"] == "completed"
 
 
+def test_schedule_progresses_to_afternoon_review_and_next_day(tmp_path):
+    engine = create_sqlite_engine(f"sqlite:///{tmp_path / 'schedule.db'}")
+    init_db(engine)
+    calls = []
+
+    run_due_watchlist_alert_schedule(
+        engine=engine,
+        settings=SettingsStub(),
+        run_scan=lambda mode, trade_date: calls.append((mode, trade_date)) or {"status": "completed"},
+        now=datetime(2026, 6, 15, 2, 1, tzinfo=UTC),
+    )
+    run_due_watchlist_alert_schedule(
+        engine=engine,
+        settings=SettingsStub(),
+        run_scan=lambda mode, trade_date: calls.append((mode, trade_date)) or {"status": "completed"},
+        now=datetime(2026, 6, 15, 6, 31, tzinfo=UTC),
+    )
+    run_due_watchlist_alert_schedule(
+        engine=engine,
+        settings=SettingsStub(),
+        run_scan=lambda mode, trade_date: calls.append((mode, trade_date)) or {"status": "completed"},
+        now=datetime(2026, 6, 15, 11, 31, tzinfo=UTC),
+    )
+    next_day = run_due_watchlist_alert_schedule(
+        engine=engine,
+        settings=SettingsStub(),
+        run_scan=lambda mode, trade_date: calls.append((mode, trade_date)) or {"status": "completed"},
+        now=datetime(2026, 6, 16, 2, 1, tzinfo=UTC),
+    )
+
+    assert calls == [
+        ("intraday_morning", "2026-06-15"),
+        ("intraday_afternoon", "2026-06-15"),
+        ("daily_review", "2026-06-15"),
+        ("intraday_morning", "2026-06-16"),
+    ]
+    assert next_day["last_result"]["mode"] == "intraday_morning"
+
+
 def test_schedule_can_update_settings(tmp_path):
     engine = create_sqlite_engine(f"sqlite:///{tmp_path / 'schedule.db'}")
     init_db(engine)

@@ -99,3 +99,51 @@ def test_watchlist_alert_run_and_schedule_api(tmp_path: Path, monkeypatch) -> No
         assert status_response.status_code == 200
         assert status_response.json()["enabled"] is True
     get_settings.cache_clear()
+
+
+def test_manual_watchlist_alert_run_does_not_advance_schedule(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'manual-alerts.db'}")
+    monkeypatch.setenv("WATCHLIST_SNAPSHOT_ROOT", str(tmp_path / "watchlists"))
+    get_settings.cache_clear()
+
+    with TestClient(app) as client:
+        client.put(
+            "/api/watchlist-alert-schedule/status",
+            json={
+                "enabled": True,
+                "morning_time": "10:00",
+                "afternoon_time": "14:30",
+                "review_time": "19:30",
+                "timezone": "Asia/Shanghai",
+            },
+        )
+        response = client.post(
+            "/api/watchlist-alerts/run",
+            json={"mode": "daily_review", "trade_date": "2026-06-15"},
+        )
+        status_response = client.get("/api/watchlist-alert-schedule/status")
+
+    assert response.status_code == 200
+    assert status_response.json()["last_run_at"] is None
+    assert status_response.json()["last_result"] is None
+    get_settings.cache_clear()
+
+
+def test_watchlist_alert_run_rejects_invalid_request(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'invalid-alerts.db'}")
+    monkeypatch.setenv("WATCHLIST_SNAPSHOT_ROOT", str(tmp_path / "watchlists"))
+    get_settings.cache_clear()
+
+    with TestClient(app) as client:
+        bad_mode = client.post(
+            "/api/watchlist-alerts/run",
+            json={"mode": "bad_mode", "trade_date": "2026-06-15"},
+        )
+        bad_date = client.post(
+            "/api/watchlist-alerts/run",
+            json={"mode": "daily_review", "trade_date": "20260615"},
+        )
+
+    assert bad_mode.status_code == 422
+    assert bad_date.status_code == 422
+    get_settings.cache_clear()
