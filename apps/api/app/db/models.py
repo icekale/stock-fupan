@@ -191,7 +191,9 @@ class WatchlistAlertEvent(Base):
     __tablename__ = "watchlist_alert_events"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    stock_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    stock_id: Mapped[int | None] = mapped_column(
+        ForeignKey("watchlist_stocks.id"), nullable=True, index=True
+    )
     symbol: Mapped[str] = mapped_column(String(16), index=True)
     name: Mapped[str | None] = mapped_column(String(128), nullable=True)
     event_type: Mapped[str] = mapped_column(String(64), index=True)
