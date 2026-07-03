@@ -20,6 +20,10 @@ def build_samples_for_trade_date(
         if len(bars) < 2:
             continue
 
+        current_bar = bars[-1]
+        if current_bar.trade_date != trade_date:
+            continue
+
         prior_bars = bars[:-1]
         auction = source.auction_snapshot(symbol, trade_date=trade_date)
         auction_return = _auction_return(auction)
@@ -39,7 +43,6 @@ def build_samples_for_trade_date(
         if not filter_result.passed:
             continue
 
-        current_bar = bars[-1]
         features = build_feature_row(
             symbol=symbol,
             market_cap_float=_float_or_none(candidate.get("market_cap_float")),

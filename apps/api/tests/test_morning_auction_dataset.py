@@ -5,6 +5,7 @@ import pytest
 from app.services.morning_auction.artifacts import read_jsonl, write_jsonl
 from app.services.morning_auction.data_sources import InMemoryMorningAuctionDataSource
 from app.services.morning_auction.dataset import build_samples_for_trade_date
+from app.services.morning_auction.schemas import DailyBar
 
 
 def test_in_memory_data_source_returns_daily_bars_and_auction_snapshots() -> None:
@@ -45,6 +46,40 @@ def test_build_samples_for_trade_date_uses_prior_bars_for_features() -> None:
     assert samples[0].close_price == 10.5
     assert samples[0].main_label is True
     assert samples[0].features["auction_data_available"] == 1
+    assert samples[0].features["auction_volume_ratio"] == 1.052632
+
+
+def test_build_samples_for_trade_date_skips_when_current_bar_is_missing() -> None:
+    source = InMemoryMorningAuctionDataSource(
+        universe=[{"symbol": "600001.SH", "name": "Fixture Stock"}],
+        bars_by_symbol={
+            "600001.SH": [
+                DailyBar(
+                    trade_date="2026-07-01",
+                    open=9.8,
+                    high=10.0,
+                    low=9.7,
+                    close=9.9,
+                    volume=900_000,
+                    amount=8_910_000,
+                ),
+                DailyBar(
+                    trade_date="2026-07-02",
+                    open=9.9,
+                    high=10.1,
+                    low=9.8,
+                    close=10.0,
+                    volume=950_000,
+                    amount=9_500_000,
+                ),
+            ]
+        },
+        auctions_by_key={},
+    )
+
+    samples = build_samples_for_trade_date(source, trade_date="2026-07-03", lookback=3)
+
+    assert samples == []
 
 
 def test_jsonl_round_trip(tmp_path: Path) -> None:
