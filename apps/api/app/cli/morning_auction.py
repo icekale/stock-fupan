@@ -21,20 +21,26 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     backtest_parser = subparsers.add_parser("backtest")
     backtest_parser.add_argument("--predictions", required=True)
-    backtest_parser.add_argument("--top-n", type=int, default=3)
+    backtest_parser.add_argument("--top-n", type=_positive_int, default=3)
     backtest_parser.add_argument("--output")
 
     args = parser.parse_args(argv)
     if args.command == "train":
+        dataset_path = Path(args.dataset)
+        if not dataset_path.exists():
+            parser.error(f"dataset file does not exist: {dataset_path}")
         result = train_lightgbm_model(
-            read_jsonl(Path(args.dataset)),
+            read_jsonl(dataset_path),
             Path(args.model),
             Path(args.metadata),
         )
         _print_json(result)
         return 0
 
-    result = backtest_top_n(read_jsonl(Path(args.predictions)), top_n=args.top_n)
+    predictions_path = Path(args.predictions)
+    if not predictions_path.exists():
+        parser.error(f"predictions file does not exist: {predictions_path}")
+    result = backtest_top_n(read_jsonl(predictions_path), top_n=args.top_n)
     if args.output:
         output_path = Path(args.output)
         ensure_parent(output_path)
@@ -49,6 +55,13 @@ def _print_json(payload: dict[str, object]) -> None:
 
 def _json(payload: dict[str, object]) -> str:
     return json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True)
+
+
+def _positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("top-n must be positive")
+    return parsed
 
 
 if __name__ == "__main__":
