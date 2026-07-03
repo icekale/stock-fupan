@@ -63,4 +63,6 @@ def _split_symbol(symbol: str) -> tuple[str, str]:
 
 def _is_excluded_security_name(name: str) -> bool:
     upper_name = name.upper()
-    return any(token in upper_name for token in _EXCLUDED_SECURITY_NAME_TOKENS)
+    return upper_name.startswith(("C", "N")) or any(
+        token in upper_name for token in _EXCLUDED_SECURITY_NAME_TOKENS
+    )
