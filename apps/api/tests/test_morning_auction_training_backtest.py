@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from app.services.morning_auction.artifacts import read_json
-from app.services.morning_auction.backtest import backtest_top_n
+from app.services.morning_auction.backtest import backtest_guarded_exit, backtest_top_n
 from app.services.morning_auction.features import FEATURE_VERSION
 from app.services.morning_auction import trainer
 from app.services.morning_auction.trainer import (
@@ -282,6 +282,72 @@ def test_backtest_top_n_skips_open_limit_up_candidates_and_refills() -> None:
     assert result["selected_count"] == 2
     assert result["skipped_open_limit_up_count"] == 1
     assert result["average_return"] == 0.035
+
+
+def test_backtest_guarded_exit_switches_weak_intraday_rows_to_guard_return() -> None:
+    rows = [
+        {
+            "trade_date": "2026-07-01",
+            "symbol": "600001.SH",
+            "prob_3pct": 0.9,
+            "return_1000_close": -0.01,
+            "t1_close_return": 0.08,
+        },
+        {
+            "trade_date": "2026-07-01",
+            "symbol": "600002.SH",
+            "prob_3pct": 0.8,
+            "return_1000_close": 0.02,
+            "t1_close_return": 0.04,
+        },
+        {
+            "trade_date": "2026-07-02",
+            "symbol": "600003.SH",
+            "prob_3pct": 0.95,
+            "return_1000_close": 0.01,
+            "t1_close_return": 0.04,
+        },
+    ]
+
+    result = backtest_guarded_exit(
+        rows,
+        top_n=1,
+        guard_return_key="return_1000_close",
+        final_return_key="t1_close_return",
+        guard_threshold=0.0,
+        round_trip_cost_bps=25,
+    )
+
+    assert result["selected_count"] == 2
+    assert result["guard_exit_count"] == 1
+    assert result["final_exit_count"] == 1
+    assert result["guard_missing_count"] == 0
+    assert result["average_return"] == 0.0125
+    assert result["win_rate"] == 0.5
+
+
+def test_backtest_guarded_exit_uses_final_return_when_guard_value_is_missing() -> None:
+    rows = [
+        {
+            "trade_date": "2026-07-01",
+            "prob_3pct": 0.9,
+            "return_1000_close": None,
+            "t1_close_return": 0.05,
+        }
+    ]
+
+    result = backtest_guarded_exit(
+        rows,
+        top_n=1,
+        guard_return_key="return_1000_close",
+        final_return_key="t1_close_return",
+        guard_threshold=0.0,
+    )
+
+    assert result["average_return"] == 0.05
+    assert result["guard_exit_count"] == 0
+    assert result["final_exit_count"] == 1
+    assert result["guard_missing_count"] == 1
 
 
 def test_backtest_top_n_rejects_non_positive_top_n() -> None:
