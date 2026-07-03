@@ -4,7 +4,12 @@ from collections import defaultdict
 from collections.abc import Callable, Sequence
 
 
-def backtest_top_n(rows: Sequence[dict[str, object]], *, top_n: int) -> dict[str, object]:
+def backtest_top_n(
+    rows: Sequence[dict[str, object]],
+    *,
+    top_n: int,
+    return_key: str = "open_to_close_return",
+) -> dict[str, object]:
     if top_n <= 0:
         raise ValueError("top_n must be positive")
 
@@ -17,7 +22,7 @@ def backtest_top_n(rows: Sequence[dict[str, object]], *, top_n: int) -> dict[str
         ranked = sorted(day_rows, key=lambda row: float(row.get("prob_3pct") or 0.0), reverse=True)
         selected.extend(ranked[:top_n])
 
-    returns = [float(row.get("open_to_close_return") or 0.0) for row in selected]
+    returns = [float(row.get(return_key) or 0.0) for row in selected]
     selected_count = len(selected)
     average_return = sum(returns) / selected_count if selected_count else 0.0
     hit_3pct_rate = _rate(returns, lambda value: value >= 0.03)
@@ -35,6 +40,7 @@ def backtest_top_n(rows: Sequence[dict[str, object]], *, top_n: int) -> dict[str
 
     return {
         "top_n": top_n,
+        "return_key": return_key,
         "trade_days": len(by_date),
         "selected_count": selected_count,
         "average_return": round(average_return, 6),

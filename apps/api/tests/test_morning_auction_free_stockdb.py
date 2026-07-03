@@ -222,7 +222,7 @@ def test_free_stockdb_prefetch_daily_window_reuses_cached_rows() -> None:
     assert requests[0]["cmd"] == "vals"
     assert requests[0]["t"] == "日k"
     assert requests[0]["k1"] == "all:"
-    assert requests[0]["k2"].endswith(",20260625")
+    assert requests[0]["k2"].endswith(",20260705")
     assert universe[0]["symbol"] == "600633.SH"
     assert [bar.trade_date for bar in bars] == ["2026-06-24", "2026-06-25"]
 
@@ -394,6 +394,9 @@ class _CliFreeStockDbSource:
                 turnover_rate=1.42,
             ),
         ]
+
+    def next_daily_bar(self, symbol: str, *, trade_date: str) -> DailyBar | None:
+        return None
 
     def auction_snapshot(self, symbol: str, *, trade_date: str):
         return None

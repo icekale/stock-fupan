@@ -15,19 +15,25 @@ class TrainingMatrix:
     x: list[list[float]]
     y: list[int]
     feature_names: list[str]
+    label_key: str
 
 
-def build_training_matrix(rows: Sequence[dict[str, object]]) -> TrainingMatrix:
+def build_training_matrix(
+    rows: Sequence[dict[str, object]],
+    *,
+    label_key: str = "main_label",
+) -> TrainingMatrix:
+    labeled_rows = [row for row in rows if row.get(label_key) is not None]
     feature_names = sorted(
         {
             str(name)
-            for row in rows
+            for row in labeled_rows
             for name in _features(row).keys()
         }
     )
-    x = build_feature_matrix(rows, feature_names)
-    y = [1 if row.get("main_label") else 0 for row in rows]
-    return TrainingMatrix(x=x, y=y, feature_names=feature_names)
+    x = build_feature_matrix(labeled_rows, feature_names)
+    y = [1 if row.get(label_key) else 0 for row in labeled_rows]
+    return TrainingMatrix(x=x, y=y, feature_names=feature_names, label_key=label_key)
 
 
 def build_feature_matrix(
@@ -44,9 +50,11 @@ def train_lightgbm_model(
     rows: Sequence[dict[str, object]],
     model_path: Path,
     metadata_path: Path,
+    *,
+    label_key: str = "main_label",
 ) -> dict[str, object]:
     lgbm_classifier = _load_lgbm_classifier()
-    matrix = build_training_matrix(rows)
+    matrix = build_training_matrix(rows, label_key=label_key)
     positive_count = sum(matrix.y)
     negative_count = len(matrix.y) - positive_count
     scale_pos_weight = negative_count / positive_count if positive_count else 1.0
@@ -65,10 +73,12 @@ def train_lightgbm_model(
         feature_version=FEATURE_VERSION,
         feature_names=matrix.feature_names,
         train_date_range=_date_range(rows),
+        label_key=matrix.label_key,
     )
     return {
         "model_version": model_version,
         "feature_names": matrix.feature_names,
+        "label_key": matrix.label_key,
         "positive_count": positive_count,
         "negative_count": negative_count,
     }
@@ -92,6 +102,7 @@ def save_training_metadata(
     feature_version: str,
     feature_names: list[str],
     train_date_range: list[str],
+    label_key: str = "main_label",
 ) -> None:
     write_json(
         path,
@@ -100,6 +111,7 @@ def save_training_metadata(
             "feature_version": feature_version,
             "feature_names": feature_names,
             "train_date_range": train_date_range,
+            "label_key": label_key,
         },
     )
 

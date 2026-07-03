@@ -60,6 +60,39 @@ def test_build_samples_for_trade_date_uses_prior_bars_for_features() -> None:
     assert samples[0].features["auction_volume_ratio"] == 1.052632
 
 
+def test_build_samples_for_trade_date_adds_t1_executable_returns_and_labels() -> None:
+    source = _source_with_current_bar(
+        DailyBar(
+            trade_date="2026-07-03",
+            open=10.0,
+            high=10.3,
+            low=9.9,
+            close=10.2,
+            volume=1_100_000,
+            amount=11_220_000,
+        ),
+        next_bar=DailyBar(
+            trade_date="2026-07-06",
+            open=10.4,
+            high=10.8,
+            low=10.1,
+            close=10.6,
+            volume=1_200_000,
+            amount=12_420_000,
+        ),
+    )
+
+    sample = build_samples_for_trade_date(source, trade_date="2026-07-03", lookback=3)[0]
+
+    assert sample.next_open_price == 10.4
+    assert sample.next_close_price == 10.6
+    assert sample.t1_open_return == 0.04
+    assert sample.t1_close_return == 0.06
+    assert sample.t1_open_label is True
+    assert sample.t1_close_label is True
+    assert sample.t1_risk_label is False
+
+
 def test_build_samples_for_trade_date_skips_when_current_bar_is_missing() -> None:
     source = InMemoryMorningAuctionDataSource(
         universe=[{"symbol": "600001.SH", "name": "Fixture Stock"}],
@@ -155,6 +188,7 @@ def _source_with_current_bar(
     *,
     name: str = "Fixture Co",
     include_auction: bool = False,
+    next_bar: DailyBar | None = None,
 ) -> InMemoryMorningAuctionDataSource:
     symbol = "600001.SH"
     trade_date = "2026-07-03"
@@ -194,6 +228,7 @@ def _source_with_current_bar(
                     amount=9_500_000,
                 ),
                 current_bar,
+                *([next_bar] if next_bar is not None else []),
             ]
         },
         auctions_by_key=auctions_by_key,

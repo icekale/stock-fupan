@@ -49,6 +49,8 @@ class MorningAuctionSample(BaseModel):
     features: dict[str, float | int | None] = Field(default_factory=dict)
     open_price: float
     close_price: float
+    next_open_price: float | None = None
+    next_close_price: float | None = None
 
     @property
     def _raw_open_to_close_return(self) -> float:
@@ -75,6 +77,60 @@ class MorningAuctionSample(BaseModel):
     @property
     def risk_label(self) -> bool:
         return self._raw_open_to_close_return <= -0.03
+
+    @property
+    def _raw_t1_open_return(self) -> float | None:
+        if self.open_price <= 0 or self.next_open_price is None:
+            return None
+        return self.next_open_price / self.open_price - 1
+
+    @property
+    def _raw_t1_close_return(self) -> float | None:
+        if self.open_price <= 0 or self.next_close_price is None:
+            return None
+        return self.next_close_price / self.open_price - 1
+
+    @property
+    def t1_open_return(self) -> float | None:
+        return _round_optional(self._raw_t1_open_return)
+
+    @property
+    def t1_close_return(self) -> float | None:
+        return _round_optional(self._raw_t1_close_return)
+
+    @property
+    def t1_open_label(self) -> bool | None:
+        return _label_at_least(self._raw_t1_open_return, 0.03)
+
+    @property
+    def t1_close_label(self) -> bool | None:
+        return _label_at_least(self._raw_t1_close_return, 0.03)
+
+    @property
+    def t1_strong_label(self) -> bool | None:
+        return _label_at_least(self._raw_t1_close_return, 0.05)
+
+    @property
+    def t1_risk_label(self) -> bool | None:
+        return _label_at_most(self._raw_t1_close_return, -0.03)
+
+
+def _round_optional(value: float | None) -> float | None:
+    if value is None:
+        return None
+    return round(value, 6)
+
+
+def _label_at_least(value: float | None, threshold: float) -> bool | None:
+    if value is None:
+        return None
+    return value >= threshold
+
+
+def _label_at_most(value: float | None, threshold: float) -> bool | None:
+    if value is None:
+        return None
+    return value <= threshold
 
 
 class MorningAuctionPredictionItem(BaseModel):

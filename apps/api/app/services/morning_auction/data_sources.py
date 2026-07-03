@@ -13,6 +13,9 @@ class MorningAuctionDataSource(Protocol):
     def daily_bars(self, symbol: str, *, end_date: str, lookback: int) -> list[DailyBar]:
         ...
 
+    def next_daily_bar(self, symbol: str, *, trade_date: str) -> DailyBar | None:
+        ...
+
     def auction_snapshot(self, symbol: str, *, trade_date: str) -> AuctionSnapshot | None:
         ...
 
@@ -102,6 +105,12 @@ class InMemoryMorningAuctionDataSource:
 
         bars = [bar for bar in self._bars_by_symbol.get(symbol, []) if bar.trade_date <= end_date]
         return deepcopy(bars[-lookback:])
+
+    def next_daily_bar(self, symbol: str, *, trade_date: str) -> DailyBar | None:
+        bars = [bar for bar in self._bars_by_symbol.get(symbol, []) if bar.trade_date > trade_date]
+        if not bars:
+            return None
+        return deepcopy(sorted(bars, key=lambda bar: bar.trade_date)[0])
 
     def auction_snapshot(self, symbol: str, *, trade_date: str) -> AuctionSnapshot | None:
         return deepcopy(self._auctions_by_key.get((symbol, trade_date)))

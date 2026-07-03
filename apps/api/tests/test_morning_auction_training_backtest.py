@@ -50,6 +50,19 @@ def test_build_training_matrix_orders_feature_columns() -> None:
     assert matrix.y == [1, 0]
 
 
+def test_build_training_matrix_can_use_configured_label_key() -> None:
+    rows = [
+        {"features": {"a": 1.0}, "main_label": False, "t1_close_label": True},
+        {"features": {"a": 1.5}, "main_label": True, "t1_close_label": None},
+        {"features": {"a": 2.0}, "main_label": True, "t1_close_label": False},
+    ]
+
+    matrix = build_training_matrix(rows, label_key="t1_close_label")
+
+    assert matrix.x == [[1.0], [2.0]]
+    assert matrix.y == [1, 0]
+
+
 def test_training_metadata_round_trip(tmp_path: Path) -> None:
     path = tmp_path / "metadata.json"
 
@@ -191,6 +204,28 @@ def test_backtest_top_n_reports_return_hit_rate_and_payoff_metrics() -> None:
     assert result["profit_factor"] == 5.0
     assert result["breakeven_win_rate"] == 0.285714
     assert result["expectancy"] == 0.026667
+
+
+def test_backtest_top_n_can_use_t1_return_key() -> None:
+    rows = [
+        {
+            "trade_date": "2026-07-01",
+            "prob_3pct": 0.9,
+            "open_to_close_return": -0.01,
+            "t1_close_return": 0.05,
+        },
+        {
+            "trade_date": "2026-07-01",
+            "prob_3pct": 0.8,
+            "open_to_close_return": 0.08,
+            "t1_close_return": -0.02,
+        },
+    ]
+
+    result = backtest_top_n(rows, top_n=1, return_key="t1_close_return")
+
+    assert result["average_return"] == 0.05
+    assert result["win_rate"] == 1.0
 
 
 def test_backtest_top_n_rejects_non_positive_top_n() -> None:

@@ -74,7 +74,7 @@ class FreeStockDbMorningAuctionDataSource:
             raise ValueError("lookback must be positive")
 
         start_key = _start_key_for_lookback(_normalize_date_key(start_date), lookback)
-        end_key = _normalize_date_key(end_date)
+        end_key = _end_key_for_label_lookahead(_normalize_date_key(end_date))
         if self._symbols is None:
             rows = self._client.vals(table="日k", k1="all:", k2=f"fwd:{start_key},{end_key}")
         else:
@@ -147,6 +147,22 @@ class FreeStockDbMorningAuctionDataSource:
         bars.sort(key=lambda bar: bar.trade_date)
         return bars[-lookback:]
 
+    def next_daily_bar(self, symbol: str, *, trade_date: str) -> DailyBar | None:
+        date_key = _normalize_date_key(trade_date)
+        code = _raw_code(symbol)
+        cached = self._prefetched_bars_by_code.get(code) if self._prefetched_bars_by_code is not None else None
+        if cached is not None:
+            trade_display = _display_date(date_key)
+            next_bars = [bar for bar in cached if bar.trade_date > trade_display]
+            return next_bars[0] if next_bars else None
+
+        start_key = (datetime.strptime(date_key, "%Y%m%d").date() + timedelta(days=1)).strftime("%Y%m%d")
+        end_key = (datetime.strptime(date_key, "%Y%m%d").date() + timedelta(days=10)).strftime("%Y%m%d")
+        rows = self._client.vals(table="日k", k1=f"key:{code}", k2=f"fwd:{start_key},{end_key}")
+        bars = [_daily_bar_from_row(row) for row in rows if isinstance(row, dict)]
+        bars.sort(key=lambda bar: bar.trade_date)
+        return bars[0] if bars else None
+
     def auction_snapshot(self, symbol: str, *, trade_date: str) -> AuctionSnapshot | None:
         return None
 
@@ -191,6 +207,11 @@ def _start_key_for_lookback(end_key: str, lookback: int) -> str:
     end = datetime.strptime(end_key, "%Y%m%d").date()
     calendar_days = max(lookback * 3 + 10, lookback + 10)
     return (end - timedelta(days=calendar_days)).strftime("%Y%m%d")
+
+
+def _end_key_for_label_lookahead(end_key: str) -> str:
+    end = datetime.strptime(end_key, "%Y%m%d").date()
+    return (end + timedelta(days=10)).strftime("%Y%m%d")
 
 
 def _raw_code(symbol: str) -> str:

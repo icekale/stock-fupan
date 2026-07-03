@@ -58,6 +58,7 @@ def build_samples_for_trade_date(
             sector_strength=source.sector_strength(symbol, trade_date=trade_date),
             capital_strength=source.capital_strength(symbol, trade_date=trade_date),
         )
+        next_bar = source.next_daily_bar(symbol, trade_date=trade_date)
         samples.append(
             MorningAuctionSample(
                 trade_date=trade_date,
@@ -66,6 +67,8 @@ def build_samples_for_trade_date(
                 features=features,
                 open_price=current_bar.open,
                 close_price=current_bar.close,
+                next_open_price=next_bar.open if next_bar else None,
+                next_close_price=next_bar.close if next_bar else None,
             )
         )
     return samples
@@ -79,11 +82,19 @@ def sample_to_row(sample: MorningAuctionSample) -> dict[str, object]:
         "features": sample.features,
         "open_price": sample.open_price,
         "close_price": sample.close_price,
+        "next_open_price": sample.next_open_price,
+        "next_close_price": sample.next_close_price,
         "open_to_close_return": sample.open_to_close_return,
+        "t1_open_return": sample.t1_open_return,
+        "t1_close_return": sample.t1_close_return,
         "main_label": sample.main_label,
         "strong_label": sample.strong_label,
         "safe_label": sample.safe_label,
         "risk_label": sample.risk_label,
+        "t1_open_label": sample.t1_open_label,
+        "t1_close_label": sample.t1_close_label,
+        "t1_strong_label": sample.t1_strong_label,
+        "t1_risk_label": sample.t1_risk_label,
     }
 
 

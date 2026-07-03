@@ -22,6 +22,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     train_parser.add_argument("--dataset", required=True)
     train_parser.add_argument("--model", required=True)
     train_parser.add_argument("--metadata", required=True)
+    train_parser.add_argument("--label-key", default="main_label")
 
     score_parser = subparsers.add_parser("score")
     score_parser.add_argument("--dataset", required=True)
@@ -32,6 +33,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     backtest_parser = subparsers.add_parser("backtest")
     backtest_parser.add_argument("--predictions", required=True)
     backtest_parser.add_argument("--top-n", type=_positive_int, default=3)
+    backtest_parser.add_argument("--return-key", default="open_to_close_return")
     backtest_parser.add_argument("--output")
 
     dataset_parser = subparsers.add_parser("build-dataset")
@@ -53,6 +55,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             read_jsonl(dataset_path),
             Path(args.model),
             Path(args.metadata),
+            label_key=args.label_key,
         )
         _print_json(result)
         return 0
@@ -120,7 +123,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     predictions_path = Path(args.predictions)
     if not predictions_path.exists():
         parser.error(f"predictions file does not exist: {predictions_path}")
-    result = backtest_top_n(read_jsonl(predictions_path), top_n=args.top_n)
+    result = backtest_top_n(read_jsonl(predictions_path), top_n=args.top_n, return_key=args.return_key)
     if args.output:
         output_path = Path(args.output)
         ensure_parent(output_path)
