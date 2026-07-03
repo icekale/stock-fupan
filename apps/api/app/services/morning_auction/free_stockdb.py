@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timedelta
+from collections.abc import Sequence
 from typing import Any
 
 import httpx
@@ -55,9 +56,11 @@ class FreeStockDbMorningAuctionDataSource:
         self,
         *,
         base_url: str,
+        symbols: Sequence[str] | None = None,
         timeout_seconds: float = 10.0,
         http_client: httpx.Client | None = None,
     ) -> None:
+        self._symbols = [_raw_code(symbol) for symbol in symbols] if symbols is not None else None
         self._client = FreeStockDbHttpClient(
             base_url=base_url,
             timeout_seconds=timeout_seconds,
@@ -66,7 +69,7 @@ class FreeStockDbMorningAuctionDataSource:
 
     def candidate_universe(self, trade_date: str) -> list[dict[str, object]]:
         date_key = _normalize_date_key(trade_date)
-        rows = self._client.vals(table="日k", k1="all:", k2=f"key:{date_key}")
+        rows = self._candidate_rows(date_key)
         candidates: list[dict[str, object]] = []
         for row in rows:
             if not isinstance(row, dict) or "code" not in row:
@@ -82,6 +85,15 @@ class FreeStockDbMorningAuctionDataSource:
                 }
             )
         return candidates
+
+    def _candidate_rows(self, date_key: str) -> list[Any]:
+        if self._symbols is None:
+            return self._client.vals(table="日k", k1="all:", k2=f"key:{date_key}")
+
+        rows: list[Any] = []
+        for code in self._symbols:
+            rows.extend(self._client.vals(table="日k", k1=f"key:{code}", k2=f"key:{date_key}"))
+        return rows
 
     def daily_bars(self, symbol: str, *, end_date: str, lookback: int) -> list[DailyBar]:
         if lookback <= 0:

@@ -34,6 +34,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     dataset_parser.add_argument("--end-date", type=_date_arg, required=True)
     dataset_parser.add_argument("--lookback", type=_positive_int, default=120)
     dataset_parser.add_argument("--timeout-seconds", type=float, default=10.0)
+    dataset_parser.add_argument("--symbols")
     dataset_parser.add_argument("--output", required=True)
 
     args = parser.parse_args(argv)
@@ -54,6 +55,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             parser.error("end-date must be on or after start-date")
         source = FreeStockDbMorningAuctionDataSource(
             base_url=args.base_url,
+            symbols=_symbol_list(args.symbols),
             timeout_seconds=args.timeout_seconds,
         )
         rows = [
@@ -119,6 +121,13 @@ def _iter_dates(start: date, end: date):
     while current <= end:
         yield current
         current += timedelta(days=1)
+
+
+def _symbol_list(value: str | None) -> list[str] | None:
+    if value is None:
+        return None
+    symbols = [symbol.strip() for symbol in value.split(",") if symbol.strip()]
+    return symbols or None
 
 
 if __name__ == "__main__":

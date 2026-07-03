@@ -135,6 +135,38 @@ def test_free_stockdb_candidate_universe_maps_full_market_rows() -> None:
     ]
 
 
+def test_free_stockdb_candidate_universe_can_use_symbol_subset() -> None:
+    requested_k1: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        params = dict(request.url.params)
+        requested_k1.append(params["k1"])
+        code = params["k1"].removeprefix("key:")
+        return httpx.Response(
+            200,
+            json=[
+                {
+                    "date": 20260625,
+                    "code": code,
+                    "name": "样本股份",
+                    "is_st": False,
+                    "float_mv": 1_000_000_000,
+                }
+            ],
+        )
+
+    source = FreeStockDbMorningAuctionDataSource(
+        base_url="http://stockdb.local:7899",
+        symbols=["600633.SH", "000001"],
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    universe = source.candidate_universe("2026-06-25")
+
+    assert requested_k1 == ["key:600633", "key:000001"]
+    assert [candidate["symbol"] for candidate in universe] == ["600633.SH", "000001.SZ"]
+
+
 def test_free_stockdb_source_builds_cold_start_samples_without_auction_data() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         params = dict(request.url.params)
@@ -239,6 +271,8 @@ def test_cli_build_dataset_writes_free_stockdb_samples(tmp_path, monkeypatch) ->
             "2026-06-25",
             "--lookback",
             "2",
+            "--symbols",
+            "600633,000001.SZ",
             "--output",
             str(output_path),
         ]
@@ -247,6 +281,7 @@ def test_cli_build_dataset_writes_free_stockdb_samples(tmp_path, monkeypatch) ->
     rows = read_jsonl(output_path)
     assert exit_code == 0
     assert created["base_url"] == "http://stockdb.local:7899"
+    assert created["symbols"] == ["600633", "000001.SZ"]
     assert rows[0]["trade_date"] == "2026-06-25"
     assert rows[0]["symbol"] == "600633.SH"
     assert rows[0]["main_label"] is True
