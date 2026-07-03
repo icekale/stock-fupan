@@ -147,7 +147,7 @@ def test_train_lightgbm_model_surfaces_native_runtime_error(
         )
 
 
-def test_backtest_top_n_reports_average_return_and_hit_rates() -> None:
+def test_backtest_top_n_reports_return_hit_rate_and_payoff_metrics() -> None:
     rows = [
         {
             "trade_date": "2026-07-01",
@@ -175,13 +175,22 @@ def test_backtest_top_n_reports_average_return_and_hit_rates() -> None:
         },
     ]
 
-    result = backtest_top_n(rows, top_n=1)
+    result = backtest_top_n(rows, top_n=2)
 
-    assert result["top_n"] == 1
+    assert result["top_n"] == 2
     assert result["trade_days"] == 2
-    assert result["average_return"] == 0.05
-    assert result["hit_3pct_rate"] == 1.0
-    assert result["hit_5pct_rate"] == 0.5
+    assert result["selected_count"] == 3
+    assert result["average_return"] == 0.026667
+    assert result["hit_3pct_rate"] == 0.666667
+    assert result["hit_5pct_rate"] == 0.333333
+    assert result["win_rate"] == 0.666667
+    assert result["loss_rate"] == 0.333333
+    assert result["avg_win"] == 0.05
+    assert result["avg_loss"] == 0.02
+    assert result["payoff_ratio"] == 2.5
+    assert result["profit_factor"] == 5.0
+    assert result["breakeven_win_rate"] == 0.285714
+    assert result["expectancy"] == 0.026667
 
 
 def test_backtest_top_n_rejects_non_positive_top_n() -> None:
