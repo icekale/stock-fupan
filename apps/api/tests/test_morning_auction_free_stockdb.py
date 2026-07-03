@@ -65,6 +65,60 @@ def test_free_stockdb_daily_bars_maps_rows_and_sorts_ascending() -> None:
     assert params["k2"].endswith(",20260625")
 
 
+def test_free_stockdb_minute_bars_maps_rows_and_sorts_ascending() -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(
+            200,
+            json=[
+                {
+                    "date": 20260702093100,
+                    "code": "600633",
+                    "open": 10.62,
+                    "high": 10.64,
+                    "low": 10.57,
+                    "close": 10.60,
+                    "volume": 774_400,
+                    "amount": 8_213_335,
+                },
+                {
+                    "date": 20260702093000,
+                    "code": "600633",
+                    "open": 10.40,
+                    "high": 10.62,
+                    "low": 10.40,
+                    "close": 10.62,
+                    "volume": 488_500,
+                    "amount": 5_132_208,
+                },
+            ],
+        )
+
+    source = FreeStockDbMorningAuctionDataSource(
+        base_url="http://stockdb.local:7899",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    bars = source.minute_bars(
+        "600633.SH",
+        start_time="2026-07-02 09:25:00",
+        end_time="2026-07-02 10:00:00",
+    )
+
+    assert [bar.trade_time for bar in bars] == ["2026-07-02 09:30:00", "2026-07-02 09:31:00"]
+    assert bars[0].open == 10.40
+    assert bars[0].amount == 5_132_208
+    params = dict(requests[0].url.params)
+    assert params == {
+        "cmd": "vals",
+        "t": "分钟k",
+        "k1": "key:600633",
+        "k2": "fwd:20260702092500,20260702100000",
+    }
+
+
 def test_free_stockdb_candidate_universe_maps_full_market_rows() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert dict(request.url.params) == {

@@ -23,6 +23,16 @@ class DailyBar(BaseModel):
     turnover_rate: float | None = None
 
 
+class MinuteBar(BaseModel):
+    trade_time: str
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+    amount: float
+
+
 class AuctionSnapshot(BaseModel):
     trade_date: str
     symbol: str

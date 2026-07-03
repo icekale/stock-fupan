@@ -6,7 +6,7 @@ from typing import Any
 
 import httpx
 
-from app.services.morning_auction.schemas import AuctionSnapshot, DailyBar
+from app.services.morning_auction.schemas import AuctionSnapshot, DailyBar, MinuteBar
 
 
 class FreeStockDbError(RuntimeError):
@@ -147,6 +147,18 @@ class FreeStockDbMorningAuctionDataSource:
         bars.sort(key=lambda bar: bar.trade_date)
         return bars[-lookback:]
 
+    def minute_bars(self, symbol: str, *, start_time: str | datetime, end_time: str | datetime) -> list[MinuteBar]:
+        start_key = _normalize_datetime_key(start_time)
+        end_key = _normalize_datetime_key(end_time)
+        if end_key < start_key:
+            raise ValueError("end_time must be on or after start_time")
+
+        code = _raw_code(symbol)
+        rows = self._client.vals(table="分钟k", k1=f"key:{code}", k2=f"fwd:{start_key},{end_key}")
+        bars = [_minute_bar_from_row(row) for row in rows if isinstance(row, dict)]
+        bars.sort(key=lambda bar: bar.trade_time)
+        return bars
+
     def next_daily_bar(self, symbol: str, *, trade_date: str) -> DailyBar | None:
         date_key = _normalize_date_key(trade_date)
         code = _raw_code(symbol)
@@ -186,6 +198,18 @@ def _daily_bar_from_row(row: dict[str, object]) -> DailyBar:
     )
 
 
+def _minute_bar_from_row(row: dict[str, object]) -> MinuteBar:
+    return MinuteBar(
+        trade_time=_display_datetime(row["date"]),
+        open=float(row["open"]),
+        high=float(row["high"]),
+        low=float(row["low"]),
+        close=float(row["close"]),
+        volume=float(row["volume"]),
+        amount=float(row["amount"]),
+    )
+
+
 def _normalize_date_key(value: str | date) -> str:
     if isinstance(value, date):
         return value.strftime("%Y%m%d")
@@ -197,10 +221,31 @@ def _normalize_date_key(value: str | date) -> str:
     raise ValueError("date must be YYYY-MM-DD or YYYYMMDD")
 
 
+def _normalize_datetime_key(value: str | datetime) -> str:
+    if isinstance(value, datetime):
+        return value.strftime("%Y%m%d%H%M%S")
+    text = str(value).strip()
+    if len(text) == 14 and text.isdigit():
+        return text
+    normalized = text.replace("T", " ")
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M"):
+        try:
+            return datetime.strptime(normalized, fmt).strftime("%Y%m%d%H%M%S")
+        except ValueError:
+            pass
+    raise ValueError("datetime must be YYYY-MM-DD HH:MM[:SS] or YYYYMMDDHHMMSS")
+
+
 def _display_date(value: object) -> str:
     text = str(value)[:8]
     parsed = datetime.strptime(text, "%Y%m%d").date()
     return parsed.isoformat()
+
+
+def _display_datetime(value: object) -> str:
+    text = str(value)[:14]
+    parsed = datetime.strptime(text, "%Y%m%d%H%M%S")
+    return parsed.strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _start_key_for_lookback(end_key: str, lookback: int) -> str:
