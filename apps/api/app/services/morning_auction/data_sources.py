@@ -97,6 +97,9 @@ class InMemoryMorningAuctionDataSource:
         return deepcopy(self._universe)
 
     def daily_bars(self, symbol: str, *, end_date: str, lookback: int) -> list[DailyBar]:
+        if lookback <= 0:
+            raise ValueError("lookback must be positive")
+
         bars = [bar for bar in self._bars_by_symbol.get(symbol, []) if bar.trade_date <= end_date]
         return deepcopy(bars[-lookback:])
 
