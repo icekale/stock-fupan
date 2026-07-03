@@ -444,3 +444,62 @@ export type DataSourceOptionsUpdate = {
   review_sources: string[];
   fallback_enabled: boolean;
 };
+
+
+export type MorningAuctionBucket = "selected" | "attack" | "watch" | "avoid";
+
+export type MorningAuctionPredictionItem = {
+  symbol: string;
+  name: string;
+  prob_3pct: number;
+  strong_5pct_score: number;
+  bucket: MorningAuctionBucket;
+  rank: number | null;
+  prev_close_price: number | null;
+  feature_end_date: string | null;
+  guard_rule: string | null;
+  strategy_note: string | null;
+  auction_reasons: string[];
+  trend_reasons: string[];
+  sector_reasons: string[];
+  risk_flags: string[];
+  data_quality: string[];
+};
+
+export type MorningAuctionRun = {
+  run_id: string;
+  trade_date: string;
+  model_version: string;
+  feature_version: string;
+  source_status: Record<string, string>;
+  selected_pool: MorningAuctionPredictionItem[];
+  attack_pool: MorningAuctionPredictionItem[];
+  watch_pool: MorningAuctionPredictionItem[];
+  avoid_pool: MorningAuctionPredictionItem[];
+  items: MorningAuctionPredictionItem[];
+};
+
+export type MorningAuctionTrialEntry = {
+  id?: string | null;
+  trade_date: string;
+  symbol: string;
+  name?: string;
+  rank?: number | null;
+  prob_3pct?: number | null;
+  mode?: string;
+  planned_capital?: number | null;
+  entry_price?: number | null;
+  shares?: number | null;
+  entry_time?: string | null;
+  guard_time?: string;
+  guard_price?: number | null;
+  guard_triggered?: boolean | null;
+  exit_price?: number | null;
+  exit_time?: string | null;
+  status?: string;
+  notes?: string;
+};
+
+export type MorningAuctionTrialListResponse = {
+  items: MorningAuctionTrialEntry[];
+};

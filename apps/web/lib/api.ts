@@ -4,6 +4,9 @@ import type {
   DataSourceOptionsResponse,
   DataSourceOptionsUpdate,
   DeleteReportResponse,
+  MorningAuctionRun,
+  MorningAuctionTrialEntry,
+  MorningAuctionTrialListResponse,
   ReportScheduleStatus,
   ReportScheduleUpdate,
   ReportKind,
@@ -171,6 +174,47 @@ export async function getTickFlowHealth(): Promise<TickFlowHealthStatus> {
     throw new Error(`读取TickFlow健康状态失败：${response.status} ${await response.text()}`);
   }
   return response.json() as Promise<TickFlowHealthStatus>;
+}
+
+export async function predictMorningAuction(tradeDate: string): Promise<MorningAuctionRun> {
+  const response = await fetch(`${API_BASE_URL}/api/morning-auction/predict`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ trade_date: tradeDate }),
+  });
+  if (!response.ok) {
+    throw new Error(`运行早盘模型失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<MorningAuctionRun>;
+}
+
+export async function getMorningAuctionRun(runId: string): Promise<MorningAuctionRun> {
+  const response = await fetch(`${API_BASE_URL}/api/morning-auction/runs/${runId}`);
+  if (!response.ok) {
+    throw new Error(`读取早盘模型结果失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<MorningAuctionRun>;
+}
+
+export async function listMorningAuctionTrials(tradeDate?: string): Promise<MorningAuctionTrialListResponse> {
+  const params = tradeDate ? `?trade_date=${encodeURIComponent(tradeDate)}` : "";
+  const response = await fetch(`${API_BASE_URL}/api/morning-auction/trials${params}`);
+  if (!response.ok) {
+    throw new Error(`读取早盘试运行日志失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<MorningAuctionTrialListResponse>;
+}
+
+export async function saveMorningAuctionTrial(entry: MorningAuctionTrialEntry): Promise<MorningAuctionTrialEntry> {
+  const response = await fetch(`${API_BASE_URL}/api/morning-auction/trials`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(entry),
+  });
+  if (!response.ok) {
+    throw new Error(`保存早盘试运行日志失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<MorningAuctionTrialEntry>;
 }
 
 export async function getWatchlistPool(): Promise<WatchlistPoolState> {

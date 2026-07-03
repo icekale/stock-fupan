@@ -28,7 +28,9 @@ from app.providers.runtime_config import (
     save_runtime_provider_config,
 )
 from app.services.assets import report_kind_label
-from app.services.morning_auction.predictor import build_run
+from app.services.morning_auction.free_stockdb import FreeStockDbError, FreeStockDbMorningAuctionDataSource
+from app.services.morning_auction.schemas import MorningAuctionTrialEntry
+from app.services.morning_auction.workbench import MorningAuctionTrialStore, MorningAuctionWorkbenchService
 from app.services.report_generator import ReportGenerator
 from app.services.report_schedule import (
     ReportScheduleUpdate,
@@ -80,6 +82,10 @@ class MorningAuctionPredictRequest(BaseModel):
             raise ValueError("trade_date must use YYYY-MM-DD")
         date.fromisoformat(value)
         return value
+
+
+class MorningAuctionTrialRequest(MorningAuctionTrialEntry):
+    pass
 
 
 class ImportWatchlistTextRequest(BaseModel):
@@ -219,15 +225,10 @@ def health() -> dict[str, str]:
 
 @app.post("/api/morning-auction/predict")
 def morning_auction_predict(request: MorningAuctionPredictRequest) -> dict[str, object]:
-    run = build_run(
-        trade_date=request.trade_date,
-        model_version="manual-cold-start",
-        source_status={
-            "a_stock_data": "configured",
-            "auction_history": "self_collected_only",
-        },
-        items=[],
-    )
+    try:
+        run = _morning_auction_workbench_service().predict(request.trade_date)
+    except (FileNotFoundError, FreeStockDbError, ValueError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
     payload = run.model_dump(mode="json")
     MORNING_AUCTION_RUNS[run.run_id] = payload
     return payload
@@ -239,6 +240,22 @@ def morning_auction_run(run_id: str) -> dict[str, object]:
     if payload is None:
         raise HTTPException(status_code=404, detail="Morning auction run not found")
     return payload
+
+
+@app.get("/api/morning-auction/trials")
+def morning_auction_trials(trade_date: str | None = None) -> dict[str, object]:
+    return {
+        "items": [
+            entry.model_dump(mode="json")
+            for entry in _morning_auction_trial_store().list_entries(trade_date)
+        ]
+    }
+
+
+@app.post("/api/morning-auction/trials")
+def upsert_morning_auction_trial(request: MorningAuctionTrialRequest) -> dict[str, object]:
+    entry = MorningAuctionTrialEntry.model_validate(request.model_dump())
+    return _morning_auction_trial_store().upsert(entry).model_dump(mode="json")
 
 
 @app.get("/api/tickflow/health")
@@ -270,6 +287,33 @@ def _watchlist_ocr_service() -> WatchlistOcrService:
 
 def _watchlist_pool_service() -> WatchlistPoolService:
     return WatchlistPoolService(app.state.engine)
+
+
+def _morning_auction_workbench_service() -> MorningAuctionWorkbenchService:
+    injected = getattr(app.state, "morning_auction_workbench_service", None)
+    if injected is not None:
+        return injected
+    settings = get_settings()
+    source = FreeStockDbMorningAuctionDataSource(
+        base_url=settings.morning_auction_free_stockdb_base_url,
+        timeout_seconds=settings.morning_auction_timeout_seconds,
+    )
+    return MorningAuctionWorkbenchService(
+        source=source,
+        model_path=Path(settings.morning_auction_model_path),
+        metadata_path=Path(settings.morning_auction_metadata_path),
+        lookback=settings.morning_auction_lookback,
+        top_n=settings.morning_auction_top_n,
+        max_items=settings.morning_auction_max_items,
+    )
+
+
+def _morning_auction_trial_store() -> MorningAuctionTrialStore:
+    injected = getattr(app.state, "morning_auction_trial_store", None)
+    if injected is not None:
+        return injected
+    settings = get_settings()
+    return MorningAuctionTrialStore(Path(settings.morning_auction_trial_log_path))
 
 
 async def _report_schedule_loop() -> None:

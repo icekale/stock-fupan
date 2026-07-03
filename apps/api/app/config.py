@@ -66,6 +66,18 @@ class Settings(BaseSettings):
     report_schedule_enabled: bool = False
     report_schedule_close_time: str = "19:00"
     report_schedule_timezone: str = "Asia/Shanghai"
+    morning_auction_free_stockdb_base_url: str = "http://192.168.5.221:7899"
+    morning_auction_model_path: Path = Path(
+        "./artifacts/morning_auction/free_stockdb_lgbm_20210703_20260703_l120_t1close.pkl"
+    )
+    morning_auction_metadata_path: Path = Path(
+        "./artifacts/morning_auction/free_stockdb_lgbm_20210703_20260703_l120_t1close.metadata.json"
+    )
+    morning_auction_trial_log_path: Path = Path("./data/morning_auction/trial_log.json")
+    morning_auction_lookback: int = 120
+    morning_auction_top_n: int = 3
+    morning_auction_max_items: int = 50
+    morning_auction_timeout_seconds: float = 180
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

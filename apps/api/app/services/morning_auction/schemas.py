@@ -150,6 +150,11 @@ class MorningAuctionPredictionItem(BaseModel):
     prob_3pct: float
     strong_5pct_score: float
     bucket: MorningAuctionBucket
+    rank: int | None = None
+    prev_close_price: float | None = None
+    feature_end_date: str | None = None
+    guard_rule: str | None = None
+    strategy_note: str | None = None
     auction_reasons: list[str] = Field(default_factory=list)
     trend_reasons: list[str] = Field(default_factory=list)
     sector_reasons: list[str] = Field(default_factory=list)
@@ -168,3 +173,28 @@ class MorningAuctionRun(BaseModel):
     watch_pool: list[MorningAuctionPredictionItem] = Field(default_factory=list)
     avoid_pool: list[MorningAuctionPredictionItem] = Field(default_factory=list)
     items: list[MorningAuctionPredictionItem] = Field(default_factory=list)
+
+
+class MorningAuctionTrialEntry(BaseModel):
+    id: str | None = None
+    trade_date: str
+    symbol: str
+    name: str = ""
+    rank: int | None = None
+    prob_3pct: float | None = None
+    mode: str = "paper"
+    planned_capital: float | None = None
+    entry_price: float | None = None
+    shares: int | None = None
+    entry_time: str | None = None
+    guard_time: str = "10:00"
+    guard_price: float | None = None
+    guard_triggered: bool | None = None
+    exit_price: float | None = None
+    exit_time: str | None = None
+    status: str = "planned"
+    notes: str = ""
+
+
+class MorningAuctionTrialLog(BaseModel):
+    items: list[MorningAuctionTrialEntry] = Field(default_factory=list)

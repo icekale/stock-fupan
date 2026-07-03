@@ -8,7 +8,7 @@ import pytest
 from app.cli.morning_auction import main
 from app.main import app
 from app.services.morning_auction.artifacts import read_jsonl
-from app.services.morning_auction.predictor import bucket_prediction
+from app.services.morning_auction.predictor import bucket_prediction, build_run
 from app.services.morning_auction.schemas import MorningAuctionBucket
 from app.services.morning_auction.trainer import save_training_metadata
 
@@ -16,6 +16,16 @@ from app.services.morning_auction.trainer import save_training_metadata
 class FakeProbabilityModel:
     def predict_proba(self, x: object) -> list[list[float]]:
         return [[0.75, 0.25] for _ in range(len(x))]
+
+
+class FakeWorkbenchService:
+    def predict(self, trade_date: str):
+        return build_run(
+            trade_date=trade_date,
+            model_version="fake-live-model",
+            source_status={"free_stockdb": "fake"},
+            items=[],
+        )
 
 
 def test_bucket_prediction_assigns_selected_attack_watch_and_avoid() -> None:
@@ -132,12 +142,16 @@ def test_cli_score_writes_prediction_jsonl(tmp_path: Path, capsys) -> None:
 
 
 def test_morning_auction_predict_api_returns_run_payload() -> None:
+    app.state.morning_auction_workbench_service = FakeWorkbenchService()
     client = TestClient(app)
 
-    response = client.post("/api/morning-auction/predict", json={"trade_date": "2026-07-03"})
+    try:
+        response = client.post("/api/morning-auction/predict", json={"trade_date": "2026-07-03"})
+    finally:
+        delattr(app.state, "morning_auction_workbench_service")
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["trade_date"] == "2026-07-03"
-    assert payload["model_version"] == "manual-cold-start"
+    assert payload["model_version"] == "fake-live-model"
     assert "items" in payload

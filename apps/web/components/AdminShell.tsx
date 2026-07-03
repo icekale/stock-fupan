@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 
 const navItems = [
   { label: "首页", hint: "Home", href: "/" },
+  { label: "早盘模型", hint: "Auction", href: "/morning-auction" },
   { label: "自选股", hint: "Watchlist", href: "/watchlist" },
   { label: "提醒中心", hint: "Alerts", href: "/watchlist-alerts" },
   { label: "设置", hint: "Settings", href: "/settings" },
@@ -59,7 +60,7 @@ export function AdminShell({ children }: { children: ReactNode }) {
                 </div>
                 <span className="rounded-full bg-slate-950 px-3 py-1.5 text-xs font-bold text-white">Local</span>
               </div>
-              <div className="mt-3 grid grid-cols-4 gap-1">
+              <div className="mt-3 grid grid-cols-5 gap-1">
                 {navItems.map((item) => {
                   const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
                   return (
