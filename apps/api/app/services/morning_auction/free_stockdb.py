@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
 from collections.abc import Sequence
+from datetime import date, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -61,11 +61,42 @@ class FreeStockDbMorningAuctionDataSource:
         http_client: httpx.Client | None = None,
     ) -> None:
         self._symbols = [_raw_code(symbol) for symbol in symbols] if symbols is not None else None
+        self._prefetched_rows_by_date: dict[str, list[dict[str, object]]] | None = None
+        self._prefetched_bars_by_code: dict[str, list[DailyBar]] | None = None
         self._client = FreeStockDbHttpClient(
             base_url=base_url,
             timeout_seconds=timeout_seconds,
             http_client=http_client,
         )
+
+    def prefetch_daily_window(self, *, start_date: str | date, end_date: str | date, lookback: int) -> None:
+        if lookback <= 0:
+            raise ValueError("lookback must be positive")
+
+        start_key = _start_key_for_lookback(_normalize_date_key(start_date), lookback)
+        end_key = _normalize_date_key(end_date)
+        if self._symbols is None:
+            rows = self._client.vals(table="日k", k1="all:", k2=f"fwd:{start_key},{end_key}")
+        else:
+            rows = []
+            for code in self._symbols:
+                rows.extend(self._client.vals(table="日k", k1=f"key:{code}", k2=f"fwd:{start_key},{end_key}"))
+
+        rows_by_date: dict[str, list[dict[str, object]]] = {}
+        bars_by_code: dict[str, list[DailyBar]] = {}
+        for row in rows:
+            if not isinstance(row, dict) or "code" not in row or "date" not in row:
+                continue
+            date_key = str(row["date"])[:8]
+            code = _raw_code(str(row["code"]))
+            rows_by_date.setdefault(date_key, []).append(row)
+            bars_by_code.setdefault(code, []).append(_daily_bar_from_row(row))
+
+        for bars in bars_by_code.values():
+            bars.sort(key=lambda bar: bar.trade_date)
+
+        self._prefetched_rows_by_date = rows_by_date
+        self._prefetched_bars_by_code = bars_by_code
 
     def candidate_universe(self, trade_date: str) -> list[dict[str, object]]:
         date_key = _normalize_date_key(trade_date)
@@ -87,6 +118,9 @@ class FreeStockDbMorningAuctionDataSource:
         return candidates
 
     def _candidate_rows(self, date_key: str) -> list[Any]:
+        if self._prefetched_rows_by_date is not None:
+            return list(self._prefetched_rows_by_date.get(date_key, []))
+
         if self._symbols is None:
             return self._client.vals(table="日k", k1="all:", k2=f"key:{date_key}")
 
@@ -102,6 +136,12 @@ class FreeStockDbMorningAuctionDataSource:
         end_key = _normalize_date_key(end_date)
         start_key = _start_key_for_lookback(end_key, lookback)
         code = _raw_code(symbol)
+        cached = self._prefetched_bars_by_code.get(code) if self._prefetched_bars_by_code is not None else None
+        if cached is not None:
+            end_display = _display_date(end_key)
+            bars = [bar for bar in cached if bar.trade_date <= end_display]
+            return bars[-lookback:]
+
         rows = self._client.vals(table="日k", k1=f"key:{code}", k2=f"fwd:{start_key},{end_key}")
         bars = [_daily_bar_from_row(row) for row in rows if isinstance(row, dict)]
         bars.sort(key=lambda bar: bar.trade_date)
@@ -130,7 +170,9 @@ def _daily_bar_from_row(row: dict[str, object]) -> DailyBar:
     )
 
 
-def _normalize_date_key(value: str) -> str:
+def _normalize_date_key(value: str | date) -> str:
+    if isinstance(value, date):
+        return value.strftime("%Y%m%d")
     text = str(value).strip()
     if len(text) == 8 and text.isdigit():
         return text

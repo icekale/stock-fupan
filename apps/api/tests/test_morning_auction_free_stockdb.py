@@ -167,6 +167,66 @@ def test_free_stockdb_candidate_universe_can_use_symbol_subset() -> None:
     assert [candidate["symbol"] for candidate in universe] == ["600633.SH", "000001.SZ"]
 
 
+def test_free_stockdb_prefetch_daily_window_reuses_cached_rows() -> None:
+    requests: list[dict[str, str]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        params = dict(request.url.params)
+        requests.append(params)
+        if params["k1"] != "all:" or not params["k2"].startswith("fwd:"):
+            raise AssertionError(f"unexpected uncached request: {params}")
+        return httpx.Response(
+            200,
+            json=[
+                {
+                    "date": 20260624,
+                    "code": "600633",
+                    "name": "浙数文化",
+                    "open": 9.7,
+                    "high": 10.0,
+                    "low": 9.5,
+                    "close": 9.8,
+                    "volume": 20_890_000,
+                    "amount": 221_000_000,
+                    "turnover": 1.65,
+                    "is_st": False,
+                    "float_mv": 13_251_000_000,
+                },
+                {
+                    "date": 20260625,
+                    "code": "600633",
+                    "name": "浙数文化",
+                    "open": 10.0,
+                    "high": 10.6,
+                    "low": 9.9,
+                    "close": 10.4,
+                    "volume": 18_031_500,
+                    "amount": 189_010_000,
+                    "turnover": 1.42,
+                    "is_st": False,
+                    "float_mv": 13_251_000_000,
+                },
+            ],
+        )
+
+    source = FreeStockDbMorningAuctionDataSource(
+        base_url="http://stockdb.local:7899",
+        http_client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    source.prefetch_daily_window(start_date="2026-06-25", end_date="2026-06-25", lookback=2)
+    universe = source.candidate_universe("2026-06-25")
+    bars = source.daily_bars("600633.SH", end_date="2026-06-25", lookback=2)
+
+    assert len(requests) == 1
+    assert requests[0]["cmd"] == "vals"
+    assert requests[0]["t"] == "日k"
+    assert requests[0]["k1"] == "all:"
+    assert requests[0]["k2"].endswith(",20260625")
+    assert universe[0]["symbol"] == "600633.SH"
+    assert [bar.trade_date for bar in bars] == ["2026-06-24", "2026-06-25"]
+
+
 def test_free_stockdb_source_builds_cold_start_samples_without_auction_data() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         params = dict(request.url.params)
@@ -252,8 +312,10 @@ def test_cli_build_dataset_writes_free_stockdb_samples(tmp_path, monkeypatch) ->
     created: dict[str, object] = {}
 
     def source_factory(**kwargs):
+        source = _CliFreeStockDbSource()
         created.update(kwargs)
-        return _CliFreeStockDbSource()
+        created["source"] = source
+        return source
 
     monkeypatch.setattr(morning_auction, "FreeStockDbMorningAuctionDataSource", source_factory)
     output_path = tmp_path / "samples.jsonl"
@@ -282,6 +344,8 @@ def test_cli_build_dataset_writes_free_stockdb_samples(tmp_path, monkeypatch) ->
     assert exit_code == 0
     assert created["base_url"] == "http://stockdb.local:7899"
     assert created["symbols"] == ["600633", "000001.SZ"]
+    assert created["timeout_seconds"] == 60.0
+    assert created["source"].prefetch_calls == [("2026-06-25", "2026-06-25", 2)]
     assert rows[0]["trade_date"] == "2026-06-25"
     assert rows[0]["symbol"] == "600633.SH"
     assert rows[0]["main_label"] is True
@@ -289,6 +353,12 @@ def test_cli_build_dataset_writes_free_stockdb_samples(tmp_path, monkeypatch) ->
 
 
 class _CliFreeStockDbSource:
+    def __init__(self) -> None:
+        self.prefetch_calls: list[tuple[str, str, int]] = []
+
+    def prefetch_daily_window(self, *, start_date, end_date, lookback: int) -> None:
+        self.prefetch_calls.append((start_date.isoformat(), end_date.isoformat(), lookback))
+
     def candidate_universe(self, trade_date: str) -> list[dict[str, object]]:
         return [
             {

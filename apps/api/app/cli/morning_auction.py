@@ -33,7 +33,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     dataset_parser.add_argument("--start-date", type=_date_arg, required=True)
     dataset_parser.add_argument("--end-date", type=_date_arg, required=True)
     dataset_parser.add_argument("--lookback", type=_positive_int, default=120)
-    dataset_parser.add_argument("--timeout-seconds", type=float, default=10.0)
+    dataset_parser.add_argument("--timeout-seconds", type=float, default=60.0)
     dataset_parser.add_argument("--symbols")
     dataset_parser.add_argument("--output", required=True)
 
@@ -57,6 +57,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             base_url=args.base_url,
             symbols=_symbol_list(args.symbols),
             timeout_seconds=args.timeout_seconds,
+        )
+        source.prefetch_daily_window(
+            start_date=args.start_date,
+            end_date=args.end_date,
+            lookback=args.lookback,
         )
         rows = [
             sample_to_row(sample)
