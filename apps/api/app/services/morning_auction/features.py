@@ -23,7 +23,7 @@ def build_feature_row(
 
     row: dict[str, float | int | None] = {
         "market_cap_float": _round_or_none(market_cap_float),
-        "prev_return": _pct_change(latest.close, previous.open) if latest and previous else None,
+        "prev_return": _pct_change(latest.close, previous.close) if latest and previous else None,
         "prev_turnover": latest.turnover_rate if latest else None,
         "return_3d": _window_return(close_values, 3),
         "return_5d": _window_return(close_values, 5),

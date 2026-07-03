@@ -19,7 +19,7 @@ def test_feature_row_uses_prior_bars_and_auction_snapshot() -> None:
 
     assert row["auction_data_available"] == 1
     assert row["auction_return"] == 1.0
-    assert row["prev_return"] == 2.0408
+    assert row["prev_return"] == 1.0101
     assert row["close_vs_ma5"] == 0.0
     assert row["sector_strength"] == 78.0
     assert row["capital_strength"] == 62.0
@@ -65,9 +65,9 @@ def test_feature_row_filters_current_day_bar_when_auction_date_is_available() ->
         capital_strength=62.0,
     )
 
-    assert unsliced["prev_return"] == 2.0408
+    assert unsliced["prev_return"] == 1.0101
     assert unsliced["prev_return"] == prior_only["prev_return"]
-    assert unsliced["prev_return"] != 3.0303
+    assert unsliced["prev_return"] != 2.0408
 
 
 def test_feature_row_handles_zero_denominators_and_nulls() -> None:

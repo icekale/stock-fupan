@@ -23,6 +23,13 @@ def build_samples_for_trade_date(
         current_bar = bars[-1]
         if current_bar.trade_date != trade_date:
             continue
+        if (
+            current_bar.open <= 0
+            or current_bar.close <= 0
+            or current_bar.volume <= 0
+            or current_bar.amount <= 0
+        ):
+            continue
 
         prior_bars = bars[:-1]
         auction = source.auction_snapshot(symbol, trade_date=trade_date)
@@ -31,7 +38,7 @@ def build_samples_for_trade_date(
         is_st = bool(candidate.get("is_st", False))
         filter_result = evaluate_candidate_filters(
             symbol=symbol,
-            name=name if is_st else "",
+            name=name,
             listed_days=int(candidate.get("listed_days", 9999)),
             is_st=is_st,
             is_suspended=bool(candidate.get("is_suspended", False)),

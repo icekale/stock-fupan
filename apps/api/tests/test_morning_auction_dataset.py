@@ -5,7 +5,7 @@ import pytest
 from app.services.morning_auction.artifacts import read_jsonl, write_jsonl
 from app.services.morning_auction.data_sources import InMemoryMorningAuctionDataSource
 from app.services.morning_auction.dataset import build_samples_for_trade_date
-from app.services.morning_auction.schemas import DailyBar
+from app.services.morning_auction.schemas import AuctionSnapshot, DailyBar
 
 
 def test_in_memory_data_source_returns_daily_bars_and_auction_snapshots() -> None:
@@ -36,7 +36,18 @@ def test_in_memory_data_source_rejects_non_positive_lookback(lookback: int) -> N
 
 
 def test_build_samples_for_trade_date_uses_prior_bars_for_features() -> None:
-    source = InMemoryMorningAuctionDataSource.with_fixture()
+    source = _source_with_current_bar(
+        DailyBar(
+            trade_date="2026-07-03",
+            open=10.1,
+            high=10.3,
+            low=9.9,
+            close=10.5,
+            volume=1_100_000,
+            amount=11_220_000,
+        ),
+        include_auction=True,
+    )
 
     samples = build_samples_for_trade_date(source, trade_date="2026-07-03", lookback=3)
 
@@ -82,6 +93,54 @@ def test_build_samples_for_trade_date_skips_when_current_bar_is_missing() -> Non
     assert samples == []
 
 
+def test_build_samples_for_trade_date_rejects_st_like_name_when_flag_is_false() -> None:
+    source = _source_with_current_bar(
+        DailyBar(
+            trade_date="2026-07-03",
+            open=10.1,
+            high=10.3,
+            low=9.9,
+            close=10.5,
+            volume=1_100_000,
+            amount=11_220_000,
+        ),
+        name="*ST Fixture",
+    )
+
+    samples = build_samples_for_trade_date(source, trade_date="2026-07-03", lookback=3)
+
+    assert samples == []
+
+
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("open", 0.0),
+        ("close", 0.0),
+        ("volume", 0.0),
+        ("amount", 0.0),
+    ],
+)
+def test_build_samples_for_trade_date_skips_invalid_current_label_bar(
+    field: str,
+    value: float,
+) -> None:
+    current_bar = DailyBar(
+        trade_date="2026-07-03",
+        open=10.1,
+        high=10.3,
+        low=9.9,
+        close=10.5,
+        volume=1_100_000,
+        amount=11_220_000,
+    ).model_copy(update={field: value})
+    source = _source_with_current_bar(current_bar)
+
+    samples = build_samples_for_trade_date(source, trade_date="2026-07-03", lookback=3)
+
+    assert samples == []
+
+
 def test_jsonl_round_trip(tmp_path: Path) -> None:
     path = tmp_path / "samples.jsonl"
     rows = [{"symbol": "600001.SH", "value": 1}, {"symbol": "600002.SH", "value": 2}]
@@ -89,3 +148,55 @@ def test_jsonl_round_trip(tmp_path: Path) -> None:
     write_jsonl(path, rows)
 
     assert read_jsonl(path) == rows
+
+
+def _source_with_current_bar(
+    current_bar: DailyBar,
+    *,
+    name: str = "Fixture Co",
+    include_auction: bool = False,
+) -> InMemoryMorningAuctionDataSource:
+    symbol = "600001.SH"
+    trade_date = "2026-07-03"
+    auctions_by_key = {}
+    if include_auction:
+        auctions_by_key[(symbol, trade_date)] = AuctionSnapshot(
+            trade_date=trade_date,
+            symbol=symbol,
+            name=name,
+            snapshot_time="09:25:00",
+            indicative_price=10.1,
+            prev_close=10.0,
+            auction_volume=1_000_000,
+            auction_amount=10_100_000,
+        )
+
+    return InMemoryMorningAuctionDataSource(
+        universe=[{"symbol": symbol, "name": name, "is_st": False}],
+        bars_by_symbol={
+            symbol: [
+                DailyBar(
+                    trade_date="2026-07-01",
+                    open=9.8,
+                    high=10.0,
+                    low=9.7,
+                    close=9.9,
+                    volume=900_000,
+                    amount=8_910_000,
+                ),
+                DailyBar(
+                    trade_date="2026-07-02",
+                    open=9.9,
+                    high=10.1,
+                    low=9.8,
+                    close=10.0,
+                    volume=950_000,
+                    amount=9_500_000,
+                ),
+                current_bar,
+            ]
+        },
+        auctions_by_key=auctions_by_key,
+        sector_by_key={(symbol, trade_date): 78.0},
+        capital_by_key={(symbol, trade_date): 62.0},
+    )
