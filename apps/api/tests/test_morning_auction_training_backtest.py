@@ -1,3 +1,4 @@
+import pickle
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,7 @@ from app.services.morning_auction.trainer import (
     save_training_metadata,
     train_lightgbm_model,
 )
+from app.services.morning_auction.scorer import score_rows_with_model
 
 
 class FakeLGBMClassifier:
@@ -23,6 +25,16 @@ class FakeLGBMClassifier:
 
     def fit(self, x: list[list[float]], y: list[int], *, feature_name: list[str]) -> None:
         self.fit_args = (x, y, feature_name)
+
+
+class FakeProbabilityModel:
+    def __init__(self) -> None:
+        self.seen_x: list[list[float]] | None = None
+
+    def predict_proba(self, x: object) -> list[list[float]]:
+        assert list(x.columns) == ["b", "a"]
+        self.seen_x = x.to_numpy().tolist()
+        return [[1 - row[0] / 10, row[0] / 10] for row in self.seen_x]
 
 
 def test_build_training_matrix_orders_feature_columns() -> None:
@@ -86,6 +98,33 @@ def test_train_lightgbm_model_writes_model_and_feature_metadata(
     assert FakeLGBMClassifier.latest is not None
     assert FakeLGBMClassifier.latest.scale_pos_weight == 1.0
     assert FakeLGBMClassifier.latest.fit_args == ([[1.0, 2.0], [0.0, 4.0]], [1, 0], ["a", "b"])
+
+
+def test_score_rows_with_model_adds_probabilities_using_metadata_feature_order(tmp_path: Path) -> None:
+    model_path = tmp_path / "model.pkl"
+    metadata_path = tmp_path / "metadata.json"
+    model = FakeProbabilityModel()
+    with model_path.open("wb") as handle:
+        pickle.dump(model, handle)
+    save_training_metadata(
+        metadata_path,
+        model_version="model-v1",
+        feature_version="features-v1",
+        feature_names=["b", "a"],
+        train_date_range=["2026-07-01", "2026-07-03"],
+    )
+    rows = [
+        {"symbol": "600001.SH", "features": {"a": 1.0, "b": 2.0}},
+        {"symbol": "600002.SH", "features": {"a": None, "b": 4.0}},
+    ]
+
+    scored = score_rows_with_model(rows, model_path=model_path, metadata_path=metadata_path)
+
+    assert scored == [
+        {"symbol": "600001.SH", "features": {"a": 1.0, "b": 2.0}, "prob_3pct": 0.2},
+        {"symbol": "600002.SH", "features": {"a": None, "b": 4.0}, "prob_3pct": 0.4},
+    ]
+    assert rows[0].get("prob_3pct") is None
 
 
 def test_train_lightgbm_model_surfaces_native_runtime_error(

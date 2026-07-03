@@ -1,4 +1,5 @@
 import json
+import pickle
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -6,8 +7,15 @@ import pytest
 
 from app.cli.morning_auction import main
 from app.main import app
+from app.services.morning_auction.artifacts import read_jsonl
 from app.services.morning_auction.predictor import bucket_prediction
 from app.services.morning_auction.schemas import MorningAuctionBucket
+from app.services.morning_auction.trainer import save_training_metadata
+
+
+class FakeProbabilityModel:
+    def predict_proba(self, x: object) -> list[list[float]]:
+        return [[0.75, 0.25] for _ in range(len(x))]
 
 
 def test_bucket_prediction_assigns_selected_attack_watch_and_avoid() -> None:
@@ -81,6 +89,46 @@ def test_cli_backtest_rejects_non_positive_top_n(tmp_path: Path, capsys) -> None
 
     error = capsys.readouterr().err
     assert "top-n must be positive" in error
+
+
+def test_cli_score_writes_prediction_jsonl(tmp_path: Path, capsys) -> None:
+    dataset_path = tmp_path / "dataset.jsonl"
+    model_path = tmp_path / "model.pkl"
+    metadata_path = tmp_path / "metadata.json"
+    output_path = tmp_path / "predictions.jsonl"
+    dataset_path.write_text(
+        '{"trade_date":"2026-07-01","symbol":"600001.SH","features":{"a":1.0},"main_label":true}\n',
+        encoding="utf-8",
+    )
+    with model_path.open("wb") as handle:
+        pickle.dump(FakeProbabilityModel(), handle)
+    save_training_metadata(
+        metadata_path,
+        model_version="model-v1",
+        feature_version="features-v1",
+        feature_names=["a"],
+        train_date_range=["2026-07-01", "2026-07-01"],
+    )
+
+    exit_code = main(
+        [
+            "score",
+            "--dataset",
+            str(dataset_path),
+            "--model",
+            str(model_path),
+            "--metadata",
+            str(metadata_path),
+            "--output",
+            str(output_path),
+        ]
+    )
+
+    output = json.loads(capsys.readouterr().out)
+    rows = read_jsonl(output_path)
+    assert exit_code == 0
+    assert output["rows"] == 1
+    assert rows[0]["prob_3pct"] == 0.25
 
 
 def test_morning_auction_predict_api_returns_run_payload() -> None:

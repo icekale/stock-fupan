@@ -10,6 +10,7 @@ from app.services.morning_auction.artifacts import ensure_parent, read_jsonl, wr
 from app.services.morning_auction.backtest import backtest_top_n
 from app.services.morning_auction.dataset import build_samples_for_trade_date, sample_to_row
 from app.services.morning_auction.free_stockdb import FreeStockDbMorningAuctionDataSource
+from app.services.morning_auction.scorer import score_rows_with_model
 from app.services.morning_auction.trainer import train_lightgbm_model
 
 
@@ -21,6 +22,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     train_parser.add_argument("--dataset", required=True)
     train_parser.add_argument("--model", required=True)
     train_parser.add_argument("--metadata", required=True)
+
+    score_parser = subparsers.add_parser("score")
+    score_parser.add_argument("--dataset", required=True)
+    score_parser.add_argument("--model", required=True)
+    score_parser.add_argument("--metadata", required=True)
+    score_parser.add_argument("--output", required=True)
 
     backtest_parser = subparsers.add_parser("backtest")
     backtest_parser.add_argument("--predictions", required=True)
@@ -47,6 +54,32 @@ def main(argv: Sequence[str] | None = None) -> int:
             Path(args.model),
             Path(args.metadata),
         )
+        _print_json(result)
+        return 0
+
+    if args.command == "score":
+        dataset_path = Path(args.dataset)
+        model_path = Path(args.model)
+        metadata_path = Path(args.metadata)
+        if not dataset_path.exists():
+            parser.error(f"dataset file does not exist: {dataset_path}")
+        if not model_path.exists():
+            parser.error(f"model file does not exist: {model_path}")
+        if not metadata_path.exists():
+            parser.error(f"metadata file does not exist: {metadata_path}")
+
+        output_path = Path(args.output)
+        scored_rows = score_rows_with_model(
+            read_jsonl(dataset_path),
+            model_path=model_path,
+            metadata_path=metadata_path,
+        )
+        write_jsonl(output_path, scored_rows)
+        result = {
+            "rows": len(scored_rows),
+            "output": str(output_path),
+            "model": str(model_path),
+        }
         _print_json(result)
         return 0
 

@@ -25,12 +25,19 @@ def build_training_matrix(rows: Sequence[dict[str, object]]) -> TrainingMatrix:
             for name in _features(row).keys()
         }
     )
-    x = [
+    x = build_feature_matrix(rows, feature_names)
+    y = [1 if row.get("main_label") else 0 for row in rows]
+    return TrainingMatrix(x=x, y=y, feature_names=feature_names)
+
+
+def build_feature_matrix(
+    rows: Sequence[dict[str, object]],
+    feature_names: Sequence[str],
+) -> list[list[float]]:
+    return [
         [_feature_value(_features(row).get(feature_name)) for feature_name in feature_names]
         for row in rows
     ]
-    y = [1 if row.get("main_label") else 0 for row in rows]
-    return TrainingMatrix(x=x, y=y, feature_names=feature_names)
 
 
 def train_lightgbm_model(
