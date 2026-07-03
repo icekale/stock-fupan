@@ -1,8 +1,28 @@
 from pathlib import Path
 
+import pytest
+
 from app.services.morning_auction.artifacts import read_json
 from app.services.morning_auction.backtest import backtest_top_n
-from app.services.morning_auction.trainer import build_training_matrix, save_training_metadata
+from app.services.morning_auction.features import FEATURE_VERSION
+from app.services.morning_auction import trainer
+from app.services.morning_auction.trainer import (
+    build_training_matrix,
+    save_training_metadata,
+    train_lightgbm_model,
+)
+
+
+class FakeLGBMClassifier:
+    latest: "FakeLGBMClassifier | None" = None
+
+    def __init__(self, *, scale_pos_weight: float) -> None:
+        self.scale_pos_weight = scale_pos_weight
+        self.fit_args: tuple[list[list[float]], list[int], list[str]] | None = None
+        FakeLGBMClassifier.latest = self
+
+    def fit(self, x: list[list[float]], y: list[int], *, feature_name: list[str]) -> None:
+        self.fit_args = (x, y, feature_name)
 
 
 def test_build_training_matrix_orders_feature_columns() -> None:
@@ -32,6 +52,60 @@ def test_training_metadata_round_trip(tmp_path: Path) -> None:
     metadata = read_json(path)
     assert metadata["model_version"] == "model-v1"
     assert metadata["feature_names"] == ["a", "b"]
+
+
+def test_train_lightgbm_model_writes_model_and_feature_metadata(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(trainer, "_load_lgbm_classifier", lambda: FakeLGBMClassifier)
+    model_path = tmp_path / "model.pkl"
+    metadata_path = tmp_path / "metadata.json"
+    rows = [
+        {
+            "trade_date": "2026-07-03",
+            "features": {"b": 2.0, "a": 1.0},
+            "main_label": True,
+        },
+        {
+            "trade_date": "2026-07-01",
+            "features": {"a": None, "b": 4.0},
+            "main_label": False,
+        },
+    ]
+
+    result = train_lightgbm_model(rows, model_path, metadata_path)
+
+    assert model_path.exists()
+    metadata = read_json(metadata_path)
+    assert metadata["feature_version"] == FEATURE_VERSION
+    assert metadata["train_date_range"] == ["2026-07-01", "2026-07-03"]
+    assert result["feature_names"] == ["a", "b"]
+    assert result["positive_count"] == 1
+    assert result["negative_count"] == 1
+    assert FakeLGBMClassifier.latest is not None
+    assert FakeLGBMClassifier.latest.scale_pos_weight == 1.0
+    assert FakeLGBMClassifier.latest.fit_args == ([[1.0, 2.0], [0.0, 4.0]], [1, 0], ["a", "b"])
+
+
+def test_train_lightgbm_model_surfaces_native_runtime_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def raise_runtime_error() -> type[FakeLGBMClassifier]:
+        raise RuntimeError(
+            "LightGBM is installed but cannot load native runtime dependencies; install libomp "
+            "or configure the training environment."
+        )
+
+    monkeypatch.setattr(trainer, "_load_lgbm_classifier", raise_runtime_error)
+
+    with pytest.raises(RuntimeError, match="install libomp or configure the training environment"):
+        train_lightgbm_model(
+            [{"trade_date": "2026-07-03", "features": {"a": 1.0}, "main_label": True}],
+            tmp_path / "model.pkl",
+            tmp_path / "metadata.json",
+        )
 
 
 def test_backtest_top_n_reports_average_return_and_hit_rates() -> None:
@@ -69,3 +143,8 @@ def test_backtest_top_n_reports_average_return_and_hit_rates() -> None:
     assert result["average_return"] == 0.05
     assert result["hit_3pct_rate"] == 1.0
     assert result["hit_5pct_rate"] == 0.5
+
+
+def test_backtest_top_n_rejects_non_positive_top_n() -> None:
+    with pytest.raises(ValueError, match="top_n must be positive"):
+        backtest_top_n([], top_n=0)

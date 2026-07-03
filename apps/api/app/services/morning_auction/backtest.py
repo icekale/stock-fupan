@@ -5,6 +5,9 @@ from collections.abc import Callable, Sequence
 
 
 def backtest_top_n(rows: Sequence[dict[str, object]], *, top_n: int) -> dict[str, object]:
+    if top_n <= 0:
+        raise ValueError("top_n must be positive")
+
     by_date: dict[str, list[dict[str, object]]] = defaultdict(list)
     for row in rows:
         by_date[str(row["trade_date"])].append(row)
