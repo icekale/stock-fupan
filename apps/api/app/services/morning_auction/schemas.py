@@ -47,6 +47,7 @@ class MorningAuctionSample(BaseModel):
     symbol: str
     name: str
     features: dict[str, float | int | None] = Field(default_factory=dict)
+    prev_close_price: float | None = None
     open_price: float
     close_price: float
     next_open_price: float | None = None

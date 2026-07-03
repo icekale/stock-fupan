@@ -228,6 +228,62 @@ def test_backtest_top_n_can_use_t1_return_key() -> None:
     assert result["win_rate"] == 1.0
 
 
+def test_backtest_top_n_applies_round_trip_cost_to_selected_returns() -> None:
+    rows = [
+        {
+            "trade_date": "2026-07-01",
+            "prob_3pct": 0.9,
+            "open_to_close_return": 0.05,
+        },
+        {
+            "trade_date": "2026-07-01",
+            "prob_3pct": 0.8,
+            "open_to_close_return": -0.01,
+        },
+    ]
+
+    result = backtest_top_n(rows, top_n=1, round_trip_cost_bps=25)
+
+    assert result["average_return"] == 0.0475
+    assert result["win_rate"] == 1.0
+    assert result["round_trip_cost_bps"] == 25
+
+
+def test_backtest_top_n_skips_open_limit_up_candidates_and_refills() -> None:
+    rows = [
+        {
+            "trade_date": "2026-07-01",
+            "symbol": "600001.SH",
+            "prob_3pct": 0.95,
+            "open_price": 11.0,
+            "prev_close_price": 10.0,
+            "open_to_close_return": 0.20,
+        },
+        {
+            "trade_date": "2026-07-01",
+            "symbol": "688001.SH",
+            "prob_3pct": 0.9,
+            "open_price": 11.0,
+            "prev_close_price": 10.0,
+            "open_to_close_return": 0.03,
+        },
+        {
+            "trade_date": "2026-07-01",
+            "symbol": "600002.SH",
+            "prob_3pct": 0.8,
+            "open_price": 10.2,
+            "prev_close_price": 10.0,
+            "open_to_close_return": 0.04,
+        },
+    ]
+
+    result = backtest_top_n(rows, top_n=2, skip_open_limit_up=True)
+
+    assert result["selected_count"] == 2
+    assert result["skipped_open_limit_up_count"] == 1
+    assert result["average_return"] == 0.035
+
+
 def test_backtest_top_n_rejects_non_positive_top_n() -> None:
     with pytest.raises(ValueError, match="top_n must be positive"):
         backtest_top_n([], top_n=0)
