@@ -43,6 +43,30 @@ def test_sample_strong_and_risk_labels() -> None:
     assert risk.risk_label is True
 
 
+def test_sample_labels_compare_raw_return_not_rounded_display_value() -> None:
+    below_main = MorningAuctionSample(
+        trade_date="2026-07-03",
+        symbol="600004.SH",
+        name="边界股份",
+        features={},
+        open_price=10.0,
+        close_price=10.299996,
+    )
+    above_risk = MorningAuctionSample(
+        trade_date="2026-07-03",
+        symbol="600005.SH",
+        name="风险边界",
+        features={},
+        open_price=10.0,
+        close_price=9.700004,
+    )
+
+    assert below_main.open_to_close_return == 0.03
+    assert below_main.main_label is False
+    assert above_risk.open_to_close_return == -0.03
+    assert above_risk.risk_label is False
+
+
 def test_filters_reject_untradable_and_overheated_candidates() -> None:
     latest = DailyBar(
         trade_date="2026-07-02",

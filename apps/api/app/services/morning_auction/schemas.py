@@ -51,26 +51,30 @@ class MorningAuctionSample(BaseModel):
     close_price: float
 
     @property
-    def open_to_close_return(self) -> float:
+    def _raw_open_to_close_return(self) -> float:
         if self.open_price <= 0:
             return 0.0
-        return round(self.close_price / self.open_price - 1, 6)
+        return self.close_price / self.open_price - 1
+
+    @property
+    def open_to_close_return(self) -> float:
+        return round(self._raw_open_to_close_return, 6)
 
     @property
     def main_label(self) -> bool:
-        return self.open_to_close_return >= 0.03
+        return self._raw_open_to_close_return >= 0.03
 
     @property
     def strong_label(self) -> bool:
-        return self.open_to_close_return >= 0.05
+        return self._raw_open_to_close_return >= 0.05
 
     @property
     def safe_label(self) -> bool:
-        return self.open_to_close_return > 0
+        return self._raw_open_to_close_return > 0
 
     @property
     def risk_label(self) -> bool:
-        return self.open_to_close_return <= -0.03
+        return self._raw_open_to_close_return <= -0.03
 
 
 class MorningAuctionPredictionItem(BaseModel):
