@@ -146,6 +146,44 @@ def test_build_samples_for_trade_date_rejects_st_like_name_when_flag_is_false() 
 
 
 @pytest.mark.parametrize(
+    ("symbol", "name", "expected_count"),
+    [
+        ("600001.SH", "普通沪市", 1),
+        ("000001.SZ", "普通深市", 1),
+        ("300001.SZ", "普通创业板", 1),
+        ("688001.SH", "普通科创板", 1),
+        ("159546.SZ", "集成电路ETF国泰", 0),
+        ("560780.SH", "半导体设备ETF广发", 0),
+        ("920992.BJ", "中科美菱", 0),
+        ("000004.SZ", "国华退", 0),
+        ("002808.SZ", "恒久退", 0),
+    ],
+)
+def test_build_samples_for_trade_date_keeps_only_common_a_share_universe(
+    symbol: str,
+    name: str,
+    expected_count: int,
+) -> None:
+    source = _source_with_current_bar(
+        DailyBar(
+            trade_date="2026-07-03",
+            open=10.1,
+            high=10.3,
+            low=9.9,
+            close=10.5,
+            volume=1_100_000,
+            amount=11_220_000,
+        ),
+        symbol=symbol,
+        name=name,
+    )
+
+    samples = build_samples_for_trade_date(source, trade_date="2026-07-03", lookback=3)
+
+    assert len(samples) == expected_count
+
+
+@pytest.mark.parametrize(
     "field,value",
     [
         ("open", 0.0),
@@ -186,11 +224,11 @@ def test_jsonl_round_trip(tmp_path: Path) -> None:
 def _source_with_current_bar(
     current_bar: DailyBar,
     *,
+    symbol: str = "600001.SH",
     name: str = "Fixture Co",
     include_auction: bool = False,
     next_bar: DailyBar | None = None,
 ) -> InMemoryMorningAuctionDataSource:
-    symbol = "600001.SH"
     trade_date = "2026-07-03"
     auctions_by_key = {}
     if include_auction:

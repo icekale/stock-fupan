@@ -2,6 +2,12 @@ from __future__ import annotations
 
 from app.services.morning_auction.schemas import DailyBar, FilterResult
 
+_COMMON_A_SHARE_PREFIXES_BY_MARKET = {
+    "SH": ("600", "601", "603", "605", "688"),
+    "SZ": ("000", "001", "002", "003", "300", "301"),
+}
+_EXCLUDED_SECURITY_NAME_TOKENS = ("ETF", "LOF", "基金", "债", "REIT", "退")
+
 
 def evaluate_candidate_filters(
     *,
@@ -16,6 +22,8 @@ def evaluate_candidate_filters(
     require_auction_data: bool = False,
 ) -> FilterResult:
     risk_flags: list[str] = []
+    if not _is_common_a_share_symbol(symbol) or _is_excluded_security_name(name):
+        risk_flags.append("非普通A股")
     if is_st or "ST" in name.upper():
         risk_flags.append("ST股票")
     if listed_days < 100:
@@ -37,3 +45,22 @@ def evaluate_candidate_filters(
         if latest.close <= 0 or latest.amount <= 0:
             risk_flags.append("日K成交异常")
     return FilterResult(passed=not risk_flags, risk_flags=risk_flags)
+
+
+def _is_common_a_share_symbol(symbol: str) -> bool:
+    code, market = _split_symbol(symbol)
+    prefixes = _COMMON_A_SHARE_PREFIXES_BY_MARKET.get(market)
+    return bool(prefixes and len(code) == 6 and code.startswith(prefixes))
+
+
+def _split_symbol(symbol: str) -> tuple[str, str]:
+    normalized = symbol.strip().upper()
+    if "." in normalized:
+        code, market = normalized.rsplit(".", maxsplit=1)
+        return code, market
+    return normalized, ""
+
+
+def _is_excluded_security_name(name: str) -> bool:
+    upper_name = name.upper()
+    return any(token in upper_name for token in _EXCLUDED_SECURITY_NAME_TOKENS)
