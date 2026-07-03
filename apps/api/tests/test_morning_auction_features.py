@@ -80,7 +80,7 @@ def test_feature_row_handles_zero_denominators_and_nulls() -> None:
                 open=0.0,
                 high=0.0,
                 low=0.0,
-                close=0.0,
+                close=10.0,
                 volume=0.0,
                 amount=0.0,
             )
@@ -89,7 +89,7 @@ def test_feature_row_handles_zero_denominators_and_nulls() -> None:
             trade_date="2026-07-03",
             symbol="600001.SH",
             snapshot_time="09:25:00",
-            indicative_price=None,
+            indicative_price=10.8,
             prev_close=0.0,
             auction_volume=0.0,
             auction_amount=None,
@@ -105,6 +105,7 @@ def test_feature_row_handles_zero_denominators_and_nulls() -> None:
     assert row["auction_amount_ratio"] is None
     assert row["bid_ask_imbalance"] is None
     assert row["unmatched_buy_ratio"] is None
+    assert row["risk_score"] == 0.0
 
 
 def test_feature_row_computes_imbalance_unmatched_ratio_and_risk_score() -> None:

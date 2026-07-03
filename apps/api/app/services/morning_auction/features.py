@@ -61,7 +61,7 @@ def _auction_features(
             "unmatched_buy_ratio": None,
         }
 
-    prev_close = auction.prev_close or (latest.close if latest else None)
+    prev_close = auction.prev_close if auction.prev_close is not None else (latest.close if latest else None)
     return {
         "auction_data_available": 1,
         "auction_return": _pct_change(auction.indicative_price, prev_close),
