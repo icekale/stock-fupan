@@ -14,11 +14,12 @@ def build_feature_row(
     sector_strength: float | None,
     capital_strength: float | None,
 ) -> dict[str, float | int | None]:
-    latest = daily_bars[-1] if daily_bars else None
-    previous = daily_bars[-2] if len(daily_bars) >= 2 else None
-    close_values = [bar.close for bar in daily_bars]
-    volume_values = [bar.volume for bar in daily_bars]
-    amount_values = [bar.amount for bar in daily_bars]
+    historical_bars = _historical_bars(daily_bars, auction)
+    latest = historical_bars[-1] if historical_bars else None
+    previous = historical_bars[-2] if len(historical_bars) >= 2 else None
+    close_values = [bar.close for bar in historical_bars]
+    volume_values = [bar.volume for bar in historical_bars]
+    amount_values = [bar.amount for bar in historical_bars]
 
     row: dict[str, float | int | None] = {
         "market_cap_float": _round_or_none(market_cap_float),
@@ -38,6 +39,12 @@ def build_feature_row(
     row.update(_auction_features(auction, latest))
     row["risk_score"] = _risk_score(row)
     return row
+
+
+def _historical_bars(daily_bars: list[DailyBar], auction: AuctionSnapshot | None) -> list[DailyBar]:
+    if auction is None:
+        return daily_bars
+    return [bar for bar in daily_bars if bar.trade_date < auction.trade_date]
 
 
 def _auction_features(
