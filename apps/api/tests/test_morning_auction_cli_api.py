@@ -1,9 +1,11 @@
 import json
 from pathlib import Path
 
+from fastapi.testclient import TestClient
 import pytest
 
 from app.cli.morning_auction import main
+from app.main import app
 from app.services.morning_auction.predictor import bucket_prediction
 from app.services.morning_auction.schemas import MorningAuctionBucket
 
@@ -79,3 +81,15 @@ def test_cli_backtest_rejects_non_positive_top_n(tmp_path: Path, capsys) -> None
 
     error = capsys.readouterr().err
     assert "top-n must be positive" in error
+
+
+def test_morning_auction_predict_api_returns_run_payload() -> None:
+    client = TestClient(app)
+
+    response = client.post("/api/morning-auction/predict", json={"trade_date": "2026-07-03"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["trade_date"] == "2026-07-03"
+    assert payload["model_version"] == "manual-cold-start"
+    assert "items" in payload

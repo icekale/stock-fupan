@@ -28,6 +28,7 @@ from app.providers.runtime_config import (
     save_runtime_provider_config,
 )
 from app.services.assets import report_kind_label
+from app.services.morning_auction.predictor import build_run
 from app.services.report_generator import ReportGenerator
 from app.services.report_schedule import (
     ReportScheduleUpdate,
@@ -67,6 +68,18 @@ from app.watchlist.service import WatchlistImportService
 
 class CreateCloseReportRequest(BaseModel):
     trade_date: str
+
+
+class MorningAuctionPredictRequest(BaseModel):
+    trade_date: str
+
+    @field_validator("trade_date")
+    @classmethod
+    def validate_trade_date(cls, value: str) -> str:
+        if len(value) != 10 or value[4] != "-" or value[7] != "-":
+            raise ValueError("trade_date must use YYYY-MM-DD")
+        date.fromisoformat(value)
+        return value
 
 
 class ImportWatchlistTextRequest(BaseModel):
@@ -196,11 +209,36 @@ app.add_middleware(
 
 CHINA_TZ = ZoneInfo("Asia/Shanghai")
 logger = logging.getLogger(__name__)
+MORNING_AUCTION_RUNS: dict[str, dict[str, object]] = {}
 
 
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.post("/api/morning-auction/predict")
+def morning_auction_predict(request: MorningAuctionPredictRequest) -> dict[str, object]:
+    run = build_run(
+        trade_date=request.trade_date,
+        model_version="manual-cold-start",
+        source_status={
+            "a_stock_data": "configured",
+            "auction_history": "self_collected_only",
+        },
+        items=[],
+    )
+    payload = run.model_dump(mode="json")
+    MORNING_AUCTION_RUNS[run.run_id] = payload
+    return payload
+
+
+@app.get("/api/morning-auction/runs/{run_id}")
+def morning_auction_run(run_id: str) -> dict[str, object]:
+    payload = MORNING_AUCTION_RUNS.get(run_id)
+    if payload is None:
+        raise HTTPException(status_code=404, detail="Morning auction run not found")
+    return payload
 
 
 @app.get("/api/tickflow/health")
