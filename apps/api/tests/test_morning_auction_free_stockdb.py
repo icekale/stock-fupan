@@ -1,12 +1,15 @@
 import httpx
 import pytest
 
+from app.cli import morning_auction
+from app.services.morning_auction.artifacts import read_jsonl
 from app.services.morning_auction.dataset import build_samples_for_trade_date
 from app.services.morning_auction.free_stockdb import (
     FreeStockDbError,
     FreeStockDbHttpClient,
     FreeStockDbMorningAuctionDataSource,
 )
+from app.services.morning_auction.schemas import DailyBar
 
 
 def test_free_stockdb_daily_bars_maps_rows_and_sorts_ascending() -> None:
@@ -211,3 +214,87 @@ def test_free_stockdb_raises_focused_error_for_bad_payload() -> None:
 
     with pytest.raises(FreeStockDbError, match="expected list payload"):
         client.vals(table="日k", k1="key:600633", k2="key:20260625")
+
+
+def test_cli_build_dataset_writes_free_stockdb_samples(tmp_path, monkeypatch) -> None:
+    created: dict[str, object] = {}
+
+    def source_factory(**kwargs):
+        created.update(kwargs)
+        return _CliFreeStockDbSource()
+
+    monkeypatch.setattr(morning_auction, "FreeStockDbMorningAuctionDataSource", source_factory)
+    output_path = tmp_path / "samples.jsonl"
+
+    exit_code = morning_auction.main(
+        [
+            "build-dataset",
+            "--source",
+            "free-stockdb",
+            "--base-url",
+            "http://stockdb.local:7899",
+            "--start-date",
+            "2026-06-25",
+            "--end-date",
+            "2026-06-25",
+            "--lookback",
+            "2",
+            "--output",
+            str(output_path),
+        ]
+    )
+
+    rows = read_jsonl(output_path)
+    assert exit_code == 0
+    assert created["base_url"] == "http://stockdb.local:7899"
+    assert rows[0]["trade_date"] == "2026-06-25"
+    assert rows[0]["symbol"] == "600633.SH"
+    assert rows[0]["main_label"] is True
+    assert rows[0]["features"]["auction_data_available"] == 0
+
+
+class _CliFreeStockDbSource:
+    def candidate_universe(self, trade_date: str) -> list[dict[str, object]]:
+        return [
+            {
+                "symbol": "600633.SH",
+                "name": "浙数文化",
+                "is_st": False,
+                "listed_days": 9999,
+                "is_suspended": False,
+                "market_cap_float": 13_251_000_000,
+            }
+        ]
+
+    def daily_bars(self, symbol: str, *, end_date: str, lookback: int) -> list[DailyBar]:
+        return [
+            DailyBar(
+                trade_date="2026-06-24",
+                open=9.7,
+                high=10.0,
+                low=9.5,
+                close=9.8,
+                volume=20_890_000,
+                amount=221_000_000,
+                turnover_rate=1.65,
+            ),
+            DailyBar(
+                trade_date="2026-06-25",
+                open=10.0,
+                high=10.6,
+                low=9.9,
+                close=10.4,
+                volume=18_031_500,
+                amount=189_010_000,
+                turnover_rate=1.42,
+            ),
+        ]
+
+    def auction_snapshot(self, symbol: str, *, trade_date: str):
+        return None
+
+    def sector_strength(self, symbol: str, *, trade_date: str):
+        return None
+
+    def capital_strength(self, symbol: str, *, trade_date: str):
+        return None
