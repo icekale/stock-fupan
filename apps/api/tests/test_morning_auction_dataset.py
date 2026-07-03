@@ -41,9 +41,9 @@ def test_build_samples_for_trade_date_uses_prior_bars_for_features() -> None:
 
     assert len(samples) == 1
     assert samples[0].symbol == "600001.SH"
-    assert samples[0].open_price == 10.0
-    assert samples[0].close_price == 10.2
-    assert samples[0].main_label is False
+    assert samples[0].open_price == 10.1
+    assert samples[0].close_price == 10.5
+    assert samples[0].main_label is True
     assert samples[0].features["auction_data_available"] == 1
 
 

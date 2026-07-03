@@ -68,10 +68,10 @@ class InMemoryMorningAuctionDataSource:
                     ),
                     DailyBar(
                         trade_date=trade_date,
-                        open=10.0,
+                        open=10.1,
                         high=10.3,
                         low=9.9,
-                        close=10.2,
+                        close=10.5,
                         volume=1_100_000,
                         amount=11_220_000,
                     ),
