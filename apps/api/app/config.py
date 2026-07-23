@@ -66,6 +66,7 @@ class Settings(BaseSettings):
     report_schedule_enabled: bool = False
     report_schedule_close_time: str = "19:00"
     report_schedule_timezone: str = "Asia/Shanghai"
+    a_stock_vendor_dir: Path = Path("./data/a_stock_vendor")
     morning_auction_free_stockdb_base_url: str = "http://192.168.5.221:7899"
     morning_auction_model_path: Path = Path(
         "./artifacts/morning_auction/free_stockdb_lgbm_20210703_20260703_l120_t1close.pkl"

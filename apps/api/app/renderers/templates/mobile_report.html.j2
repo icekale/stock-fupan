@@ -1013,6 +1013,25 @@
       <hr class="divider">
       <h3 class="section-subtitle">自选股观察</h3>
       <p><span class="tag tag-navy">导入 {{ watch.total_count }} 只</span><span class="tag tag-gold">行情匹配 {{ watch.quote_count }} 只</span></p>
+      <h3 class="section-subtitle">自选股风险检测</h3>
+      <p class="muted">实时行情结构信号，仅覆盖价格、换手与资金强弱。</p>
+      {% if watch.risk_items %}
+        <div class="avoid-box">
+          <ul class="point-list">
+            {% for item in watch.risk_items %}
+              <li class="bear">
+                {{ item.symbol }} {{ item.name or '' }} {{ "%+.2f"|format(item.pct_change or 0) }}%
+                · {% if item.risk_level == "high" %}高风险{% elif item.risk_level == "medium" %}需关注{% else %}低风险{% endif %}
+                · {{ item.risk_reasons|join("、") }}
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% else %}
+        <div class="card">
+          <p>本次行情匹配的自选股未触发显著风险信号。</p>
+        </div>
+      {% endif %}
       {% if watch.strongest %}
         <h3 class="section-subtitle">强势自选</h3>
         <div class="card">

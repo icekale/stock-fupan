@@ -1,4 +1,5 @@
 import type {
+  AStockVendorStatus,
   ConfigStatusResponse,
   CreateReportResponse,
   DataSourceOptionsResponse,
@@ -306,6 +307,46 @@ export async function updateDataSourceOptions(
     throw new Error(`保存数据源选项失败：${response.status} ${await response.text()}`);
   }
   return response.json() as Promise<DataSourceOptionsResponse>;
+}
+
+export async function getAStockVendorStatus(): Promise<AStockVendorStatus> {
+  const response = await fetch(`${API_BASE_URL}/api/a-stock-data/vendor/status`);
+  if (!response.ok) {
+    throw new Error(`读取 a-stock-data 更新状态失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<AStockVendorStatus>;
+}
+
+export async function checkAStockVendor(): Promise<AStockVendorStatus> {
+  const response = await fetch(`${API_BASE_URL}/api/a-stock-data/vendor/check`, {
+    method: "POST",
+  });
+  if (!response.ok) {
+    throw new Error(`检查 a-stock-data 更新失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<AStockVendorStatus>;
+}
+
+export async function updateAStockVendor(): Promise<AStockVendorStatus> {
+  const response = await fetch(`${API_BASE_URL}/api/a-stock-data/vendor/update`, {
+    method: "POST",
+  });
+  if (!response.ok) {
+    throw new Error(`更新 a-stock-data 参考接口失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<AStockVendorStatus>;
+}
+
+export async function updateAStockVendorAutoCheck(enabled: boolean): Promise<AStockVendorStatus> {
+  const response = await fetch(`${API_BASE_URL}/api/a-stock-data/vendor/auto-check`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled }),
+  });
+  if (!response.ok) {
+    throw new Error(`保存 a-stock-data 自动检查失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<AStockVendorStatus>;
 }
 
 export function reportAssetUrl(path: string): string {

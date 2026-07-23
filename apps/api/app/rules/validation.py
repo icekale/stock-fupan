@@ -140,6 +140,9 @@ def _validate_sector_mentions(
     seen_errors: set[str],
 ) -> None:
     occupied_spans: list[tuple[int, int]] = []
+    for known_sector_name in sorted(known_sector_names, key=len, reverse=True):
+        for match in re.finditer(re.escape(known_sector_name), text):
+            occupied_spans.append(match.span())
     for sector_name in sorted(SECTOR_CANDIDATES, key=len, reverse=True):
         for match in re.finditer(re.escape(sector_name), text):
             if _overlaps_existing(match.span(), occupied_spans):

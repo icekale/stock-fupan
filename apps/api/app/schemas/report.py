@@ -1,5 +1,5 @@
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -204,6 +204,14 @@ class WatchlistMatch(BaseModel):
     reason: str
 
 
+class WatchlistRiskItem(BaseModel):
+    symbol: str
+    name: str | None = None
+    pct_change: float | None = None
+    risk_level: Literal["high", "medium", "low"]
+    risk_reasons: list[str] = Field(default_factory=list)
+
+
 class WatchlistObservation(BaseModel):
     import_id: int | None = None
     total_count: int = 0
@@ -211,6 +219,7 @@ class WatchlistObservation(BaseModel):
     strongest: list[WatchlistMatch] = Field(default_factory=list)
     weakest: list[WatchlistMatch] = Field(default_factory=list)
     sector_matches: list[WatchlistMatch] = Field(default_factory=list)
+    risk_items: list[WatchlistRiskItem] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
 
 

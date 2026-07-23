@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AdminShell } from "../components/AdminShell";
-import { DataSourceStatusPanel } from "../components/DataSourceStatusPanel";
 import { ReportSchedulePanel } from "../components/ReportSchedulePanel";
 import { ReportPreview } from "../components/ReportPreview";
 import { TaskProgress } from "../components/TaskProgress";
@@ -10,20 +9,14 @@ import { WatchlistImportPanel } from "../components/WatchlistImportPanel";
 import {
   createReport,
   deleteReport,
-  getConfigStatus,
-  getDataSourceOptions,
   getReportScheduleStatus,
   listReports,
   reportAssetUrl,
-  updateDataSourceOptions,
   updateReportScheduleStatus,
 } from "../lib/api";
 import { getLatestTradeDate } from "../lib/tradeDate";
 import type {
-  ConfigStatusItem,
   CreateReportResponse,
-  DataSourceOptionsCurrent,
-  DataSourceOptionsResponse,
   ReportKind,
   ReportListItem,
   ReportScheduleStatus,
@@ -40,11 +33,6 @@ export default function HomePage() {
   const [selectedReportId, setSelectedReportId] = useState<number | null>(null);
   const [selectedReportIds, setSelectedReportIds] = useState<number[]>([]);
   const [deletingReportIds, setDeletingReportIds] = useState<number[]>([]);
-  const [configItems, setConfigItems] = useState<ConfigStatusItem[]>([]);
-  const [dataSourceOptions, setDataSourceOptions] = useState<DataSourceOptionsResponse | null>(null);
-  const [dataSourceDraft, setDataSourceDraft] = useState<DataSourceOptionsCurrent | null>(null);
-  const [savingDataSources, setSavingDataSources] = useState(false);
-  const [dataSourceError, setDataSourceError] = useState<string | null>(null);
   const [reportSchedule, setReportSchedule] = useState<ReportScheduleStatus | null>(null);
   const [savingReportSchedule, setSavingReportSchedule] = useState(false);
   const [reportScheduleError, setReportScheduleError] = useState<string | null>(null);
@@ -58,7 +46,6 @@ export default function HomePage() {
   const paginatedReports = reports.slice((currentReportPage - 1) * reportsPerPage, currentReportPage * reportsPerPage);
   const selectedVisibleReportCount = paginatedReports.filter((item) => selectedReportIds.includes(item.id)).length;
   const allVisibleReportsSelected = paginatedReports.length > 0 && selectedVisibleReportCount === paginatedReports.length;
-  const readySourceCount = configItems.filter((item) => item.status === "ready" || item.status === "local").length;
   const activeStep = useMemo(() => {
     if (result) {
       return result.validation.is_valid ? 3 : 2;
@@ -70,8 +57,6 @@ export default function HomePage() {
   useEffect(() => {
     setTradeDate((currentDate) => currentDate || getLatestTradeDate());
     void refreshReports();
-    void refreshConfigStatus();
-    void refreshDataSourceOptions();
     void refreshReportSchedule();
   }, []);
 
@@ -97,28 +82,6 @@ export default function HomePage() {
     }
   }
 
-  async function refreshConfigStatus() {
-    try {
-      const response = await getConfigStatus();
-      setConfigItems(response.items);
-    } catch {
-      setConfigItems([]);
-    }
-  }
-
-  async function refreshDataSourceOptions() {
-    try {
-      const response = await getDataSourceOptions();
-      setDataSourceOptions(response);
-      setDataSourceDraft(response.current);
-      setDataSourceError(null);
-    } catch (err) {
-      setDataSourceOptions(null);
-      setDataSourceDraft(null);
-      setDataSourceError(err instanceof Error ? err.message : "读取数据源选项失败");
-    }
-  }
-
   async function refreshReportSchedule() {
     try {
       const response = await getReportScheduleStatus();
@@ -139,7 +102,6 @@ export default function HomePage() {
       const response = await createReport(tradeDate, reportKind);
       setResult(response);
       await refreshReports();
-      await refreshConfigStatus();
     } catch (err) {
       setError(err instanceof Error ? err.message : "生成失败");
     } finally {
@@ -215,29 +177,6 @@ export default function HomePage() {
     }
   }
 
-  async function handleSaveDataSources() {
-    if (!dataSourceDraft) {
-      return;
-    }
-    setSavingDataSources(true);
-    setDataSourceError(null);
-    try {
-      const response = await updateDataSourceOptions({
-        market_provider: dataSourceDraft.market_provider,
-        news_provider: dataSourceDraft.news_provider,
-        review_sources: dataSourceDraft.review_sources,
-        fallback_enabled: dataSourceDraft.fallback_enabled,
-      });
-      setDataSourceOptions(response);
-      setDataSourceDraft(response.current);
-      await refreshConfigStatus();
-    } catch (err) {
-      setDataSourceError(err instanceof Error ? err.message : "保存数据源选项失败");
-    } finally {
-      setSavingDataSources(false);
-    }
-  }
-
   async function handleSaveReportSchedule() {
     if (!reportSchedule) {
       return;
@@ -272,7 +211,7 @@ export default function HomePage() {
             </div>
             <div className="grid grid-cols-3 gap-2 sm:min-w-[420px]">
               <SummaryMetric label="历史报告" value={`${reports.length}`} />
-              <SummaryMetric label="数据源就绪" value={`${readySourceCount}/${configItems.length || 6}`} />
+              <SummaryMetric label="配置中心" value="独立" />
               <SummaryMetric label="当前模式" value={reportKindLabel(reportKind)} />
             </div>
           </div>
@@ -361,16 +300,6 @@ export default function HomePage() {
           </aside>
 
           <section className="space-y-6">
-            <DataSourceStatusPanel
-              draft={dataSourceDraft}
-              error={dataSourceError}
-              items={configItems}
-              onDraftChange={setDataSourceDraft}
-              onSave={() => void handleSaveDataSources()}
-              options={dataSourceOptions}
-              saving={savingDataSources}
-            />
-
             <section id="reports" className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                 <div>

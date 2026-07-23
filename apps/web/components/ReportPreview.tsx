@@ -75,10 +75,49 @@ export function ReportPreview({ result }: { result: CreateReportResponse }) {
 
       {report.watchlist_observation && (
         <section className="mt-5 rounded-2xl border border-amber-100 bg-amber-50/60 p-4">
-          <h3 className="text-sm font-black text-slate-950">自选股观察</h3>
-          <p className="mt-1 text-xs text-slate-500">
-            导入 {report.watchlist_observation.total_count} 只，行情匹配 {report.watchlist_observation.quote_count} 只
-          </p>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <h3 className="text-sm font-black text-slate-950">自选股观察</h3>
+              <p className="mt-1 text-xs text-slate-500">
+                导入 {report.watchlist_observation.total_count} 只，行情匹配 {report.watchlist_observation.quote_count} 只
+              </p>
+            </div>
+            <span
+              className={`w-fit rounded-full px-2.5 py-1 text-xs font-bold ${
+                report.watchlist_observation.risk_items.length > 0
+                  ? "bg-red-50 text-red-700 ring-1 ring-red-100"
+                  : "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100"
+              }`}
+            >
+              {report.watchlist_observation.risk_items.length > 0
+                ? `风险 ${report.watchlist_observation.risk_items.length} 项`
+                : "未触发显著风险"}
+            </span>
+          </div>
+          <div className="mt-3 rounded-xl bg-white p-3">
+            <div className="text-xs font-black uppercase tracking-[0.22em] text-slate-400">自选股风险检测</div>
+            <p className="mt-1 text-xs leading-5 text-slate-500">实时行情结构信号，仅覆盖价格、换手与资金强弱。</p>
+            {report.watchlist_observation.risk_items.length > 0 ? (
+              <div className="mt-3 grid gap-2">
+                {report.watchlist_observation.risk_items.slice(0, 5).map((item) => (
+                  <div key={`risk-${item.symbol}`} className="flex flex-col gap-1 rounded-xl border border-slate-100 px-3 py-2 text-sm sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <div className="font-bold text-slate-900">{item.name ?? item.symbol}</div>
+                      <div className="mt-0.5 text-xs text-slate-500">{item.symbol} · {item.risk_reasons.join("、")}</div>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs font-bold">
+                      <span className={item.pct_change !== null && item.pct_change >= 0 ? "text-red-600" : "text-emerald-700"}>
+                        {item.pct_change?.toFixed(2) ?? "--"}%
+                      </span>
+                      <span className={`rounded-full px-2 py-0.5 ${riskLevelClass(item.risk_level)}`}>{riskLevelLabel(item.risk_level)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-2 text-sm leading-6 text-slate-600">本次行情匹配的自选股未触发显著风险信号。</p>
+            )}
+          </div>
           <div className="mt-3 grid gap-2 sm:grid-cols-2">
             {report.watchlist_observation.strongest.slice(0, 3).map((item) => (
               <div key={`strong-${item.symbol}`} className="rounded-xl bg-white px-3 py-2 text-sm">
@@ -181,6 +220,22 @@ function Metric({ label, value, tone }: { label: string; value: string; tone: "r
       <div className="mt-1 text-xs font-medium text-slate-500">{label}</div>
     </div>
   );
+}
+
+function riskLevelLabel(level: "high" | "medium" | "low") {
+  return {
+    high: "高风险",
+    medium: "需关注",
+    low: "低风险",
+  }[level];
+}
+
+function riskLevelClass(level: "high" | "medium" | "low") {
+  return {
+    high: "bg-red-50 text-red-700 ring-1 ring-red-100",
+    medium: "bg-amber-50 text-amber-700 ring-1 ring-amber-100",
+    low: "bg-slate-100 text-slate-600",
+  }[level];
 }
 
 function NarrativeBlock({ title, items, fallback }: { title: string; items: string[]; fallback: string }) {

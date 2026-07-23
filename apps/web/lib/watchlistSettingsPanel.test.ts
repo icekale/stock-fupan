@@ -36,3 +36,18 @@ test("settings page exposes tickflow health schedule and notification status", (
   assert.match(pageSource, /getTickFlowHealth/);
   assert.match(pageSource, /getWatchlistAlertSchedule/);
 });
+
+test("settings page owns data source configuration and vendor status", () => {
+  const settingsSource = readFileSync(new URL("../app/settings/page.tsx", import.meta.url), "utf8");
+  const homeSource = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
+
+  assert.match(settingsSource, /DataSourceStatusPanel/);
+  assert.match(settingsSource, /getConfigStatus/);
+  assert.match(settingsSource, /getDataSourceOptions/);
+  assert.match(settingsSource, /updateDataSourceOptions/);
+  assert.match(settingsSource, /getAStockVendorStatus/);
+  assert.match(settingsSource, /checkAStockVendor/);
+  assert.match(settingsSource, /updateAStockVendor/);
+  assert.match(settingsSource, /updateAStockVendorAutoCheck/);
+  assert.doesNotMatch(homeSource, /<DataSourceStatusPanel/);
+});

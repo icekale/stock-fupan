@@ -27,6 +27,7 @@ from app.providers.runtime_config import (
     get_runtime_provider_config,
     save_runtime_provider_config,
 )
+from app.services.a_stock_vendor import AStockVendorUpdater
 from app.services.assets import report_kind_label
 from app.services.morning_auction.free_stockdb import FreeStockDbError, FreeStockDbMorningAuctionDataSource
 from app.services.morning_auction.schemas import MorningAuctionTrialEntry
@@ -164,6 +165,10 @@ class WatchlistAlertMuteRequest(BaseModel):
     days: int = 3
 
 
+class VendorAutoCheckRequest(BaseModel):
+    enabled: bool
+
+
 def _status_item(
     name: str,
     role: str,
@@ -189,15 +194,19 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.engine = engine
     app.state.report_schedule_task = asyncio.create_task(_report_schedule_loop())
     app.state.watchlist_alert_schedule_task = asyncio.create_task(_watchlist_alert_schedule_loop())
+    app.state.a_stock_vendor_task = asyncio.create_task(_a_stock_vendor_auto_check_loop())
     try:
         yield
     finally:
         app.state.report_schedule_task.cancel()
         app.state.watchlist_alert_schedule_task.cancel()
+        app.state.a_stock_vendor_task.cancel()
         with suppress(asyncio.CancelledError):
             await app.state.report_schedule_task
         with suppress(asyncio.CancelledError):
             await app.state.watchlist_alert_schedule_task
+        with suppress(asyncio.CancelledError):
+            await app.state.a_stock_vendor_task
 
 
 def _cors_allow_origins() -> list[str]:
@@ -289,6 +298,17 @@ def _watchlist_pool_service() -> WatchlistPoolService:
     return WatchlistPoolService(app.state.engine)
 
 
+def _a_stock_vendor_updater() -> AStockVendorUpdater:
+    injected = getattr(app.state, "a_stock_vendor_updater", None)
+    if injected is not None:
+        return injected
+    settings = get_settings()
+    return AStockVendorUpdater(
+        vendor_dir=Path(settings.a_stock_vendor_dir),
+        timeout_seconds=settings.provider_timeout_seconds,
+    )
+
+
 def _morning_auction_workbench_service() -> MorningAuctionWorkbenchService:
     injected = getattr(app.state, "morning_auction_workbench_service", None)
     if injected is not None:
@@ -332,6 +352,15 @@ async def _watchlist_alert_schedule_loop() -> None:
             await asyncio.to_thread(_run_watchlist_alert_schedule_once)
         except Exception:
             logger.exception("watchlist alert schedule tick failed")
+
+
+async def _a_stock_vendor_auto_check_loop() -> None:
+    while True:
+        await asyncio.sleep(3600)
+        try:
+            await asyncio.to_thread(_a_stock_vendor_updater().run_auto_check_if_due)
+        except Exception:
+            logger.exception("a-stock-data vendor auto check failed")
 
 
 def _run_watchlist_alert_schedule_once() -> dict[str, object]:
@@ -629,6 +658,26 @@ def update_data_source_options(request: RuntimeProviderConfigInput) -> dict[str,
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return build_data_source_options_payload(config, get_settings())
+
+
+@app.get("/api/a-stock-data/vendor/status")
+def get_a_stock_vendor_status() -> dict[str, object]:
+    return _a_stock_vendor_updater().status()
+
+
+@app.post("/api/a-stock-data/vendor/check")
+def check_a_stock_vendor() -> dict[str, object]:
+    return _a_stock_vendor_updater().check()
+
+
+@app.post("/api/a-stock-data/vendor/update")
+def update_a_stock_vendor() -> dict[str, object]:
+    return _a_stock_vendor_updater().update()
+
+
+@app.put("/api/a-stock-data/vendor/auto-check")
+def update_a_stock_vendor_auto_check(request: VendorAutoCheckRequest) -> dict[str, object]:
+    return _a_stock_vendor_updater().set_auto_check(request.enabled)
 
 
 def _external_status(enabled: bool, configured: bool) -> str:

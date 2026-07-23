@@ -347,6 +347,50 @@ def test_data_source_options_api_rejects_tickflow_market_provider() -> None:
     assert "Unsupported MARKET_PROVIDER" in response.text
 
 
+def test_a_stock_vendor_api_checks_and_updates_reference(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'vendor.db'}")
+    monkeypatch.setenv("A_STOCK_VENDOR_DIR", str(tmp_path / "vendor"))
+    get_settings.cache_clear()
+
+    class FakeUpdater:
+        def status(self):
+            return {"local": None, "remote": None, "update_available": False}
+
+        def check(self):
+            return {
+                "local": {"upstream_commit": "old", "version": "3.2.2"},
+                "remote": {"upstream_commit": "new", "version": "3.3.0"},
+                "update_available": True,
+            }
+
+        def update(self):
+            return {
+                "local": {"upstream_commit": "new", "version": "3.3.0"},
+                "remote": {"upstream_commit": "new", "version": "3.3.0"},
+                "update_available": False,
+            }
+
+        def set_auto_check(self, enabled: bool):
+            return {"auto_check_enabled": enabled}
+
+    app.state.a_stock_vendor_updater = FakeUpdater()
+    try:
+        with TestClient(app) as client:
+            status_response = client.get("/api/a-stock-data/vendor/status")
+            check_response = client.post("/api/a-stock-data/vendor/check")
+            update_response = client.post("/api/a-stock-data/vendor/update")
+            auto_response = client.put("/api/a-stock-data/vendor/auto-check", json={"enabled": True})
+    finally:
+        delattr(app.state, "a_stock_vendor_updater")
+
+    assert status_response.status_code == 200
+    assert check_response.json()["remote"]["version"] == "3.3.0"
+    assert check_response.json()["update_available"] is True
+    assert update_response.json()["local"]["upstream_commit"] == "new"
+    assert update_response.json()["update_available"] is False
+    assert auto_response.json()["auto_check_enabled"] is True
+
+
 def test_create_close_report_api_returns_provider_status(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("REPORTS_ROOT", str(tmp_path))
     monkeypatch.setenv("MARKET_PROVIDER", "fake")
@@ -1396,6 +1440,27 @@ class ExplodingQuoteProvider:
         raise AssertionError(f"Quote provider should not be called: {symbols}")
 
 
+class RiskyWatchlistQuoteProvider:
+    provider_name = "risky_quote"
+
+    def get_quotes(self, symbols: list[str]) -> list[WatchlistQuote]:
+        quotes = {
+            "600000.SH": WatchlistQuote(
+                symbol="600000.SH",
+                name="浦发银行",
+                pct_change=-6.2,
+                turnover_rate=8.0,
+            ),
+            "000001.SZ": WatchlistQuote(
+                symbol="000001.SZ",
+                name="平安银行",
+                pct_change=-2.1,
+                turnover_rate=24.5,
+            ),
+        }
+        return [quotes[symbol] for symbol in symbols if symbol in quotes]
+
+
 def test_report_generator_disables_watchlist_by_default(tmp_path: Path) -> None:
     watchlist_service = StaticWatchlistService()
     generator = ReportGenerator(
@@ -1472,7 +1537,7 @@ def test_mobile_report_renderer_contains_watchlist_section(tmp_path: Path) -> No
         news_provider=FakeNewsProvider(),
         llm_provider=FakeLLMProvider(),
         watchlist_service=StaticWatchlistService(),
-        quote_provider=FakeQuoteProvider(),
+        quote_provider=RiskyWatchlistQuoteProvider(),
         watchlist_enabled=True,
     )
 
@@ -1480,6 +1545,10 @@ def test_mobile_report_renderer_contains_watchlist_section(tmp_path: Path) -> No
     html = render_mobile_report_html(result.report)
 
     assert "自选股观察" in html
+    assert "自选股风险检测" in html
+    assert "实时行情结构信号" in html
+    assert "负面新闻" not in html
+    assert "严重异动" not in html
     assert "600000.SH" in html
 
 class FakeReviewSourceProvider:

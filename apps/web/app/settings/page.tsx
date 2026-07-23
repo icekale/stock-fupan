@@ -2,17 +2,46 @@
 
 import { useEffect, useState } from "react";
 import { AdminShell } from "../../components/AdminShell";
-import { getTickFlowHealth, getWatchlistAlertSchedule } from "../../lib/api";
-import type { TickFlowHealthStatus, WatchlistAlertScheduleStatus } from "../../lib/types";
+import { DataSourceStatusPanel } from "../../components/DataSourceStatusPanel";
+import {
+  checkAStockVendor,
+  getAStockVendorStatus,
+  getConfigStatus,
+  getDataSourceOptions,
+  getTickFlowHealth,
+  getWatchlistAlertSchedule,
+  updateAStockVendor,
+  updateAStockVendorAutoCheck,
+  updateDataSourceOptions,
+} from "../../lib/api";
+import type {
+  AStockVendorStatus,
+  ConfigStatusItem,
+  DataSourceOptionsCurrent,
+  DataSourceOptionsResponse,
+  TickFlowHealthStatus,
+  WatchlistAlertScheduleStatus,
+} from "../../lib/types";
 
 export default function SettingsPage() {
   const [health, setHealth] = useState<TickFlowHealthStatus | null>(null);
   const [schedule, setSchedule] = useState<WatchlistAlertScheduleStatus | null>(null);
   const [loadingHealth, setLoadingHealth] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [configItems, setConfigItems] = useState<ConfigStatusItem[]>([]);
+  const [dataSourceOptions, setDataSourceOptions] = useState<DataSourceOptionsResponse | null>(null);
+  const [dataSourceDraft, setDataSourceDraft] = useState<DataSourceOptionsCurrent | null>(null);
+  const [savingDataSources, setSavingDataSources] = useState(false);
+  const [dataSourceError, setDataSourceError] = useState<string | null>(null);
+  const [aStockVendorStatus, setAStockVendorStatus] = useState<AStockVendorStatus | null>(null);
+  const [aStockVendorBusy, setAStockVendorBusy] = useState(false);
+  const [aStockVendorError, setAStockVendorError] = useState<string | null>(null);
 
   useEffect(() => {
     void refreshSchedule();
+    void refreshConfigStatus();
+    void refreshDataSourceOptions();
+    void refreshAStockVendorStatus();
   }, []);
 
   async function refreshSchedule() {
@@ -22,6 +51,39 @@ export default function SettingsPage() {
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "读取提醒计划失败");
+    }
+  }
+
+  async function refreshConfigStatus() {
+    try {
+      const response = await getConfigStatus();
+      setConfigItems(response.items);
+    } catch {
+      setConfigItems([]);
+    }
+  }
+
+  async function refreshDataSourceOptions() {
+    try {
+      const response = await getDataSourceOptions();
+      setDataSourceOptions(response);
+      setDataSourceDraft(response.current);
+      setDataSourceError(null);
+    } catch (err) {
+      setDataSourceOptions(null);
+      setDataSourceDraft(null);
+      setDataSourceError(err instanceof Error ? err.message : "读取数据源选项失败");
+    }
+  }
+
+  async function refreshAStockVendorStatus() {
+    try {
+      const response = await getAStockVendorStatus();
+      setAStockVendorStatus(response);
+      setAStockVendorError(null);
+    } catch (err) {
+      setAStockVendorStatus(null);
+      setAStockVendorError(err instanceof Error ? err.message : "读取 a-stock-data 更新状态失败");
     }
   }
 
@@ -38,6 +100,68 @@ export default function SettingsPage() {
     }
   }
 
+  async function handleSaveDataSources() {
+    if (!dataSourceDraft) {
+      return;
+    }
+    setSavingDataSources(true);
+    setDataSourceError(null);
+    try {
+      const response = await updateDataSourceOptions({
+        market_provider: dataSourceDraft.market_provider,
+        news_provider: dataSourceDraft.news_provider,
+        review_sources: dataSourceDraft.review_sources,
+        fallback_enabled: dataSourceDraft.fallback_enabled,
+      });
+      setDataSourceOptions(response);
+      setDataSourceDraft(response.current);
+      await refreshConfigStatus();
+    } catch (err) {
+      setDataSourceError(err instanceof Error ? err.message : "保存数据源选项失败");
+    } finally {
+      setSavingDataSources(false);
+    }
+  }
+
+  async function handleAStockVendorCheck() {
+    setAStockVendorBusy(true);
+    setAStockVendorError(null);
+    try {
+      const response = await checkAStockVendor();
+      setAStockVendorStatus(response);
+    } catch (err) {
+      setAStockVendorError(err instanceof Error ? err.message : "检查 a-stock-data 更新失败");
+    } finally {
+      setAStockVendorBusy(false);
+    }
+  }
+
+  async function handleAStockVendorUpdate() {
+    setAStockVendorBusy(true);
+    setAStockVendorError(null);
+    try {
+      const response = await updateAStockVendor();
+      setAStockVendorStatus(response);
+    } catch (err) {
+      setAStockVendorError(err instanceof Error ? err.message : "更新 a-stock-data 参考接口失败");
+    } finally {
+      setAStockVendorBusy(false);
+    }
+  }
+
+  async function handleAStockVendorAutoCheck(enabled: boolean) {
+    setAStockVendorBusy(true);
+    setAStockVendorError(null);
+    try {
+      const response = await updateAStockVendorAutoCheck(enabled);
+      setAStockVendorStatus(response);
+    } catch (err) {
+      setAStockVendorError(err instanceof Error ? err.message : "保存 a-stock-data 自动检查失败");
+    } finally {
+      setAStockVendorBusy(false);
+    }
+  }
+
   return (
     <AdminShell>
       <div className="space-y-6">
@@ -45,11 +169,27 @@ export default function SettingsPage() {
           <p className="text-xs font-semibold uppercase tracking-[0.28em] text-slate-400">Settings</p>
           <h1 className="mt-2 text-3xl font-black tracking-tight text-slate-950">设置</h1>
           <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
-            这里集中看 TickFlow、提醒时间和通知渠道状态。健康检查需要手动触发，避免页面加载时消耗付费接口额度。
+            这里集中管理 TickFlow、数据源、a-stock-data 参考接口、提醒时间和通知渠道状态。健康检查需要手动触发，避免页面加载时消耗付费接口额度。
           </p>
         </header>
 
         {error && <p className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
+
+        <DataSourceStatusPanel
+          draft={dataSourceDraft}
+          error={dataSourceError}
+          items={configItems}
+          onDraftChange={setDataSourceDraft}
+          onSave={() => void handleSaveDataSources()}
+          onVendorAutoCheckChange={(enabled) => void handleAStockVendorAutoCheck(enabled)}
+          onVendorCheck={() => void handleAStockVendorCheck()}
+          onVendorUpdate={() => void handleAStockVendorUpdate()}
+          options={dataSourceOptions}
+          saving={savingDataSources}
+          vendorBusy={aStockVendorBusy}
+          vendorError={aStockVendorError}
+          vendorStatus={aStockVendorStatus}
+        />
 
         <section className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]">
           <div className="space-y-6">

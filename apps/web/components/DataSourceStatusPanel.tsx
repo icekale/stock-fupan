@@ -1,4 +1,5 @@
 import type {
+  AStockVendorStatus,
   ConfigStatusItem,
   DataSourceOptionsCurrent,
   DataSourceOptionsResponse,
@@ -44,6 +45,12 @@ export function DataSourceStatusPanel({
   draft,
   saving,
   error,
+  vendorStatus,
+  vendorBusy,
+  vendorError,
+  onVendorCheck,
+  onVendorUpdate,
+  onVendorAutoCheckChange,
   onDraftChange,
   onSave,
 }: {
@@ -52,6 +59,12 @@ export function DataSourceStatusPanel({
   draft: DataSourceOptionsCurrent | null;
   saving: boolean;
   error: string | null;
+  vendorStatus: AStockVendorStatus | null;
+  vendorBusy: boolean;
+  vendorError: string | null;
+  onVendorCheck: () => void;
+  onVendorUpdate: () => void;
+  onVendorAutoCheckChange: (enabled: boolean) => void;
   onDraftChange: (draft: DataSourceOptionsCurrent) => void;
   onSave: () => void;
 }) {
@@ -163,6 +176,78 @@ export function DataSourceStatusPanel({
         </div>
       )}
 
+      <div className="mt-4 rounded-xl border border-slate-100 bg-slate-50 p-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h3 className="text-sm font-black text-slate-950">a-stock-data 接口版本</h3>
+            <p className="mt-1 text-xs leading-5 text-slate-500">
+              只更新上游参考接口和 metadata，不自动改运行时代码。
+            </p>
+          </div>
+          <span
+            className={`inline-flex h-7 w-fit items-center rounded-full px-3 text-xs font-bold ring-1 ${
+              vendorStatus?.update_available
+                ? "bg-amber-50 text-amber-700 ring-amber-100"
+                : "bg-emerald-50 text-emerald-700 ring-emerald-100"
+            }`}
+          >
+            {vendorStatus?.update_available ? "发现更新" : "无待应用参考更新"}
+          </span>
+        </div>
+        <dl className="mt-3 grid gap-2 text-xs leading-5 text-slate-600 md:grid-cols-2">
+          <VendorMeta label="本地版本" value={vendorStatus?.local?.version ?? "未记录"} />
+          <VendorMeta label="上游版本" value={vendorStatus?.remote?.version ?? "未检查"} />
+          <VendorMeta label="本地 commit" value={shortCommit(vendorStatus?.local?.upstream_commit)} />
+          <VendorMeta label="上游 commit" value={shortCommit(vendorStatus?.remote?.upstream_commit)} />
+          <VendorMeta label="最近检查" value={formatDateTime(vendorStatus?.last_checked_at)} />
+          <VendorMeta label="最近更新" value={formatDateTime(vendorStatus?.local?.updated_at)} />
+        </dl>
+        {vendorError && <p className="mt-3 rounded-xl bg-red-50 p-3 text-sm text-red-700">{vendorError}</p>}
+        {vendorStatus?.last_error && (
+          <p className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-800">{vendorStatus.last_error}</p>
+        )}
+        <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_auto_auto] sm:items-center">
+          <button
+            aria-checked={vendorStatus?.auto_check_enabled ?? false}
+            className="flex min-h-11 items-center justify-between gap-4 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-left text-sm font-bold text-slate-800 transition hover:border-slate-300 hover:bg-slate-50 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-60 disabled:active:translate-y-0"
+            disabled={!vendorStatus || vendorBusy}
+            onClick={() => onVendorAutoCheckChange(!(vendorStatus?.auto_check_enabled ?? false))}
+            role="switch"
+            type="button"
+          >
+            <span>每天自动检查</span>
+            <span
+              className={`relative h-6 w-11 shrink-0 rounded-full transition ${
+                vendorStatus?.auto_check_enabled ? "bg-slate-950" : "bg-slate-300"
+              }`}
+              aria-hidden="true"
+            >
+              <span
+                className={`absolute top-1 h-4 w-4 rounded-full bg-white shadow-sm transition-transform ${
+                  vendorStatus?.auto_check_enabled ? "translate-x-6" : "translate-x-1"
+                }`}
+              />
+            </span>
+          </button>
+          <button
+            className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-bold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50 disabled:active:translate-y-0"
+            disabled={vendorBusy}
+            onClick={onVendorCheck}
+            type="button"
+          >
+            {vendorBusy ? "处理中" : "检查更新"}
+          </button>
+          <button
+            className="rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-bold text-white transition hover:bg-slate-800 active:translate-y-px disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-500 disabled:active:translate-y-0"
+            disabled={vendorBusy || !vendorStatus?.update_available}
+            onClick={onVendorUpdate}
+            type="button"
+          >
+            更新参考接口
+          </button>
+        </div>
+      </div>
+
       <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {items.map((item) => {
           const view = statusCopy[item.status] ?? unknownStatusCopy;
@@ -187,6 +272,23 @@ export function DataSourceStatusPanel({
       </div>
     </section>
   );
+}
+
+function VendorMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex min-w-0 items-center justify-between gap-3 rounded-lg bg-white px-3 py-2 ring-1 ring-slate-100">
+      <dt className="shrink-0 font-semibold text-slate-500">{label}</dt>
+      <dd className="truncate text-right font-bold text-slate-800">{value}</dd>
+    </div>
+  );
+}
+
+function shortCommit(value: string | undefined) {
+  return value ? value.slice(0, 8) : "未记录";
+}
+
+function formatDateTime(value: string | null | undefined) {
+  return value ? new Date(value).toLocaleString("zh-CN") : "未记录";
 }
 
 function updateDraft(

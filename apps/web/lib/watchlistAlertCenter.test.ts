@@ -38,6 +38,10 @@ test("alert center page exposes filters and event actions", () => {
   assert.match(pageSource, /到期复看/);
   assert.match(pageSource, /暂不提醒/);
   assert.match(pageSource, /加入复盘结论/);
+  assert.match(pageSource, /自动时段/);
+  assert.match(pageSource, /收盘复盘优先/);
+  assert.match(pageSource, /listReports/);
+  assert.match(pageSource, /orderWatchlistAlerts/);
   assert.match(apiSource, /acknowledgeWatchlistAlert/);
   assert.match(apiSource, /muteWatchlistAlert/);
 });

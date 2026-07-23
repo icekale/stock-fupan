@@ -147,6 +147,14 @@ export type WatchlistMatch = {
   reason: string;
 };
 
+export type WatchlistRiskItem = {
+  symbol: string;
+  name: string | null;
+  pct_change: number | null;
+  risk_level: "high" | "medium" | "low";
+  risk_reasons: string[];
+};
+
 export type WatchlistObservation = {
   import_id: number | null;
   total_count: number;
@@ -154,6 +162,7 @@ export type WatchlistObservation = {
   strongest: WatchlistMatch[];
   weakest: WatchlistMatch[];
   sector_matches: WatchlistMatch[];
+  risk_items: WatchlistRiskItem[];
   notes: string[];
 };
 
@@ -445,6 +454,21 @@ export type DataSourceOptionsUpdate = {
   fallback_enabled: boolean;
 };
 
+export type AStockVendorMetadata = {
+  upstream_repo?: string;
+  upstream_commit?: string;
+  version?: string;
+  updated_at?: string;
+};
+
+export type AStockVendorStatus = {
+  local: AStockVendorMetadata | null;
+  remote: AStockVendorMetadata | null;
+  update_available: boolean;
+  auto_check_enabled: boolean;
+  last_checked_at: string | null;
+  last_error: string | null;
+};
 
 export type MorningAuctionBucket = "selected" | "attack" | "watch" | "avoid";
 
