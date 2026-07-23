@@ -2,7 +2,10 @@ from dataclasses import dataclass
 
 from app.config import Settings
 from app.providers.a_stock_data import (
+    AStockDragonTigerProvider,
     AStockIndustryRankProvider,
+    AStockMarketDataProvider,
+    AStockQuoteProvider,
     AStockThsHotProvider,
     EastmoneyGlobalNewsProvider,
 )
@@ -18,6 +21,7 @@ from app.providers.ocr import (
     OcrProvider,
     OpenAIVisionOcrProvider,
 )
+from app.providers.quotes import FakeQuoteProvider, FallbackQuoteProvider, QuoteProvider
 from app.providers.review_sources import (
     EastmoneyZtFpProvider,
     ReviewSourceAggregator,
@@ -25,13 +29,6 @@ from app.providers.review_sources import (
 )
 from app.providers.runtime_config import RuntimeProviderConfigState
 from app.providers.thsdk import ThsdkProvider
-from app.providers.tickflow import (
-    FakeTickFlowProvider,
-    FallbackTickFlowProvider,
-    TickFlowMarketDataProvider,
-    TickFlowProvider,
-    TickFlowQuoteProvider,
-)
 
 
 @dataclass(frozen=True)
@@ -40,15 +37,19 @@ class ProviderBundle:
     news_provider: NewsProvider
     llm_provider: LLMProvider
     ocr_provider: OcrProvider
-    tickflow_provider: TickFlowQuoteProvider
+    quote_provider: QuoteProvider
     review_source_provider: ReviewSourceAggregator | None = None
+
+    @property
+    def tickflow_provider(self) -> QuoteProvider:
+        return self.quote_provider
 
     def close(self) -> None:
         _close_provider(self.market_provider)
         _close_provider(self.news_provider)
         _close_provider(self.llm_provider)
         _close_provider(self.ocr_provider)
-        _close_provider(self.tickflow_provider)
+        _close_provider(self.quote_provider)
         if self.review_source_provider is not None:
             _close_provider(self.review_source_provider)
 
@@ -69,7 +70,7 @@ def create_provider_bundle(
         news_provider=_create_news_provider(settings, runtime_config),
         llm_provider=_create_llm_provider(settings),
         ocr_provider=_create_ocr_provider(settings),
-        tickflow_provider=_create_tickflow_provider(settings),
+        quote_provider=_create_quote_provider(settings),
         review_source_provider=_create_review_source_provider(settings, runtime_config),
     )
 
@@ -88,16 +89,22 @@ def _create_market_provider(
     settings: Settings,
     runtime_config: RuntimeProviderConfigState | None = None,
 ) -> MarketDataProvider:
-    market_provider = str(_runtime_value(runtime_config, "market_provider", settings.market_provider))
+    market_provider = _normalize_market_provider(
+        str(_runtime_value(runtime_config, "market_provider", settings.market_provider))
+    )
     if market_provider == "fake":
         return FakeMarketDataProvider()
-    if market_provider == "tickflow":
-        return TickFlowMarketDataProvider(
-            api_key=settings.tickflow_api_key,
-            base_url=settings.tickflow_base_url,
+    if market_provider == "a_stock":
+        return AStockMarketDataProvider(
             timeout_seconds=settings.provider_timeout_seconds,
         )
     raise ValueError(f"Unsupported MARKET_PROVIDER: {market_provider}")
+
+
+def _normalize_market_provider(value: str) -> str:
+    if value == "tickflow":
+        return "a_stock"
+    return value
 
 
 def _create_news_provider(
@@ -162,20 +169,12 @@ def _create_ocr_provider(settings: Settings) -> OcrProvider:
     raise ValueError(f"Unsupported OCR_PROVIDER: {settings.ocr_provider}")
 
 
-def _create_tickflow_provider(settings: Settings) -> TickFlowQuoteProvider:
-    if settings.tickflow_provider == "fake":
-        return FakeTickFlowProvider()
-    if settings.tickflow_provider == "tickflow":
-        return FallbackTickFlowProvider(
-            primary=TickFlowProvider(
-                api_key=settings.tickflow_api_key,
-                base_url=settings.tickflow_base_url,
-                timeout_seconds=settings.provider_timeout_seconds,
-            ),
-            fallback=FakeTickFlowProvider(),
-            fallback_enabled=settings.provider_fallback_enabled,
-        )
-    raise ValueError(f"Unsupported TICKFLOW_PROVIDER: {settings.tickflow_provider}")
+def _create_quote_provider(settings: Settings) -> QuoteProvider:
+    return FallbackQuoteProvider(
+        primary=AStockQuoteProvider(timeout_seconds=settings.provider_timeout_seconds),
+        fallback=FakeQuoteProvider(),
+        fallback_enabled=settings.provider_fallback_enabled,
+    )
 
 
 def _create_review_source_provider(
@@ -212,6 +211,8 @@ def _create_review_source_provider(
         providers.append(AStockThsHotProvider(timeout_seconds=settings.provider_timeout_seconds))
     if "a_stock_industry_rank" in review_sources:
         providers.append(AStockIndustryRankProvider(timeout_seconds=settings.provider_timeout_seconds))
+    if "a_stock_dragon_tiger" in review_sources:
+        providers.append(AStockDragonTigerProvider(timeout_seconds=settings.provider_timeout_seconds))
     return ReviewSourceAggregator(providers=providers) if providers else None
 
 
@@ -241,7 +242,6 @@ def _validate_production_providers(
         "NEWS_PROVIDER": news_provider,
         "LLM_PROVIDER": settings.llm_provider,
         "OCR_PROVIDER": settings.ocr_provider,
-        "TICKFLOW_PROVIDER": settings.tickflow_provider,
     }
     for name, value in fake_providers.items():
         if value == "fake":

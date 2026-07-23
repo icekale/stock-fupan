@@ -162,6 +162,58 @@ def test_quality_gate_degrades_when_board_rank_source_fails() -> None:
     assert "board_rank_source_failed" in [issue.code for issue in result.warnings]
 
 
+def test_quality_gate_warns_when_enabled_dragon_tiger_source_fails() -> None:
+    from app.rules.quality_gate import evaluate_quality_gate
+
+    provider_status = success_provider_status()
+    provider_status["review_sources"].append(
+        {
+            "source": "a-stock-data 东财龙虎榜",
+            "source_url": "https://data.eastmoney.com/stock/lhb.html",
+            "status": "failed",
+            "reason": "东财龙虎榜无结果",
+            "record_count": 0,
+            "seat_detail_count": 0,
+        }
+    )
+
+    result = evaluate_quality_gate(
+        report=make_report(),
+        validation=ValidationResult(is_valid=True, errors=[]),
+        provider_status=provider_status,
+        structured_review_status={"provider": "rule", "status": "success", "fallback_used": False},
+    )
+
+    assert any(issue.code == "dragon_tiger_source_failed" for issue in result.warnings)
+    assert result.score is not None
+    assert result.score <= 95
+
+
+def test_quality_gate_does_not_warn_when_dragon_tiger_source_is_disabled() -> None:
+    from app.rules.quality_gate import evaluate_quality_gate
+
+    provider_status = success_provider_status()
+    provider_status["review_sources"].append(
+        {
+            "source": "a-stock-data 东财龙虎榜",
+            "status": "disabled",
+            "reason": None,
+            "record_count": 0,
+            "seat_detail_count": 0,
+        }
+    )
+
+    result = evaluate_quality_gate(
+        report=make_report(),
+        validation=ValidationResult(is_valid=True, errors=[]),
+        provider_status=provider_status,
+        structured_review_status={"provider": "rule", "status": "success", "fallback_used": False},
+    )
+
+    assert all(issue.code != "dragon_tiger_source_failed" for issue in result.warnings)
+    assert result.score == 100
+
+
 def test_quality_gate_blocks_fake_market_and_missing_front_row() -> None:
     from app.rules.quality_gate import evaluate_quality_gate
 

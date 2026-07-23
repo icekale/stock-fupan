@@ -147,6 +147,14 @@ export type WatchlistMatch = {
   reason: string;
 };
 
+export type WatchlistRiskItem = {
+  symbol: string;
+  name: string | null;
+  pct_change: number | null;
+  risk_level: "high" | "medium" | "low";
+  risk_reasons: string[];
+};
+
 export type WatchlistObservation = {
   import_id: number | null;
   total_count: number;
@@ -154,6 +162,7 @@ export type WatchlistObservation = {
   strongest: WatchlistMatch[];
   weakest: WatchlistMatch[];
   sector_matches: WatchlistMatch[];
+  risk_items: WatchlistRiskItem[];
   notes: string[];
 };
 
@@ -213,10 +222,10 @@ export type SectorProviderStatus = ProviderStatus & {
 
 export type ProviderStatusSummary = {
   market: ProviderStatus;
-  market_tickflow?: ProviderStatus;
+  market_quote?: ProviderStatus;
   news: SectorProviderStatus[];
-  tickflow?: ProviderStatus;
-  watchlist_tickflow?: ProviderStatus;
+  quote?: ProviderStatus;
+  watchlist_quote?: ProviderStatus;
   review_sources?: Array<ProviderStatus & { source?: string }>;
 };
 
@@ -313,6 +322,97 @@ export type ReportScheduleUpdate = {
   timezone: string;
 };
 
+export type WatchlistAlertEvent = {
+  id: number;
+  stock_id: number | null;
+  symbol: string;
+  name: string | null;
+  event_type: "risk" | "opportunity" | "plan" | "intraday" | "stale_review";
+  severity: "high" | "medium" | "low";
+  status: "active" | "sent" | "acknowledged" | "muted" | "resolved";
+  trigger_reason: string;
+  ai_comment: string | null;
+  source_status: Record<string, unknown>;
+  market_snapshot: Record<string, unknown>;
+  rule_snapshot: Record<string, unknown>;
+  notification_status: Record<string, unknown>;
+  first_seen_at: string;
+  last_seen_at: string;
+  muted_until?: string | null;
+};
+
+export type WatchlistAlertListResponse = {
+  items: WatchlistAlertEvent[];
+};
+
+export type WatchlistAlertScheduleStatus = {
+  enabled: boolean;
+  morning_time: string;
+  afternoon_time: string;
+  review_time: string;
+  timezone: string;
+  last_run_at: string | null;
+  last_result: Record<string, unknown> | null;
+};
+
+export type TickFlowHealthStatus = {
+  configured: boolean;
+  status: string;
+  base_url?: string;
+  timeout_seconds?: number;
+  realtime_quotes: string;
+  daily_kline: string;
+  minute_kline: string;
+  latency_ms: number | null;
+  last_error: string | null;
+  fallback_source: string | null;
+};
+
+export type WatchlistPoolGroup = {
+  id: number;
+  name: string;
+  is_default: boolean;
+  sort_order: number;
+};
+
+export type WatchlistPoolStock = {
+  id: number;
+  symbol: string;
+  code: string;
+  exchange: string;
+  name: string | null;
+  status: "观察中" | "持有中";
+  tags: string[];
+  entry_reason: string | null;
+  planned_buy_price: string | null;
+  invalid_condition: string | null;
+  themes: string[];
+  last_review_conclusion: string | null;
+  today_risk_hint: string | null;
+  groups: WatchlistPoolGroup[];
+};
+
+export type WatchlistPoolState = {
+  groups: WatchlistPoolGroup[];
+  stocks: WatchlistPoolStock[];
+};
+
+export type WatchlistStockPayload = {
+  symbol?: string;
+  code?: string | null;
+  exchange?: string | null;
+  name?: string | null;
+  group_ids?: number[];
+  tags?: string[];
+  status?: "观察中" | "持有中";
+  entry_reason?: string | null;
+  planned_buy_price?: string | null;
+  invalid_condition?: string | null;
+  themes?: string[];
+  last_review_conclusion?: string | null;
+  today_risk_hint?: string | null;
+};
+
 export type DataSourceSelectionMode = "single" | "multiple";
 
 export type DataSourceOptionItem = {
@@ -352,4 +452,78 @@ export type DataSourceOptionsUpdate = {
   news_provider: string;
   review_sources: string[];
   fallback_enabled: boolean;
+};
+
+export type AStockVendorMetadata = {
+  upstream_repo?: string;
+  upstream_commit?: string;
+  version?: string;
+  updated_at?: string;
+};
+
+export type AStockVendorStatus = {
+  local: AStockVendorMetadata | null;
+  remote: AStockVendorMetadata | null;
+  update_available: boolean;
+  auto_check_enabled: boolean;
+  last_checked_at: string | null;
+  last_error: string | null;
+};
+
+export type MorningAuctionBucket = "selected" | "attack" | "watch" | "avoid";
+
+export type MorningAuctionPredictionItem = {
+  symbol: string;
+  name: string;
+  prob_3pct: number;
+  strong_5pct_score: number;
+  bucket: MorningAuctionBucket;
+  rank: number | null;
+  prev_close_price: number | null;
+  feature_end_date: string | null;
+  guard_rule: string | null;
+  strategy_note: string | null;
+  auction_reasons: string[];
+  trend_reasons: string[];
+  sector_reasons: string[];
+  risk_flags: string[];
+  data_quality: string[];
+};
+
+export type MorningAuctionRun = {
+  run_id: string;
+  trade_date: string;
+  model_version: string;
+  feature_version: string;
+  source_status: Record<string, string>;
+  selected_pool: MorningAuctionPredictionItem[];
+  attack_pool: MorningAuctionPredictionItem[];
+  watch_pool: MorningAuctionPredictionItem[];
+  avoid_pool: MorningAuctionPredictionItem[];
+  items: MorningAuctionPredictionItem[];
+};
+
+export type MorningAuctionTrialEntry = {
+  id?: string | null;
+  trade_date: string;
+  symbol: string;
+  name?: string;
+  rank?: number | null;
+  prob_3pct?: number | null;
+  mode?: string;
+  planned_capital?: number | null;
+  entry_price?: number | null;
+  shares?: number | null;
+  entry_time?: string | null;
+  guard_time?: string;
+  guard_price?: number | null;
+  guard_triggered?: boolean | null;
+  exit_price?: number | null;
+  exit_time?: string | null;
+  status?: string;
+  notes?: string;
+};
+
+export type MorningAuctionTrialListResponse = {
+  items: MorningAuctionTrialEntry[];
 };

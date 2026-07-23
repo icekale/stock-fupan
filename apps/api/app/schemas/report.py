@@ -1,5 +1,5 @@
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -50,6 +50,52 @@ class CapitalEvidence(BaseModel):
     active_stock_count: int = 0
     strength: str
     summary: str
+
+
+class DragonTigerSeat(BaseModel):
+    name: str
+    buy_wan: float = 0
+    sell_wan: float = 0
+    net_wan: float = 0
+    role: str = "brokerage"
+
+
+class DragonTigerStock(BaseModel):
+    code: str
+    name: str
+    reason: str = ""
+    close: float | None = None
+    change_pct: float | None = None
+    turnover_pct: float | None = None
+    net_buy_wan: float = 0
+    buy_wan: float = 0
+    sell_wan: float = 0
+    seats_buy: list[DragonTigerSeat] = Field(default_factory=list)
+    seats_sell: list[DragonTigerSeat] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+
+
+class DragonTigerSummary(BaseModel):
+    trade_date: str
+    source: str = "a-stock-data 东财龙虎榜"
+    source_url: str = "https://data.eastmoney.com/stock/lhb.html"
+    status: str = "success"
+    reason: str | None = None
+    total_records: int = 0
+    positive_net_count: int = 0
+    negative_net_count: int = 0
+    net_buy_total_wan: float = 0
+    top_net_buy: list[DragonTigerStock] = Field(default_factory=list)
+    top_net_sell: list[DragonTigerStock] = Field(default_factory=list)
+    highlighted_stocks: list[DragonTigerStock] = Field(default_factory=list)
+    institution_net_buy_wan: float = 0
+    connect_net_buy_wan: float = 0
+    mainline_match_count: int = 0
+    mainline_match_names: list[str] = Field(default_factory=list)
+    sentiment: str = "unknown"
+    strength: str = "unknown"
+    conclusion: str = ""
+    risk_notes: list[str] = Field(default_factory=list)
 
 
 class NewsItem(BaseModel):
@@ -158,6 +204,14 @@ class WatchlistMatch(BaseModel):
     reason: str
 
 
+class WatchlistRiskItem(BaseModel):
+    symbol: str
+    name: str | None = None
+    pct_change: float | None = None
+    risk_level: Literal["high", "medium", "low"]
+    risk_reasons: list[str] = Field(default_factory=list)
+
+
 class WatchlistObservation(BaseModel):
     import_id: int | None = None
     total_count: int = 0
@@ -165,6 +219,7 @@ class WatchlistObservation(BaseModel):
     strongest: list[WatchlistMatch] = Field(default_factory=list)
     weakest: list[WatchlistMatch] = Field(default_factory=list)
     sector_matches: list[WatchlistMatch] = Field(default_factory=list)
+    risk_items: list[WatchlistRiskItem] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
 
 
@@ -196,6 +251,7 @@ class ReportDTO(BaseModel):
     sectors: list[SectorCandidate]
     narrative: ReportNarrative
     news: list[NewsItem] = Field(default_factory=list)
+    dragon_tiger: DragonTigerSummary | None = None
     previous_strong_themes: list[HistoricalThemeReview] = Field(default_factory=list)
     structured_review: StructuredReviewDTO | None = None
     watchlist_observation: WatchlistObservation | None = None

@@ -1,6 +1,7 @@
 import pytest
 
 from app.config import Settings
+from app.providers.a_stock_data import AStockMarketDataProvider, AStockQuoteProvider
 from app.providers.factory import create_provider_bundle
 from app.providers.llm import OpenAILLMProvider
 from app.providers.market import (
@@ -11,8 +12,7 @@ from app.providers.market import (
 )
 from app.providers.market import ProviderStatus
 from app.providers.news import AnspireNewsProvider, FakeNewsProvider, FallbackNewsProvider, SectorNewsResult
-from app.providers.tickflow import FallbackTickFlowProvider
-from app.providers.tickflow import TickFlowMarketDataProvider
+from app.providers.quotes import FallbackQuoteProvider
 from app.schemas.report import NewsItem
 
 
@@ -244,20 +244,15 @@ def test_anspire_provider_sanitizes_request_failures() -> None:
     assert "Authorization" not in message
 
 
-def test_provider_factory_uses_tickflow_market_without_market_fallback() -> None:
+def test_provider_factory_normalizes_legacy_tickflow_market_provider() -> None:
     settings = Settings(
         market_provider="tickflow",
-        news_provider="anspire",
-        provider_fallback_enabled=False,
-        anspire_api_key="secret-key",
-        tickflow_api_key="tk-test-local",
+        news_provider="fake",
     )
 
     bundle = create_provider_bundle(settings)
 
-    assert isinstance(bundle.market_provider, TickFlowMarketDataProvider)
-    assert isinstance(bundle.news_provider, FallbackNewsProvider)
-    assert isinstance(bundle.news_provider.primary, AnspireNewsProvider)
+    assert isinstance(bundle.market_provider, AStockMarketDataProvider)
 
 
 def test_provider_factory_can_force_fake_providers() -> None:
@@ -269,11 +264,19 @@ def test_provider_factory_can_force_fake_providers() -> None:
     assert isinstance(bundle.news_provider, FakeNewsProvider)
 
 
+def test_provider_factory_can_use_a_stock_market_provider() -> None:
+    settings = Settings(market_provider="a_stock", news_provider="fake")
+
+    bundle = create_provider_bundle(settings)
+
+    assert isinstance(bundle.market_provider, AStockMarketDataProvider)
+
+
 def test_provider_bundle_close_closes_nested_anspire_owned_client(monkeypatch) -> None:
     owned_client = FakeHttpClient()
     monkeypatch.setattr("app.providers.news.httpx.Client", lambda: owned_client)
     settings = Settings(
-        market_provider="tickflow",
+        market_provider="a_stock",
         news_provider="anspire",
         anspire_api_key="secret-key",
     )
@@ -295,7 +298,7 @@ def test_settings_default_to_rule_structured_review() -> None:
 def test_settings_defaults_disable_watchlist_and_production_fake_allowance() -> None:
     settings = Settings(_env_file=None)
 
-    assert settings.market_provider == "tickflow"
+    assert settings.market_provider == "a_stock"
     assert settings.report_watchlist_enabled is False
     assert settings.production_allow_fake_providers is False
 
@@ -310,7 +313,7 @@ def test_provider_factory_rejects_fake_market_provider_in_production() -> None:
 def test_provider_factory_rejects_fake_fallback_in_production() -> None:
     settings = Settings(
         app_env="production",
-        market_provider="tickflow",
+        market_provider="a_stock",
         news_provider="anspire",
         llm_provider="openai",
         openai_api_key="sk-test-local",
@@ -326,8 +329,30 @@ def test_provider_factory_rejects_fake_fallback_in_production() -> None:
         create_provider_bundle(settings)
 
 
+def test_provider_factory_production_allows_a_stock_without_tickflow_provider() -> None:
+    settings = Settings(
+        app_env="production",
+        market_provider="a_stock",
+        news_provider="anspire",
+        llm_provider="openai",
+        openai_api_key="sk-test-local",
+        ocr_provider="openai",
+        ocr_fallback_enabled=False,
+        tickflow_provider="fake",
+        anspire_api_key="secret-key",
+        provider_fallback_enabled=False,
+        structured_review_fallback_enabled=False,
+    )
+
+    bundle = create_provider_bundle(settings)
+
+    assert isinstance(bundle.market_provider, AStockMarketDataProvider)
+    assert isinstance(bundle.quote_provider.primary, AStockQuoteProvider)
+
+
 def test_provider_factory_can_create_openai_llm_provider() -> None:
     settings = Settings(
+        market_provider="a_stock",
         llm_provider="openai",
         openai_api_key="sk-test-local",
         openai_base_url="https://api.openai.com/v1",
@@ -340,13 +365,10 @@ def test_provider_factory_can_create_openai_llm_provider() -> None:
     assert bundle.llm_provider.model_name == "gpt-4.1-mini"
 
 
-def test_provider_factory_includes_tickflow_provider() -> None:
-    settings = Settings(
-        tickflow_provider="tickflow",
-        tickflow_api_key="tk-test-local",
-        tickflow_base_url="https://api.tickflow.org",
-    )
+def test_provider_factory_defaults_to_a_stock_quote_provider() -> None:
+    settings = Settings(market_provider="a_stock")
 
     bundle = create_provider_bundle(settings)
 
-    assert isinstance(bundle.tickflow_provider, FallbackTickFlowProvider)
+    assert isinstance(bundle.quote_provider, FallbackQuoteProvider)
+    assert isinstance(bundle.quote_provider.primary, AStockQuoteProvider)

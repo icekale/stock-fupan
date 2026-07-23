@@ -9,6 +9,8 @@ from typing import Any, Literal
 
 import httpx
 
+from app.schemas.report import DragonTigerSummary
+
 
 ReviewSourceStatus = Literal["success", "failed", "disabled"]
 
@@ -58,6 +60,7 @@ class ReviewSourceResult:
     hot_stocks: list[ReviewStockEvidence] = field(default_factory=list)
     market_notes: list[str] = field(default_factory=list)
     board_efficiency: str | None = None
+    dragon_tiger: DragonTigerSummary | None = None
 
 
 class _TextHTMLParser(HTMLParser):

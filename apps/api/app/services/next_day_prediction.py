@@ -60,7 +60,7 @@ def _prediction_for_sector(
             risk_labels=_risk_labels(report, sector, source_basis),
             score_breakdown=None,
             source_basis=source_basis,
-            primary_basis=_primary_basis(sector),
+            primary_basis=_primary_basis(report, sector),
             secondary_basis=_secondary_basis(source_basis),
             market_quality_basis=market_quality_basis,
             evidence_notes=evidence_notes,
@@ -80,7 +80,7 @@ def _prediction_for_sector(
         risk_labels=_risk_labels(report, sector, source_basis),
         score_breakdown=breakdown,
         source_basis=source_basis,
-        primary_basis=_primary_basis(sector),
+        primary_basis=_primary_basis(report, sector),
         secondary_basis=_secondary_basis(source_basis),
         market_quality_basis=market_quality_basis,
         evidence_notes=evidence_notes,
@@ -91,11 +91,14 @@ def _curated_sources(sources: list[str]) -> list[str]:
     return [source for source in sources if source in CURATED_REVIEW_SOURCES]
 
 
-def _primary_basis(sector: SectorCandidate) -> list[str]:
-    basis = [f"TickFlow行情：强度{sector.score:.1f}、排名{sector.rank}、板块涨幅{sector.pct_change:+.2f}%"]
+def _primary_basis(report: ReportDTO, sector: SectorCandidate) -> list[str]:
+    basis = [f"行情强度：强度{sector.score:.1f}、排名{sector.rank}、板块涨幅{sector.pct_change:+.2f}%"]
     capital_evidence = _capital_evidence_for_sector(sector)
     if capital_evidence is not None:
-        basis.append(f"TickFlow资金：{capital_evidence.summary}，资金强度{capital_evidence.strength}")
+        basis.append(f"前排资金：{capital_evidence.summary}，资金强度{capital_evidence.strength}")
+    dragon_tiger_basis = _dragon_tiger_basis(report, sector)
+    if dragon_tiger_basis is not None:
+        basis.append(dragon_tiger_basis)
     news_count = len(_distinct_text(sector.news_summaries))
     if news_count:
         basis.append(f"Anspire新闻：{news_count}条催化")
@@ -182,7 +185,7 @@ def _score_breakdown(
         front_row_quality += 4
     if _has_height_evidence(sector):
         front_row_quality += 6
-    capital_strength = _capital_strength_points(sector)
+    capital_strength = _capital_strength_points(sector) + _dragon_tiger_capital_points(report, sector)
     board_quality = _board_quality_points(board_efficiency)
     catalyst = 8 if len(_distinct_text(sector.news_summaries)) >= 2 else 5 if sector.news_summaries else 0
     risk_penalty = _risk_penalty(report, sector)
@@ -252,12 +255,16 @@ def _trigger_conditions(report: ReportDTO, sector: SectorCandidate) -> list[str]
         if stock_text
         else "暂未解析到明确前排股，需先确认板块内主动领涨标的。"
     )
-    return [
+    conditions = [
         first,
         f"观察{sector.name}是否继续处于市场强势组前列。",
         "指数不出现明显放量下杀，成交额维持活跃区间。",
         "前排分歧温和，板块内不出现集体负反馈。",
     ]
+    dragon_tiger_matches = _dragon_tiger_sector_matches(report, sector)
+    if dragon_tiger_matches:
+        conditions.append(f"龙虎榜命中{'、'.join(dragon_tiger_matches)}，观察净买后的承接是否延续。")
+    return conditions
 
 
 def _insufficient_trigger_conditions(sector: SectorCandidate) -> list[str]:
@@ -344,6 +351,39 @@ def _capital_strength_points(sector: SectorCandidate) -> int:
     if evidence.strength == "中":
         return 4
     return -4
+
+
+def _dragon_tiger_capital_points(report: ReportDTO, sector: SectorCandidate) -> int:
+    if not _dragon_tiger_sector_matches(report, sector):
+        return 0
+    return 8
+
+
+def _dragon_tiger_basis(report: ReportDTO, sector: SectorCandidate) -> str | None:
+    if report.dragon_tiger is None or report.dragon_tiger.status != "success":
+        return None
+    matches = _dragon_tiger_sector_matches(report, sector)
+    if not matches:
+        return None
+    return f"龙虎榜：{'、'.join(matches)}净买靠前，情绪{report.dragon_tiger.sentiment}、强度{report.dragon_tiger.strength}"
+
+
+def _dragon_tiger_sector_matches(report: ReportDTO, sector: SectorCandidate) -> list[str]:
+    if report.dragon_tiger is None or report.dragon_tiger.status != "success":
+        return []
+    sector_stock_names = {stock.name for stock in sector.top_stocks if stock.name}
+    sector_stock_codes = {_normalize_stock_code(stock.code) for stock in sector.top_stocks if stock.code}
+    output: list[str] = []
+    for stock in report.dragon_tiger.top_net_buy:
+        if not stock.name or stock.name in output or stock.net_buy_wan <= 0:
+            continue
+        if stock.name in sector_stock_names or _normalize_stock_code(stock.code) in sector_stock_codes:
+            output.append(stock.name)
+    return output[:3]
+
+
+def _normalize_stock_code(code: str) -> str:
+    return code.split(".", 1)[0]
 
 
 def _capital_evidence_for_sector(sector: SectorCandidate):

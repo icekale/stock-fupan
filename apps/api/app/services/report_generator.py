@@ -4,8 +4,8 @@ from pathlib import Path
 from app.providers.llm import LLMProvider
 from app.providers.market import MarketDataProvider, ProviderStatus
 from app.providers.news import NewsProvider, SectorNewsResult
+from app.providers.quotes import QuoteProvider
 from app.providers.review_sources import ReviewSourceResult
-from app.providers.tickflow import TickFlowQuoteProvider
 from app.renderers.html_renderer import render_mobile_report_html
 from app.renderers.png_exporter import export_pdf, export_png
 from app.rules.quality_gate import evaluate_quality_gate
@@ -58,7 +58,8 @@ class ReportGenerator:
         structured_review_provider: str = "rule",
         structured_review_fallback_enabled: bool = True,
         watchlist_service: object | None = None,
-        tickflow_provider: TickFlowQuoteProvider | None = None,
+        quote_provider: QuoteProvider | None = None,
+        tickflow_provider: QuoteProvider | None = None,
         watchlist_enabled: bool = False,
         review_source_provider: object | None = None,
         previous_review_html_path: Path | None = None,
@@ -70,7 +71,7 @@ class ReportGenerator:
         self.structured_review_provider = structured_review_provider
         self.structured_review_fallback_enabled = structured_review_fallback_enabled
         self.watchlist_service = watchlist_service
-        self.tickflow_provider = tickflow_provider
+        self.quote_provider = quote_provider or tickflow_provider
         self.watchlist_enabled = watchlist_enabled
         self.review_source_provider = review_source_provider
         self.previous_review_html_path = previous_review_html_path
@@ -161,6 +162,7 @@ class ReportGenerator:
             )
             for scored in scored_sectors
         ]
+        dragon_tiger_summary = _dragon_tiger_summary(review_source_results)
 
         report = ReportDTO(
             trade_date=trade_date,
@@ -173,6 +175,7 @@ class ReportGenerator:
             sectors=sector_candidates,
             narrative=narrative,
             news=news_items,
+            dragon_tiger=dragon_tiger_summary,
         )
         report.next_day_predictions = build_next_day_predictions(
             report=report,
@@ -183,7 +186,7 @@ class ReportGenerator:
             trade_date=trade_date,
             current_sectors=report.sectors,
             previous_review_html_path=self.previous_review_html_path,
-            tickflow_provider=self.tickflow_provider,
+            quote_provider=self.quote_provider,
         )
         structured_review, structured_review_status = generate_structured_review(
             report=report,
@@ -192,8 +195,8 @@ class ReportGenerator:
             fallback_enabled=self.structured_review_fallback_enabled,
         )
         report.structured_review = structured_review
-        watchlist_tickflow_status = ProviderStatus(
-            provider="tickflow",
+        watchlist_quote_status = ProviderStatus(
+            provider="quote",
             status="disabled",
             fallback_used=False,
             reason="自选股模块未开启",
@@ -202,13 +205,13 @@ class ReportGenerator:
             latest_watchlist = self.watchlist_service.get_latest()
             symbols = [item.symbol for item in latest_watchlist.items]
             quotes = []
-            if self.tickflow_provider is not None and symbols:
-                if hasattr(self.tickflow_provider, "get_quotes_with_status"):
-                    quotes, watchlist_tickflow_status = self.tickflow_provider.get_quotes_with_status(symbols)
+            if self.quote_provider is not None and symbols:
+                if hasattr(self.quote_provider, "get_quotes_with_status"):
+                    quotes, watchlist_quote_status = self.quote_provider.get_quotes_with_status(symbols)
                 else:
-                    quotes = self.tickflow_provider.get_quotes(symbols)
-                    watchlist_tickflow_status = ProviderStatus(
-                        provider=getattr(self.tickflow_provider, "provider_name", "tickflow"),
+                    quotes = self.quote_provider.get_quotes(symbols)
+                    watchlist_quote_status = ProviderStatus(
+                        provider=getattr(self.quote_provider, "provider_name", "quote"),
                         status="success",
                         fallback_used=False,
                         reason=None,
@@ -222,10 +225,10 @@ class ReportGenerator:
         validation = validate_narrative_facts(report)
         provider_status = {
             "market": market_status.model_dump(mode="json"),
-            "market_tickflow": market_status.model_dump(mode="json"),
+            "market_quote": market_status.model_dump(mode="json"),
             "news": news_statuses,
-            "tickflow": watchlist_tickflow_status.model_dump(mode="json"),
-            "watchlist_tickflow": watchlist_tickflow_status.model_dump(mode="json"),
+            "quote": watchlist_quote_status.model_dump(mode="json"),
+            "watchlist_quote": watchlist_quote_status.model_dump(mode="json"),
             "review_sources": [_review_source_status(result) for result in review_source_results],
         }
         structured_review_status_payload = structured_review_status.model_dump(mode="json")
@@ -298,7 +301,7 @@ class ReportGenerator:
         review_sources: list[str] = []
         review_notes: list[str] = []
         top_stocks: list[StockCandidate] = [
-            _tickflow_quote_to_candidate(stock)
+            _quote_to_candidate(stock)
             for stock in (frontline_stocks or [])
         ]
         sector_name = getattr(scored, "name")
@@ -425,10 +428,11 @@ def _review_stock_to_candidate(stock: object, source: str) -> StockCandidate:
     )
 
 
-def _tickflow_quote_to_candidate(quote: object) -> StockCandidate:
+def _quote_to_candidate(quote: object) -> StockCandidate:
     turnover_cny = getattr(quote, "turnover_cny") or None
     turnover_rate = getattr(quote, "turnover_rate") or None
     pct_change = getattr(quote, "pct_change") or 0.0
+    tags = list(getattr(quote, "tags", []) or [])
     return StockCandidate(
         code=getattr(quote, "symbol") or "",
         name=getattr(quote, "name") or getattr(quote, "symbol") or "",
@@ -440,16 +444,16 @@ def _tickflow_quote_to_candidate(quote: object) -> StockCandidate:
             turnover_rate,
             pct_change,
         ),
-        tags=["TickFlow前排"],
+        tags=tags or ["行情前排"],
     )
 
 
 def _build_capital_evidence(stocks: list[StockCandidate]) -> CapitalEvidence | None:
-    tickflow_stocks = [stock for stock in stocks if "TickFlow前排" in stock.tags]
-    if not tickflow_stocks:
+    frontline_stocks = [stock for stock in stocks if any("前排" in tag for tag in stock.tags)]
+    if not frontline_stocks:
         return None
-    turnover_values = [stock.turnover_cny for stock in tickflow_stocks if stock.turnover_cny is not None]
-    turnover_rate_values = [stock.turnover_rate for stock in tickflow_stocks if stock.turnover_rate is not None]
+    turnover_values = [stock.turnover_cny for stock in frontline_stocks if stock.turnover_cny is not None]
+    turnover_rate_values = [stock.turnover_rate for stock in frontline_stocks if stock.turnover_rate is not None]
     front_row_turnover = sum(turnover_values) if turnover_values else None
     avg_turnover_rate = (
         round(sum(turnover_rate_values) / len(turnover_rate_values), 2)
@@ -458,7 +462,7 @@ def _build_capital_evidence(stocks: list[StockCandidate]) -> CapitalEvidence | N
     )
     active_count = sum(
         1
-        for stock in tickflow_stocks
+        for stock in frontline_stocks
         if (stock.turnover_cny or 0) >= 1_000_000_000 or (stock.turnover_rate or 0) >= 5
     )
     strength = _sector_capital_strength(front_row_turnover, avg_turnover_rate, active_count)
@@ -535,8 +539,17 @@ def _dedupe_stock_candidates(stocks: list[StockCandidate]) -> list[StockCandidat
     return output[:8]
 
 
+def _dragon_tiger_summary(results: list[ReviewSourceResult]):
+    for result in results:
+        summary = getattr(result, "dragon_tiger", None)
+        if summary is not None:
+            return summary
+    return None
+
+
 def _review_source_status(result: ReviewSourceResult) -> dict[str, object]:
-    return {
+    dragon_tiger = getattr(result, "dragon_tiger", None)
+    payload = {
         "source": result.source,
         "source_url": result.source_url,
         "status": result.status,
@@ -544,3 +557,16 @@ def _review_source_status(result: ReviewSourceResult) -> dict[str, object]:
         "theme_count": len(result.themes),
         "hot_stock_count": len(result.hot_stocks),
     }
+    if dragon_tiger is not None:
+        payload.update(
+            {
+                "record_count": dragon_tiger.total_records,
+                "seat_detail_count": sum(
+                    len(stock.seats_buy) + len(stock.seats_sell)
+                    for stock in [*dragon_tiger.top_net_buy, *dragon_tiger.top_net_sell]
+                ),
+                "dragon_tiger_sentiment": dragon_tiger.sentiment,
+                "dragon_tiger_strength": dragon_tiger.strength,
+            }
+        )
+    return payload

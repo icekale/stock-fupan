@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from app.providers.llm import FakeLLMProvider, LLMFallbackError
@@ -5,6 +7,8 @@ from app.providers.market import FakeMarketDataProvider
 from app.providers.news import FakeNewsProvider
 from app.rules.scoring import score_sectors
 from app.schemas.report import (
+    DragonTigerStock,
+    DragonTigerSummary,
     MarketBreadth,
     NextDayPrediction,
     PredictionConfidence,
@@ -377,6 +381,114 @@ def test_build_structured_review_adds_sector_deep_dives_with_real_stocks() -> No
     assert cpo.capital_evidence
     assert cpo.conclusion
     assert cpo.watch_signals
+
+
+def test_build_structured_review_uses_dragon_tiger_sentiment_and_sector_evidence() -> None:
+    report = _fake_report()
+    report.sectors[0] = report.sectors[0].model_copy(
+        update={
+            "name": "半导体",
+            "score": 86,
+            "pct_change": 5.4,
+            "top_stocks": [
+                StockCandidate(
+                    code="002156.SZ",
+                    name="通富微电",
+                    pct_change=10.0,
+                    turnover_cny=3_200_000_000,
+                    turnover_rate=12.6,
+                )
+            ],
+            "review_sources": ["同花顺复盘"],
+            "review_notes": ["同花顺复盘确认半导体前排扩散。"],
+        }
+    )
+    report.dragon_tiger = DragonTigerSummary(
+        trade_date=report.trade_date,
+        total_records=91,
+        positive_net_count=55,
+        negative_net_count=36,
+        net_buy_total_wan=268081.1,
+        mainline_match_count=2,
+        mainline_match_names=["通富微电", "亨通光电"],
+        sentiment="strong",
+        strength="high",
+        top_net_buy=[
+            DragonTigerStock(code="002156", name="通富微电", net_buy_wan=162241.5),
+            DragonTigerStock(code="600487", name="亨通光电", net_buy_wan=84125.3),
+        ],
+    )
+
+    review = build_structured_review(report)
+
+    assert {"label": "龙虎榜", "value": "强 / high"} in review.market_overview.emotion_rows
+    assert "龙虎榜净买集中在通富微电、亨通光电" in review.market_overview.capital_flow_summary
+    semiconductor = next(item for item in review.sector_deep_dives if item.sector == "半导体")
+    assert any("龙虎榜确认" in item and "通富微电" in item for item in semiconductor.capital_evidence)
+    semiconductor_rank = next(item for item in review.sustainability_ranking if item.sector == "半导体")
+    assert "龙虎榜" in semiconductor_rank.reason
+
+
+def test_build_structured_review_does_not_apply_dragon_tiger_matches_to_unrelated_sectors() -> None:
+    report = _fake_report()
+    report.sectors = [
+        SectorCandidate(
+            name="半导体",
+            score=86,
+            rank=1,
+            pct_change=5.4,
+            reason="综合评分靠前",
+            top_stocks=[StockCandidate(code="002156.SZ", name="通富微电", pct_change=10.0)],
+            review_sources=["同花顺复盘"],
+            review_notes=["同花顺复盘确认半导体前排扩散。"],
+        ),
+        SectorCandidate(
+            name="电力",
+            score=74,
+            rank=2,
+            pct_change=2.2,
+            reason="轮动观察",
+            top_stocks=[StockCandidate(code="000539.SZ", name="粤电力Ａ", pct_change=10.04)],
+            review_sources=["同花顺复盘"],
+            review_notes=["同花顺复盘确认电力轮动。"],
+        ),
+    ]
+    report.dragon_tiger = DragonTigerSummary(
+        trade_date=report.trade_date,
+        mainline_match_names=["通富微电"],
+        sentiment="strong",
+        strength="high",
+        top_net_buy=[DragonTigerStock(code="002156", name="通富微电", net_buy_wan=162241.5)],
+    )
+
+    review = build_structured_review(report)
+
+    power = next(item for item in review.sector_deep_dives if item.sector == "电力")
+    assert not any("龙虎榜确认" in item for item in power.capital_evidence)
+    power_rank = next(item for item in review.sustainability_ranking if item.sector == "电力")
+    assert "龙虎榜" not in power_rank.reason
+
+
+def test_build_structured_review_localizes_medium_dragon_tiger_sentiment() -> None:
+    report = _fake_report()
+    report.dragon_tiger = DragonTigerSummary(
+        trade_date=report.trade_date,
+        sentiment="medium",
+        strength="normal",
+        top_net_buy=[DragonTigerStock(code="002156", name="通富微电", net_buy_wan=162241.5)],
+    )
+
+    review = build_structured_review(report)
+
+    assert {"label": "龙虎榜", "value": "中 / normal"} in review.market_overview.emotion_rows
+
+
+def test_mobile_template_contains_compact_dragon_tiger_section() -> None:
+    template = Path("app/renderers/templates/mobile_report.html.j2").read_text(encoding="utf-8")
+
+    assert "龙虎榜情绪确认" in template
+    assert "report.dragon_tiger" in template
+    assert "top_net_buy[:3]" in template
 
 
 def test_build_structured_review_adds_v2_capital_rotation_and_strategy() -> None:

@@ -14,12 +14,34 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+import httpx
+
 from app.renderers.png_exporter import export_pdf, export_png
 from app.services.assets import AssetPaths, create_named_report_copies, create_report_asset_dir, write_json
+from app.providers.a_stock_data import AStockQuoteProvider
 
 
 CHINA_TZ = timezone(timedelta(hours=8))
 WEEKLY_REPORT_ALGORITHM_VERSION = "weekly_report_daily_dimensions_v2"
+DEFAULT_WEEKLY_SYMBOLS: tuple[tuple[str, str], ...] = (
+    ("600726.SH", "华电能源"),
+    ("000539.SZ", "粤电力Ａ"),
+    ("600744.SH", "华银电力"),
+    ("301439.SZ", "泓淋电力"),
+    ("688347.SH", "华虹公司"),
+    ("600584.SH", "长电科技"),
+    ("002156.SZ", "通富微电"),
+    ("300476.SZ", "胜宏科技"),
+    ("002463.SZ", "沪电股份"),
+    ("002896.SZ", "中大力德"),
+    ("688017.SH", "绿的谐波"),
+    ("000799.SZ", "酒鬼酒"),
+)
+DEFAULT_WEEKLY_INDEX_SYMBOLS: tuple[tuple[str, str], ...] = (
+    ("000001.SH", "上证指数"),
+    ("399006.SZ", "创业板指"),
+    ("399001.SZ", "深证成指"),
+)
 WEEKLY_THEMES: dict[str, tuple[str, ...]] = {
     "电力": (
         "电力",
@@ -298,21 +320,164 @@ class TickFlowWeeklyDataClient:
         raise RuntimeError("TickFlow 请求重试耗尽")
 
 
+class AStockWeeklyDataClient:
+    provider_name = "a_stock"
+
+    def __init__(
+        self,
+        timeout_seconds: float = 15,
+        http_client: object | None = None,
+        symbols: tuple[tuple[str, str], ...] = DEFAULT_WEEKLY_SYMBOLS,
+        index_symbols: tuple[tuple[str, str], ...] = DEFAULT_WEEKLY_INDEX_SYMBOLS,
+    ) -> None:
+        self.timeout_seconds = timeout_seconds
+        self._owns_client = http_client is None
+        self.http_client = http_client or httpx.Client()
+        self.symbols = symbols
+        self.index_symbols = index_symbols
+
+    def close(self) -> None:
+        if self._owns_client:
+            close = getattr(self.http_client, "close", None)
+            if callable(close):
+                close()
+
+    def get_weekly_market_data(self, start_date: str, end_date: str) -> dict[str, Any]:
+        symbols = [symbol for symbol, _name in self.symbols]
+        index_symbols = [symbol for symbol, _name in self.index_symbols]
+        names = {symbol: name for symbol, name in [*self.symbols, *self.index_symbols]}
+        quotes = self._fetch_quotes([*symbols, *index_symbols])
+        klines = {
+            symbol: data
+            for symbol in [*symbols, *index_symbols]
+            if (data := self._fetch_baidu_kline(symbol, start_date))
+        }
+        trading_dates = _trading_dates_from_klines(klines, start_date, end_date)
+        stocks = [
+            item
+            for symbol in symbols
+            if (
+                item := _compact_kline(
+                    symbol=symbol,
+                    data=klines.get(symbol, {}),
+                    trading_dates=trading_dates,
+                    name=names.get(symbol),
+                    realtime=quotes.get(symbol),
+                )
+            )
+        ]
+        indices = {
+            symbol: compact
+            for symbol in index_symbols
+            if (
+                compact := _compact_kline(
+                    symbol=symbol,
+                    data=klines.get(symbol, {}),
+                    trading_dates=trading_dates,
+                    name=names.get(symbol),
+                    realtime=quotes.get(symbol),
+                )
+            )
+        }
+        return {
+            "meta": {
+                "source": "a-stock-data",
+                "range": f"{start_date}..{end_date}",
+                "symbol_count": len(symbols),
+                "klines_count": len(klines),
+                "stock_rows": len(stocks),
+                "quote_count": len(quotes),
+                "instrument_count": len(names),
+                "generated_at": datetime.now(CHINA_TZ).isoformat(timespec="seconds"),
+            },
+            "indices": indices,
+            "breadth": _build_breadth(stocks, trading_dates),
+            "theme_stats": _build_theme_stats(stocks),
+            "top_week": _clean_stocks(
+                sorted(
+                    stocks,
+                    key=lambda stock: stock.get("week_pct")
+                    if stock.get("week_pct") is not None
+                    else -999,
+                    reverse=True,
+                )
+            )[:100],
+            "top_friday": _clean_stocks(
+                sorted(
+                    stocks,
+                    key=lambda stock: stock.get("friday_pct_from_kline")
+                    if stock.get("friday_pct_from_kline") is not None
+                    else -999,
+                    reverse=True,
+                )
+            )[:100],
+        }
+
+    def _fetch_quotes(self, symbols: list[str]) -> dict[str, dict[str, Any]]:
+        provider = AStockQuoteProvider(
+            timeout_seconds=self.timeout_seconds,
+            http_client=self.http_client,
+        )
+        return {
+            quote.symbol: {
+                "symbol": quote.symbol,
+                "name": quote.name,
+                "pct_change": quote.pct_change,
+                "amount": quote.turnover_cny,
+                "ext": {
+                    "name": quote.name,
+                    "turnover_rate": (quote.turnover_rate or 0) / 100,
+                },
+            }
+            for quote in provider.get_quotes(symbols)
+        }
+
+    def _fetch_baidu_kline(self, symbol: str, start_date: str) -> dict[str, Any] | None:
+        response = self.http_client.get(
+            "https://finance.pae.baidu.com/selfselect/getstockquotation",
+            headers={
+                "User-Agent": "Mozilla/5.0",
+                "Accept": "application/vnd.finance-web.v1+json",
+                "Origin": "https://gushitong.baidu.com",
+                "Referer": "https://gushitong.baidu.com/",
+            },
+            params={
+                "all": "1",
+                "isIndex": "false",
+                "isBk": "false",
+                "isBlock": "false",
+                "isFutures": "false",
+                "isStock": "true",
+                "newFormat": "1",
+                "group": "quotation_kline_ab",
+                "finClientType": "pc",
+                "code": symbol.split(".", 1)[0],
+                "start_time": start_date.replace("-", ""),
+                "ktype": "1",
+            },
+            timeout=self.timeout_seconds,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        return _baidu_kline_payload_to_tickflow_shape(payload)
+
+
 class WeeklyReportGenerator:
     def __init__(
         self,
         reports_root: Path,
-        tickflow_client: object,
+        market_client: object | None = None,
+        tickflow_client: object | None = None,
         news_provider: object | None = None,
     ) -> None:
         self.reports_root = reports_root
-        self.tickflow_client = tickflow_client
+        self.market_client = market_client or tickflow_client
         self.news_provider = news_provider
 
     def generate_weekly_report(self, start_date: str, end_date: str) -> WeeklyGeneratedReport:
         trade_date = f"{start_date}_{end_date}"
         assets = create_report_asset_dir(self.reports_root, trade_date, "weekly")
-        summary = self.tickflow_client.get_weekly_market_data(start_date, end_date)
+        summary = self.market_client.get_weekly_market_data(start_date, end_date)
         summary["catalysts"] = self._collect_catalysts(summary, end_date)
         summary["algorithm_versions"] = {"weekly_report": WEEKLY_REPORT_ALGORITHM_VERSION}
         html_text = render_weekly_report_html(start_date, end_date, summary)
@@ -331,12 +496,12 @@ class WeeklyReportGenerator:
             assets=assets,
             validation_errors=[],
             provider_status={
-                "weekly_tickflow": {
-                    "provider": getattr(self.tickflow_client, "provider_name", "tickflow"),
+                "weekly_market": {
+                    "provider": getattr(self.market_client, "provider_name", "market"),
                     "status": "success",
                     "fallback_used": False,
                     "reason": None,
-                }
+                },
             },
             summary=summary,
         )
@@ -474,7 +639,7 @@ def _render_weekly_prediction_review(themes: list[dict[str, Any]], breadth: dict
             "本周是否形成主线",
             "已验证" if leader else "未验证",
             f"{(leader or {}).get('name', '暂无')}处于{_theme_status(leader or {})}",
-            _leader_commentary(leader) if leader else "TickFlow 未返回可排序板块。",
+            _leader_commentary(leader) if leader else "a-stock-data 未返回可排序板块。",
         ),
         (
             "前期强势方向是否还能延续",
@@ -507,7 +672,7 @@ def _render_weekly_prediction_review(themes: list[dict[str, Any]], breadth: dict
 
 def _render_sector_detail_blocks(themes: list[dict[str, Any]], catalysts: dict[str, list[dict[str, Any]]]) -> str:
     if not themes:
-        return "<section class='card'><h2>板块详细分析</h2><p>TickFlow 未返回可分析板块。</p></section>"
+        return "<section class='card'><h2>板块详细分析</h2><p>a-stock-data 未返回可分析板块。</p></section>"
     blocks = []
     for rank, theme in enumerate(themes[:5], 1):
         name = str(theme.get("name") or "—")
@@ -652,7 +817,7 @@ def _render_index_mid_term(indices: dict[str, Any], breadth: dict[str, Any]) -> 
     current = (
         f"{shanghai.get('name')}本周{_fmt_pct(shanghai.get('week_pct'))}，周内节奏：{_daily_path_text(shanghai.get('daily') or [])}。"
         if shanghai
-        else "TickFlow 未返回上证指数周线数据。"
+        else "a-stock-data 未返回上证指数周线数据。"
     )
     current += f" 周五市场中位涨跌为{_fmt_pct(last.get('median_pct'))}，用于判断指数修复质量。"
     return (
@@ -667,7 +832,7 @@ def _render_index_mid_term(indices: dict[str, Any], breadth: dict[str, Any]) -> 
 def _render_source_notes() -> str:
     return (
         "<section class='card'><h2>数据源说明</h2>"
-        "<p class='source-note'>本周报主数据来自 TickFlow 历史 K 线、实时成交额和换手率；Anspire 仅用于新闻催化补充。"
+        "<p class='source-note'>本周报主数据来自 a-stock-data 行情、K 线、成交额和换手率；Anspire 仅用于新闻催化补充。"
         "未使用模拟内容；若某只股票无历史 K 线，则仅计入覆盖率缺口。</p></section>"
     )
 
@@ -847,6 +1012,55 @@ def _compact_kline(
     }
 
 
+def _baidu_kline_payload_to_tickflow_shape(payload: object) -> dict[str, Any] | None:
+    if not isinstance(payload, dict):
+        return None
+    result = payload.get("Result")
+    if not isinstance(result, dict):
+        return None
+    market_data = result.get("newMarketData")
+    if not isinstance(market_data, dict):
+        return None
+    keys = market_data.get("keys") or []
+    rows_text = str(market_data.get("marketData") or "")
+    if not isinstance(keys, list) or not rows_text:
+        return None
+    output = {
+        "timestamp": [],
+        "open": [],
+        "close": [],
+        "high": [],
+        "low": [],
+        "volume": [],
+        "amount": [],
+    }
+    for row in rows_text.split(";"):
+        if not row.strip():
+            continue
+        values = row.split(",")
+        data = {str(key): values[index] for index, key in enumerate(keys) if index < len(values)}
+        date_value = str(data.get("time") or data.get("date") or "")
+        if not date_value:
+            continue
+        try:
+            timestamp = int(
+                datetime.fromisoformat(f"{date_value}T00:00:00")
+                .replace(tzinfo=CHINA_TZ)
+                .timestamp()
+                * 1000
+            )
+        except ValueError:
+            continue
+        output["timestamp"].append(timestamp)
+        output["open"].append(_field_float(data, "open"))
+        output["close"].append(_field_float(data, "close"))
+        output["high"].append(_field_float(data, "high"))
+        output["low"].append(_field_float(data, "low"))
+        output["volume"].append(_field_float(data, "volume"))
+        output["amount"].append(_field_float(data, "amount"))
+    return output if output["timestamp"] else None
+
+
 def _trading_dates_from_klines(klines: dict[str, Any], start_date: str, end_date: str) -> list[str]:
     dates: set[str] = set()
     for data in klines.values():
@@ -902,6 +1116,14 @@ def _list_float(data: dict[str, Any], key: str, index: int) -> float | None:
     return None if math.isnan(value) else value
 
 
+def _field_float(data: dict[str, str], key: str) -> float | None:
+    try:
+        value = float(data.get(key, ""))
+    except (TypeError, ValueError):
+        return None
+    return None if math.isnan(value) else value
+
+
 def _rate_limit_wait_seconds(raw: str, attempt: int) -> float:
     match = re.search(r"请\s*(\d+)ms\s*后重试", raw)
     if match:
@@ -922,7 +1144,8 @@ def _news_item_to_dict(item: object) -> dict[str, Any]:
 
 
 def _coverage_text(meta: dict[str, Any]) -> str:
-    return f"TickFlow 覆盖 {meta.get('stock_rows', 0)}/{meta.get('symbol_count', 0)} 只"
+    source = str(meta.get("source") or "a-stock-data")
+    return f"{source} 覆盖 {meta.get('stock_rows', 0)}/{meta.get('symbol_count', 0)} 只"
 
 
 def _core_conclusion(leader: dict[str, Any] | None, breadth: dict[str, Any]) -> str:

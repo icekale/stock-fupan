@@ -80,7 +80,7 @@ def build_structured_review(report: ReportDTO, llm_provider: object | None = Non
                 rank=index + 1,
                 sector=sector.name,
                 rating=_rating_for_sector(sector),
-                reason=_sustainability_reason(sector),
+                reason=_sustainability_reason(sector, report),
             )
             for index, sector in enumerate(report.sectors)
         ],
@@ -268,6 +268,14 @@ def _build_prediction_verifications(
 
 def _build_market_overview(report: ReportDTO) -> MarketOverviewTable:
     strongest_capital = _strongest_capital_sector(report)
+    emotion_rows = [
+        {"label": "上涨 / 下跌", "value": f"{report.breadth.up_count} / {report.breadth.down_count}"},
+        {"label": "涨停 / 跌停", "value": f"{report.breadth.limit_up_count} / {report.breadth.limit_down_count}"},
+        {"label": "成交额", "value": f"{report.turnover_cny:.2f} 亿"},
+    ]
+    dragon_tiger_emotion = _dragon_tiger_emotion_value(report)
+    if dragon_tiger_emotion:
+        emotion_rows.append({"label": "龙虎榜", "value": dragon_tiger_emotion})
     return MarketOverviewTable(
         index_rows=[
             {
@@ -277,24 +285,40 @@ def _build_market_overview(report: ReportDTO) -> MarketOverviewTable:
             }
             for index in report.indices
         ],
-        emotion_rows=[
-            {"label": "上涨 / 下跌", "value": f"{report.breadth.up_count} / {report.breadth.down_count}"},
-            {"label": "涨停 / 跌停", "value": f"{report.breadth.limit_up_count} / {report.breadth.limit_down_count}"},
-            {"label": "成交额", "value": f"{report.turnover_cny:.2f} 亿"},
-        ],
+        emotion_rows=emotion_rows,
         structure_features=report.market_state_tags,
         structure_notes=[
             f"{report.market_state_tags[0]}是当前盘面的第一标签。" if report.market_state_tags else "结构标签暂不明确。",
             f"强势方向集中在{report.sectors[0].name}，扩散质量仍需观察。" if report.sectors else "强势方向暂不明确。",
             "涨跌家数与涨跌停数量共同决定短线情绪温度。",
         ],
-        capital_flow_summary=(
+        capital_flow_summary=_capital_flow_summary(report, strongest_capital),
+    )
+
+
+def _dragon_tiger_emotion_value(report: ReportDTO) -> str | None:
+    if report.dragon_tiger is None or report.dragon_tiger.status != "success":
+        return None
+    sentiment = {
+        "strong": "强",
+        "medium": "中",
+        "weak": "弱",
+        "unknown": "未知",
+    }.get(report.dragon_tiger.sentiment, report.dragon_tiger.sentiment)
+    return f"{sentiment} / {report.dragon_tiger.strength}"
+
+
+def _capital_flow_summary(report: ReportDTO, strongest_capital: SectorCandidate | None) -> str:
+    if report.dragon_tiger is not None and report.dragon_tiger.status == "success":
+        names = [stock.name for stock in report.dragon_tiger.top_net_buy[:3] if stock.name]
+        if names:
+            return f"龙虎榜净买集中在{'、'.join(names)}，短线资金仍需结合主线前排承接验证。"
+    if strongest_capital and strongest_capital.capital_evidence:
+        return (
             f"资金不是简单流入流出，当前更集中在{strongest_capital.name}，"
             f"{strongest_capital.capital_evidence.summary}。"
-            if strongest_capital and strongest_capital.capital_evidence
-            else "资金不是简单流入流出，而是在强势板块之间做结构切换。"
-        ),
-    )
+        )
+    return "资金不是简单流入流出，而是在强势板块之间做结构切换。"
 
 
 def _build_after_hours_news(report: ReportDTO, next_session: str = "明日") -> AfterHoursNewsSummary:
@@ -457,7 +481,7 @@ def _build_sector_review(sector: SectorCandidate, next_session: str = "明日") 
     review_evidence = _compact_news_evidence(sector.review_notes, max_length=96)
     front_row_text = _front_row_stock_text(sector)
     source_text = "、".join(sector.review_sources) if sector.review_sources else "复盘源暂未确认"
-    capital_text = sector.capital_evidence.summary if sector.capital_evidence else "TickFlow资金/换手证据不足"
+    capital_text = sector.capital_evidence.summary if sector.capital_evidence else "行情资金/换手证据不足"
     return StructuredSectorReview(
         sector=sector.name,
         headline=f"{sector.name}：{_headline_suffix(rating)}",
@@ -491,7 +515,7 @@ def _build_sector_deep_dives(
     llm_provider: object | None = None,
 ) -> list[SectorDeepDive]:
     return [
-        _build_sector_deep_dive(sector, index, trade_date=report.trade_date, llm_provider=llm_provider)
+        _build_sector_deep_dive(sector, index, report=report, trade_date=report.trade_date, llm_provider=llm_provider)
         for index, sector in enumerate(_body_sectors(report.sectors))
     ]
 
@@ -499,12 +523,13 @@ def _build_sector_deep_dives(
 def _build_sector_deep_dive(
     sector: SectorCandidate,
     index: int,
+    report: ReportDTO | None = None,
     trade_date: str | None = None,
     llm_provider: object | None = None,
 ) -> SectorDeepDive:
     stock_names = _frontline_stock_names(sector, max_items=3)
     catalysts = _sector_catalysts(sector, trade_date=trade_date, llm_provider=llm_provider)
-    capital_notes = _sector_capital_notes(sector)[:3]
+    capital_notes = _sector_capital_notes(sector, report)[:3]
     stage = _sector_stage(sector, index)
     rating = _rating_for_sector(sector)
     if not stock_names:
@@ -592,8 +617,11 @@ def _evidence_display_priority(value: str) -> int:
     return 3
 
 
-def _sector_capital_notes(sector: SectorCandidate) -> list[str]:
+def _sector_capital_notes(sector: SectorCandidate, report: ReportDTO | None = None) -> list[str]:
     notes: list[str] = []
+    dragon_tiger_matches = _dragon_tiger_sector_matches(report, sector)
+    if dragon_tiger_matches:
+        notes.append(f"龙虎榜确认：{'、'.join(dragon_tiger_matches)}进入净买前排。")
     if sector.capital_evidence is not None:
         notes.append(f"{sector.capital_evidence.summary}，资金强度{sector.capital_evidence.strength}")
     for stock in sector.top_stocks[:3]:
@@ -605,6 +633,24 @@ def _sector_capital_notes(sector: SectorCandidate) -> list[str]:
         if len(parts) > 1:
             notes.append("、".join(parts))
     return notes or ["证据不足：缺少成交额/换手率数据，资金强度不做夸大判断。"]
+
+
+def _dragon_tiger_sector_matches(report: ReportDTO | None, sector: SectorCandidate) -> list[str]:
+    if report is None or report.dragon_tiger is None or report.dragon_tiger.status != "success":
+        return []
+    sector_stock_names = {stock.name for stock in sector.top_stocks if stock.name}
+    sector_stock_codes = {_normalize_stock_code(stock.code) for stock in sector.top_stocks if stock.code}
+    output: list[str] = []
+    for stock in report.dragon_tiger.top_net_buy:
+        if not stock.name or stock.name in output:
+            continue
+        if stock.name in sector_stock_names or _normalize_stock_code(stock.code) in sector_stock_codes:
+            output.append(stock.name)
+    return output[:3]
+
+
+def _normalize_stock_code(code: str) -> str:
+    return code.split(".", 1)[0]
 
 
 def _sector_stage(sector: SectorCandidate, index: int) -> str:
@@ -804,12 +850,17 @@ def _stage_for_rating(rating: SustainabilityRating) -> str:
     }[rating]
 
 
-def _sustainability_reason(sector: SectorCandidate) -> str:
+def _sustainability_reason(sector: SectorCandidate, report: ReportDTO | None = None) -> str:
+    dragon_tiger_matches = _dragon_tiger_sector_matches(report, sector)
     if sector.capital_evidence is not None:
-        return f"评分{sector.score:.1f}，{sector.capital_evidence.summary}。"
-    if sector.news_summaries:
-        return f"评分{sector.score:.1f}，且具备消息催化。"
-    return f"评分{sector.score:.1f}，消息确认度仍需观察。"
+        reason = f"评分{sector.score:.1f}，{sector.capital_evidence.summary}。"
+    elif sector.news_summaries:
+        reason = f"评分{sector.score:.1f}，且具备消息催化。"
+    else:
+        reason = f"评分{sector.score:.1f}，消息确认度仍需观察。"
+    if dragon_tiger_matches:
+        return f"{reason} 龙虎榜确认{'、'.join(dragon_tiger_matches)}净买靠前。"
+    return reason
 
 
 def _strongest_capital_sector(report: ReportDTO) -> SectorCandidate | None:

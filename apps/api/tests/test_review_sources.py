@@ -262,7 +262,7 @@ def test_eastmoney_provider_falls_back_to_page_when_api_has_no_current_article()
 
 
 def test_provider_bundle_includes_enabled_review_sources() -> None:
-    settings = Settings(review_sources_enabled=True)
+    settings = Settings(market_provider="a_stock", review_sources_enabled=True)
 
     bundle = create_provider_bundle(settings)
 
@@ -274,7 +274,7 @@ def test_provider_bundle_includes_enabled_review_sources() -> None:
 
 
 def test_provider_bundle_includes_thsdk_when_enabled() -> None:
-    settings = Settings(review_sources_enabled=True, thsdk_enabled=True)
+    settings = Settings(market_provider="a_stock", review_sources_enabled=True, thsdk_enabled=True)
 
     bundle = create_provider_bundle(settings)
 

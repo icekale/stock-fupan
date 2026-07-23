@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 from html.parser import HTMLParser
 
-from app.providers.tickflow import TickFlowQuoteProvider, WatchlistQuote
+from app.providers.quotes import QuoteProvider, WatchlistQuote
 from app.schemas.report import SectorCandidate
 from app.schemas.structured_review import HistoricalThemeReview
 
@@ -20,7 +20,8 @@ def load_previous_strong_themes(
     trade_date: str,
     current_sectors: list[SectorCandidate],
     previous_review_html_path: Path | None = None,
-    tickflow_provider: TickFlowQuoteProvider | None = None,
+    quote_provider: QuoteProvider | None = None,
+    tickflow_provider: QuoteProvider | None = None,
     max_items: int = 8,
 ) -> list[HistoricalThemeReview]:
     reviews: list[HistoricalThemeReview] = []
@@ -32,7 +33,7 @@ def load_previous_strong_themes(
     return _attach_current_stock_checks(
         _dedupe_reviews(reviews)[:max_items],
         previous_review_html_path=previous_review_html_path,
-        tickflow_provider=tickflow_provider,
+        quote_provider=quote_provider or tickflow_provider,
     )
 
 
@@ -229,9 +230,9 @@ def _normalize_symbol(code: str) -> str:
 def _attach_current_stock_checks(
     reviews: list[HistoricalThemeReview],
     previous_review_html_path: Path | None,
-    tickflow_provider: TickFlowQuoteProvider | None,
+    quote_provider: QuoteProvider | None,
 ) -> list[HistoricalThemeReview]:
-    if previous_review_html_path is None or tickflow_provider is None:
+    if previous_review_html_path is None or quote_provider is None:
         return reviews
     try:
         text = _html_text(previous_review_html_path.read_text(encoding="utf-8"))
@@ -242,7 +243,7 @@ def _attach_current_stock_checks(
     if not symbols:
         return reviews
     try:
-        quotes = tickflow_provider.get_quotes(symbols)
+        quotes = quote_provider.get_quotes(symbols)
     except Exception:
         return reviews
     quote_by_symbol = {quote.symbol: quote for quote in quotes}

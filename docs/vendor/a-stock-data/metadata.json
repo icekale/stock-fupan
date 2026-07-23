@@ -1,0 +1,7 @@
+{
+  "upstream_repo": "https://github.com/simonlin1212/a-stock-data",
+  "upstream_commit": "9379ab90d0219312b5f4845cd8c97502f40b0806",
+  "version": "3.2.2",
+  "updated_at": "2026-06-05T09:30:51+08:00",
+  "local_note": "Reference copy only; runtime provider maps the needed endpoints explicitly."
+}

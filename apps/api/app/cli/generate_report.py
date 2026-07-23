@@ -11,9 +11,10 @@ from app.db.models import Report, ReportKindModel, ReportStatusModel
 from app.db.session import create_sqlite_engine, init_db
 from app.db.session import session_scope
 from app.providers.factory import create_provider_bundle
+from app.providers.runtime_config import get_runtime_provider_config
 from app.services.report_generator import GeneratedReport, ReportGenerator
 from app.services.weekly_report_generator import (
-    TickFlowWeeklyDataClient,
+    AStockWeeklyDataClient,
     WeeklyGeneratedReport,
     WeeklyReportGenerator,
     WEEKLY_REPORT_ALGORITHM_VERSION,
@@ -45,7 +46,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     watchlist_service = _create_watchlist_service(settings)
 
-    with create_provider_bundle(settings) as providers:
+    engine = create_sqlite_engine(str(settings.database_url))
+    init_db(engine)
+    runtime_config = get_runtime_provider_config(engine, settings)
+    with create_provider_bundle(settings, runtime_config=runtime_config) as providers:
         generator = ReportGenerator(
             reports_root=reports_root,
             market_provider=providers.market_provider,
@@ -54,7 +58,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             structured_review_provider=settings.structured_review_provider,
             structured_review_fallback_enabled=settings.structured_review_fallback_enabled,
             watchlist_service=watchlist_service,
-            tickflow_provider=providers.tickflow_provider,
+            quote_provider=providers.quote_provider,
             watchlist_enabled=settings.report_watchlist_enabled,
             review_source_provider=providers.review_source_provider,
             previous_review_html_path=settings.previous_review_html_path,
@@ -94,15 +98,13 @@ def _generate_weekly_report(
     reports_root: Path,
     settings: object,
 ) -> WeeklyGeneratedReport:
-    client = TickFlowWeeklyDataClient(
-        api_key=getattr(settings, "tickflow_api_key", ""),
-        base_url=getattr(settings, "tickflow_base_url", "https://api.tickflow.org"),
+    client = AStockWeeklyDataClient(
         timeout_seconds=getattr(settings, "provider_timeout_seconds", 120),
     )
     news_provider = create_provider_bundle(settings).news_provider
     generator = WeeklyReportGenerator(
         reports_root=reports_root,
-        tickflow_client=client,
+        market_client=client,
         news_provider=news_provider,
     )
     return generator.generate_weekly_report(start_date, end_date)
@@ -243,13 +245,13 @@ def _print_provider_status(provider_status: dict[str, object]) -> None:
     if isinstance(market_status, dict):
         print(f"Provider market: {_format_status(market_status)}")
 
-    market_tickflow_status = provider_status.get("market_tickflow")
-    if isinstance(market_tickflow_status, dict):
-        print(f"Provider tickflow[market]: {_format_status(market_tickflow_status)}")
+    market_quote_status = provider_status.get("market_quote")
+    if isinstance(market_quote_status, dict):
+        print(f"Provider quote[market]: {_format_status(market_quote_status)}")
 
-    watchlist_tickflow_status = provider_status.get("watchlist_tickflow")
-    if isinstance(watchlist_tickflow_status, dict):
-        print(f"Provider tickflow[watchlist]: {_format_status(watchlist_tickflow_status)}")
+    watchlist_quote_status = provider_status.get("watchlist_quote")
+    if isinstance(watchlist_quote_status, dict):
+        print(f"Provider quote[watchlist]: {_format_status(watchlist_quote_status)}")
 
     news_statuses = provider_status.get("news")
     if isinstance(news_statuses, list):

@@ -1,10 +1,11 @@
 from sqlalchemy import create_engine, text
 
 from app.config import Settings
-from app.db.models import Base
+from app.db.models import Base, RuntimeProviderConfig
 from app.db.session import session_scope
 from app.providers.runtime_config import (
     RuntimeProviderConfigInput,
+    build_data_source_options_payload,
     get_runtime_provider_config,
     save_runtime_provider_config,
 )
@@ -19,7 +20,7 @@ def _engine():
 def test_runtime_config_defaults_from_settings_when_empty() -> None:
     engine = _engine()
     settings = Settings(
-        market_provider="tickflow",
+        market_provider="a_stock",
         news_provider="anspire",
         review_sources_enabled=True,
         thsdk_enabled=True,
@@ -28,7 +29,7 @@ def test_runtime_config_defaults_from_settings_when_empty() -> None:
 
     config = get_runtime_provider_config(engine, settings)
 
-    assert config.market_provider == "tickflow"
+    assert config.market_provider == "a_stock"
     assert config.news_provider == "anspire"
     assert config.review_sources == ["ths_fupan", "eastmoney_ztfp", "thsdk"]
     assert config.fallback_enabled is False
@@ -42,7 +43,7 @@ def test_runtime_config_save_and_read_back() -> None:
     saved = save_runtime_provider_config(
         engine,
         RuntimeProviderConfigInput(
-            market_provider="tickflow",
+            market_provider="a_stock",
             news_provider="eastmoney_global",
             review_sources=["a_stock_ths_hot", "ths_fupan", "a_stock_ths_hot"],
             fallback_enabled=True,
@@ -51,7 +52,7 @@ def test_runtime_config_save_and_read_back() -> None:
     loaded = get_runtime_provider_config(engine, settings)
 
     assert saved.news_provider == "eastmoney_global"
-    assert loaded.market_provider == "tickflow"
+    assert loaded.market_provider == "a_stock"
     assert loaded.news_provider == "eastmoney_global"
     assert loaded.review_sources == ["a_stock_ths_hot", "ths_fupan"]
     assert loaded.fallback_enabled is True
@@ -65,7 +66,7 @@ def test_runtime_config_rejects_unknown_provider() -> None:
         save_runtime_provider_config(
             engine,
             RuntimeProviderConfigInput(
-                market_provider="tickflow",
+                market_provider="a_stock",
                 news_provider="unknown",
                 review_sources=[],
                 fallback_enabled=True,
@@ -84,7 +85,7 @@ def test_runtime_config_replaces_singleton_row() -> None:
     save_runtime_provider_config(
         engine,
         RuntimeProviderConfigInput(
-            market_provider="tickflow",
+            market_provider="a_stock",
             news_provider="fake",
             review_sources=["ths_fupan"],
             fallback_enabled=True,
@@ -109,3 +110,94 @@ def test_runtime_config_replaces_singleton_row() -> None:
     assert loaded.news_provider == "eastmoney_global"
     assert loaded.review_sources == ["a_stock_industry_rank"]
     assert loaded.fallback_enabled is False
+
+
+def test_runtime_config_accepts_dragon_tiger_review_source() -> None:
+    engine = _engine()
+    settings = Settings()
+
+    saved = save_runtime_provider_config(
+        engine,
+        RuntimeProviderConfigInput(
+            market_provider="a_stock",
+            news_provider="anspire",
+            review_sources=["a_stock_dragon_tiger"],
+            fallback_enabled=False,
+        ),
+    )
+    payload = build_data_source_options_payload(saved, settings)
+    review_category = next(
+        category for category in payload["categories"] if category["key"] == "review_sources"
+    )
+    dragon_option = next(
+        option for option in review_category["options"] if option["key"] == "a_stock_dragon_tiger"
+    )
+
+    assert saved.review_sources == ["a_stock_dragon_tiger"]
+    assert dragon_option["label"] == "a-stock 东财龙虎榜"
+    assert dragon_option["role"] == "增强源 · 龙虎榜情绪资金"
+    assert dragon_option["enabled"] is True
+
+
+def test_runtime_config_accepts_a_stock_market_provider() -> None:
+    engine = _engine()
+    settings = Settings()
+
+    saved = save_runtime_provider_config(
+        engine,
+        RuntimeProviderConfigInput(
+            market_provider="a_stock",
+            news_provider="anspire",
+            review_sources=["a_stock_industry_rank"],
+            fallback_enabled=False,
+        ),
+    )
+    payload = build_data_source_options_payload(saved, settings)
+    market_category = next(
+        category for category in payload["categories"] if category["key"] == "market_provider"
+    )
+    a_stock_option = next(
+        option for option in market_category["options"] if option["key"] == "a_stock"
+    )
+
+    assert saved.market_provider == "a_stock"
+    assert a_stock_option["label"] == "A-Stock"
+    assert a_stock_option["role"] == "主源 · a-stock-data 行情"
+    assert a_stock_option["enabled"] is True
+
+
+def test_runtime_config_rejects_tickflow_market_provider() -> None:
+    engine = _engine()
+
+    try:
+        save_runtime_provider_config(
+            engine,
+            RuntimeProviderConfigInput(
+                market_provider="tickflow",
+                news_provider="anspire",
+                review_sources=[],
+                fallback_enabled=False,
+            ),
+        )
+    except ValueError as exc:
+        assert "Unsupported MARKET_PROVIDER" in str(exc)
+    else:
+        raise AssertionError("expected ValueError")
+
+
+def test_runtime_config_normalizes_legacy_tickflow_market_provider() -> None:
+    engine = _engine()
+    settings = Settings(market_provider="a_stock")
+    with session_scope(engine) as session:
+        session.add(
+            RuntimeProviderConfig(
+                market_provider="tickflow",
+                news_provider="anspire",
+                review_sources=[],
+                fallback_enabled=True,
+            )
+        )
+
+    loaded = get_runtime_provider_config(engine, settings)
+
+    assert loaded.market_provider == "a_stock"

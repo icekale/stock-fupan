@@ -88,6 +88,7 @@ def test_ocr_confirm_missing_preview_raises_not_found(tmp_path: Path) -> None:
 def test_ocr_preview_api_returns_preview_without_importing(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'api.db'}")
     monkeypatch.setenv("WATCHLIST_SNAPSHOT_ROOT", str(tmp_path / "watchlists"))
+    monkeypatch.setenv("MARKET_PROVIDER", "a_stock")
     monkeypatch.setenv("OCR_PROVIDER", "fake")
     get_settings.cache_clear()
 
@@ -110,6 +111,7 @@ def test_ocr_preview_api_returns_preview_without_importing(tmp_path: Path, monke
 def test_ocr_confirm_api_imports_preview(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'api.db'}")
     monkeypatch.setenv("WATCHLIST_SNAPSHOT_ROOT", str(tmp_path / "watchlists"))
+    monkeypatch.setenv("MARKET_PROVIDER", "a_stock")
     monkeypatch.setenv("OCR_PROVIDER", "fake")
     get_settings.cache_clear()
 
@@ -134,6 +136,7 @@ def test_ocr_confirm_api_imports_preview(tmp_path: Path, monkeypatch) -> None:
 def test_ocr_preview_api_rejects_unsupported_file_type(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'api.db'}")
     monkeypatch.setenv("WATCHLIST_SNAPSHOT_ROOT", str(tmp_path / "watchlists"))
+    monkeypatch.setenv("MARKET_PROVIDER", "a_stock")
     monkeypatch.setenv("OCR_PROVIDER", "fake")
     get_settings.cache_clear()
 
@@ -151,6 +154,7 @@ def test_ocr_preview_api_rejects_unsupported_file_type(tmp_path: Path, monkeypat
 def test_ocr_confirm_api_returns_404_for_missing_preview(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path / 'api.db'}")
     monkeypatch.setenv("WATCHLIST_SNAPSHOT_ROOT", str(tmp_path / "watchlists"))
+    monkeypatch.setenv("MARKET_PROVIDER", "a_stock")
     monkeypatch.setenv("OCR_PROVIDER", "fake")
     get_settings.cache_clear()
 

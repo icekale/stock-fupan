@@ -4,12 +4,13 @@ import pytest
 
 from app.config import get_settings
 from app.db.models import Report, ReportKindModel, ReportStatusModel
-from app.db.session import create_sqlite_engine, session_scope
+from app.db.session import create_sqlite_engine, init_db, session_scope
 from app.providers.factory import ProviderBundle
 from app.providers.llm import FakeLLMProvider
 from app.providers.market import FakeMarketDataProvider
 from app.providers.news import FakeNewsProvider
-from app.providers.tickflow import FakeTickFlowProvider
+from app.providers.quotes import FakeQuoteProvider
+from app.providers.runtime_config import RuntimeProviderConfigInput, save_runtime_provider_config
 from app.services import report_generator as report_generator_module
 from app.services.weekly_report_generator import WeeklyGeneratedReport
 from app.services.assets import AssetPaths
@@ -43,7 +44,7 @@ def _fake_bundle() -> ProviderBundle:
         news_provider=FakeNewsProvider(),
         llm_provider=FakeLLMProvider(),
         ocr_provider=object(),
-        tickflow_provider=FakeTickFlowProvider(),
+        quote_provider=FakeQuoteProvider(),
         review_source_provider=None,
     )
 
@@ -55,7 +56,7 @@ def test_generate_report_cli_writes_report_and_prints_paths(
 ) -> None:
     from app.cli import generate_report
 
-    monkeypatch.setattr(generate_report, "create_provider_bundle", lambda settings: _fake_bundle())
+    monkeypatch.setattr(generate_report, "create_provider_bundle", lambda settings, runtime_config=None: _fake_bundle())
 
     exit_code = generate_report.main([
         "--date",
@@ -88,7 +89,7 @@ def test_generate_report_cli_can_write_midday_report(
 ) -> None:
     from app.cli import generate_report
 
-    monkeypatch.setattr(generate_report, "create_provider_bundle", lambda settings: _fake_bundle())
+    monkeypatch.setattr(generate_report, "create_provider_bundle", lambda settings, runtime_config=None: _fake_bundle())
 
     exit_code = generate_report.main([
         "--date",
@@ -150,7 +151,7 @@ def test_generate_report_cli_returns_nonzero_for_invalid_report(
 ) -> None:
     from app.cli import generate_report
 
-    monkeypatch.setattr(generate_report, "create_provider_bundle", lambda settings: _fake_bundle())
+    monkeypatch.setattr(generate_report, "create_provider_bundle", lambda settings, runtime_config=None: _fake_bundle())
     monkeypatch.setattr(
         generate_report,
         "validate_generated_report",
@@ -179,7 +180,7 @@ def test_generate_report_cli_persists_report_metadata(
     reports_root = tmp_path / "reports"
     database_url = f"sqlite:///{tmp_path / 'reports.db'}"
     monkeypatch.setenv("DATABASE_URL", database_url)
-    monkeypatch.setattr(generate_report, "create_provider_bundle", lambda settings: _fake_bundle())
+    monkeypatch.setattr(generate_report, "create_provider_bundle", lambda settings, runtime_config=None: _fake_bundle())
 
     exit_code = generate_report.main([
         "--date",
@@ -202,6 +203,47 @@ def test_generate_report_cli_persists_report_metadata(
     assert persisted.publish_status == "blocked"
     assert persisted.quality_summary.startswith("不可发布草稿")
     assert persisted.quality_gate["publish_status"] == "blocked"
+
+
+def test_generate_report_cli_uses_runtime_provider_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.cli import generate_report
+
+    reports_root = tmp_path / "reports"
+    database_url = f"sqlite:///{tmp_path / 'reports.db'}"
+    engine = create_sqlite_engine(database_url)
+    init_db(engine)
+    save_runtime_provider_config(
+        engine,
+        RuntimeProviderConfigInput(
+            market_provider="fake",
+            news_provider="fake",
+            review_sources=["a_stock_dragon_tiger"],
+            fallback_enabled=True,
+        ),
+    )
+    captured_review_sources: list[list[str] | None] = []
+
+    def fake_create_provider_bundle(settings: object, runtime_config: object | None = None) -> ProviderBundle:
+        captured_review_sources.append(
+            list(runtime_config.review_sources) if runtime_config is not None else None
+        )
+        return _fake_bundle()
+
+    monkeypatch.setenv("DATABASE_URL", database_url)
+    monkeypatch.setattr(generate_report, "create_provider_bundle", fake_create_provider_bundle)
+
+    exit_code = generate_report.main([
+        "--date",
+        "2026-05-26",
+        "--reports-root",
+        str(reports_root),
+    ])
+
+    assert exit_code == 0
+    assert captured_review_sources == [["a_stock_dragon_tiger"]]
 
 
 def test_load_local_env_files_prefers_api_env_over_root_env(

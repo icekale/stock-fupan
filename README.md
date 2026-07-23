@@ -6,7 +6,7 @@
 
 ## 核心能力
 
-- **真实数据优先**：TickFlow 和 Anspire 是主要数据源，不在生产报告中使用 fake 内容。
+- **真实数据优先**：a-stock-data 行情和 Anspire 新闻是主要数据源，不在生产报告中使用 fake 内容。
 - **强势主线识别**：从全市场行情中提取当日强势板块、前排个股、涨跌幅、成交额和强度排名。
 - **新闻催化分析**：使用 Anspire 搜索新闻，辅助判断板块强势是否有事件催化。
 - **复盘源校验**：同花顺复盘和东方财富涨停复盘作为辅助源，用于校验题材、封板质量和市场情绪。
@@ -20,7 +20,7 @@
 
 | 层级 | 数据源 | 用途 |
 | --- | --- | --- |
-| 主源 | TickFlow | 指数、全市场行情、板块强度、前排个股、成交额、核心股当日校验 |
+| 主源 | a-stock-data | 指数、行业板块排名、自选股报价、周度 K 线、龙虎榜/热点等增强数据 |
 | 主源 | Anspire | 新闻搜索、题材催化、事件解释 |
 | 辅助源 | 同花顺复盘 | 题材语义、热门方向、市场复盘文本 |
 | 辅助源 | 东方财富涨停复盘 | 涨停复盘、封板率、市场质量 |
@@ -44,12 +44,10 @@ cp .env.example .env
 编辑 `.env`，至少填写：
 
 ```dotenv
-TICKFLOW_API_KEY=你的_TickFlow_Key
 ANSPIRE_API_KEY=你的_Anspire_Key
 
-MARKET_PROVIDER=tickflow
+MARKET_PROVIDER=a_stock
 NEWS_PROVIDER=anspire
-TICKFLOW_PROVIDER=tickflow
 REVIEW_SOURCES_ENABLED=true
 REPORT_WATCHLIST_ENABLED=false
 ```
@@ -92,7 +90,7 @@ make report DATE=2026-05-27 KIND=midday
 
 - `report.html`
 - `snapshot.json`
-- provider 状态，例如 TickFlow、Anspire、同花顺、东方财富是否成功
+- provider 状态，例如 a-stock-data、Anspire、同花顺、东方财富是否成功
 
 全日盘后复盘默认写入：
 
@@ -164,14 +162,10 @@ http://localhost:3000
 DATABASE_URL=sqlite:///./data/stock_review.db
 REPORTS_ROOT=../../reports
 
-TICKFLOW_API_KEY=
-TICKFLOW_BASE_URL=https://api.tickflow.org
-TICKFLOW_PROVIDER=tickflow
-
 ANSPIRE_API_KEY=
 ANSPIRE_BASE_URL=https://plugin.anspire.cn/api/ntsearch/search
 
-MARKET_PROVIDER=tickflow
+MARKET_PROVIDER=a_stock
 NEWS_PROVIDER=anspire
 REVIEW_SOURCES_ENABLED=true
 THS_FUPAN_URL=https://stock.10jqka.com.cn/fupan/

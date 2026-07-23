@@ -788,6 +788,33 @@
       {% endif %}
     </div>
 
+    {% if report.dragon_tiger %}
+      <h3 class="section-subtitle">龙虎榜情绪确认</h3>
+      <div class="key-insight">
+        {% if report.dragon_tiger.status == "success" %}
+          <div class="ki-title">情绪 {{ report.dragon_tiger.sentiment }} · 强度 {{ report.dragon_tiger.strength }}</div>
+          <p>{{ report.dragon_tiger.conclusion }}</p>
+          {% if report.dragon_tiger.top_net_buy %}
+            <p style="margin-top:10px;">
+              <strong>净买前排：</strong>
+              {% for stock in report.dragon_tiger.top_net_buy[:3] %}
+                {{ stock.name }} {{ "%.1f"|format(stock.net_buy_wan) }}万{% if not loop.last %}、{% endif %}
+              {% endfor %}
+            </p>
+          {% endif %}
+          {% if report.dragon_tiger.mainline_match_names %}
+            <p style="margin-top:10px;"><strong>主线匹配：</strong>{{ report.dragon_tiger.mainline_match_names[:3]|join("、") }}</p>
+          {% endif %}
+          {% if report.dragon_tiger.risk_notes %}
+            <p style="margin-top:10px;"><strong>风险：</strong>{{ report.dragon_tiger.risk_notes[0] }}</p>
+          {% endif %}
+        {% else %}
+          <div class="ki-title">龙虎榜数据未取得</div>
+          <p>{{ report.dragon_tiger.reason or "东财龙虎榜暂未返回可用数据。" }}</p>
+        {% endif %}
+      </div>
+    {% endif %}
+
     {% if structured.prediction_verifications %}
       <span class="section-num">3</span>
       <h2 class="section-title">昨日预判验证</h2>
@@ -986,6 +1013,25 @@
       <hr class="divider">
       <h3 class="section-subtitle">自选股观察</h3>
       <p><span class="tag tag-navy">导入 {{ watch.total_count }} 只</span><span class="tag tag-gold">行情匹配 {{ watch.quote_count }} 只</span></p>
+      <h3 class="section-subtitle">自选股风险检测</h3>
+      <p class="muted">实时行情结构信号，仅覆盖价格、换手与资金强弱。</p>
+      {% if watch.risk_items %}
+        <div class="avoid-box">
+          <ul class="point-list">
+            {% for item in watch.risk_items %}
+              <li class="bear">
+                {{ item.symbol }} {{ item.name or '' }} {{ "%+.2f"|format(item.pct_change or 0) }}%
+                · {% if item.risk_level == "high" %}高风险{% elif item.risk_level == "medium" %}需关注{% else %}低风险{% endif %}
+                · {{ item.risk_reasons|join("、") }}
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% else %}
+        <div class="card">
+          <p>本次行情匹配的自选股未触发显著风险信号。</p>
+        </div>
+      {% endif %}
       {% if watch.strongest %}
         <h3 class="section-subtitle">强势自选</h3>
         <div class="card">

@@ -281,3 +281,30 @@ def test_validate_narrative_dedupes_unknown_values_and_avoids_sector_overlap() -
     assert result.errors.count("unknown sector: 电力") == 0
     assert result.errors.count("unknown stock: 未来科技") == 1
     assert result.errors.count("unknown number: 99") == 1
+
+
+def test_validate_narrative_accepts_long_sector_names_without_short_alias_false_positive() -> None:
+    report = make_report(
+        ReportNarrative(
+            conclusion="半导体设备相对靠前。",
+            overview="半导体设备涨跌幅+6.56%。",
+            sector_commentary=["半导体设备涨幅+6.56%，短线强度相对靠前。"],
+            watchlist=["观察半导体设备方向在涨幅+6.56%后的承接强度。"],
+            tomorrow="明日优先观察半导体设备是否继续获得资金承接。",
+            risks=[],
+        )
+    )
+    report.sectors = [
+        SectorCandidate(
+            name="半导体设备",
+            score=88,
+            rank=1,
+            pct_change=6.56,
+            reason="板块强势",
+        )
+    ]
+
+    result = validate_narrative_facts(report)
+
+    assert result.is_valid
+    assert result.errors == []

@@ -2,19 +2,20 @@ from collections.abc import AsyncIterator
 import asyncio
 from contextlib import asynccontextmanager
 from contextlib import suppress
-from datetime import UTC, date, timedelta
+from datetime import UTC, date, datetime, timedelta
 import logging
 from pathlib import Path
 import shutil
+from typing import Literal
 from urllib.parse import quote
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from fastapi import FastAPI, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
-from app.config import get_settings
+from app.config import Settings, get_settings
 from app.db.models import Report, ReportKindModel, ReportStatusModel
 from app.db.session import get_engine, init_db, session_scope
 from app.providers.factory import create_provider_bundle
@@ -26,7 +27,11 @@ from app.providers.runtime_config import (
     get_runtime_provider_config,
     save_runtime_provider_config,
 )
+from app.services.a_stock_vendor import AStockVendorUpdater
 from app.services.assets import report_kind_label
+from app.services.morning_auction.free_stockdb import FreeStockDbError, FreeStockDbMorningAuctionDataSource
+from app.services.morning_auction.schemas import MorningAuctionTrialEntry
+from app.services.morning_auction.workbench import MorningAuctionTrialStore, MorningAuctionWorkbenchService
 from app.services.report_generator import ReportGenerator
 from app.services.report_schedule import (
     ReportScheduleUpdate,
@@ -34,8 +39,23 @@ from app.services.report_schedule import (
     run_due_report_schedule,
     update_report_schedule_status,
 )
+from app.services.tickflow_health import check_tickflow_health
+from app.services.watchlist_alert_schedule import (
+    WatchlistAlertScheduleUpdate,
+    get_watchlist_alert_schedule_status,
+    run_due_watchlist_alert_schedule,
+    update_watchlist_alert_schedule_status,
+)
+from app.services.watchlist_alerts import (
+    acknowledge_watchlist_alert_event,
+    build_watchlist_alert_event_inputs,
+    build_watchlist_alert_events,
+    list_watchlist_alert_events,
+    mute_watchlist_alert_event,
+    upsert_watchlist_alert_events,
+)
 from app.services.weekly_report_generator import (
-    TickFlowWeeklyDataClient,
+    AStockWeeklyDataClient,
     WeeklyGeneratedReport,
     WeeklyReportGenerator,
     WEEKLY_REPORT_ALGORITHM_VERSION,
@@ -45,11 +65,28 @@ from app.watchlist.ocr_service import (
     UnsupportedOcrImageError,
     WatchlistOcrService,
 )
+from app.watchlist.pool_service import WatchlistPoolService
 from app.watchlist.service import WatchlistImportService
 
 
 class CreateCloseReportRequest(BaseModel):
     trade_date: str
+
+
+class MorningAuctionPredictRequest(BaseModel):
+    trade_date: str
+
+    @field_validator("trade_date")
+    @classmethod
+    def validate_trade_date(cls, value: str) -> str:
+        if len(value) != 10 or value[4] != "-" or value[7] != "-":
+            raise ValueError("trade_date must use YYYY-MM-DD")
+        date.fromisoformat(value)
+        return value
+
+
+class MorningAuctionTrialRequest(MorningAuctionTrialEntry):
+    pass
 
 
 class ImportWatchlistTextRequest(BaseModel):
@@ -61,10 +98,75 @@ class ConfirmOcrPreviewRequest(BaseModel):
     preview_id: str
 
 
+class WatchlistGroupRequest(BaseModel):
+    name: str
+
+
+class WatchlistStockCreateRequest(BaseModel):
+    symbol: str
+    code: str | None = None
+    exchange: str | None = None
+    name: str | None = None
+    group_ids: list[int] | None = None
+    tags: list[str] | None = None
+    status: str | None = None
+    entry_reason: str | None = None
+    planned_buy_price: str | None = None
+    invalid_condition: str | None = None
+    themes: list[str] | None = None
+    last_review_conclusion: str | None = None
+    today_risk_hint: str | None = None
+
+
+class WatchlistStockUpdateRequest(BaseModel):
+    symbol: str | None = None
+    code: str | None = None
+    exchange: str | None = None
+    name: str | None = None
+    group_ids: list[int] | None = None
+    tags: list[str] | None = None
+    status: str | None = None
+    entry_reason: str | None = None
+    planned_buy_price: str | None = None
+    invalid_condition: str | None = None
+    themes: list[str] | None = None
+    last_review_conclusion: str | None = None
+    today_risk_hint: str | None = None
+
+
 class ReportScheduleRequest(BaseModel):
     enabled: bool
     time: str = "19:00"
     timezone: str = "Asia/Shanghai"
+
+
+class RunWatchlistAlertRequest(BaseModel):
+    mode: Literal["intraday_morning", "intraday_afternoon", "daily_review"] = "daily_review"
+    trade_date: str
+
+    @field_validator("trade_date")
+    @classmethod
+    def validate_trade_date(cls, value: str) -> str:
+        if len(value) != 10 or value[4] != "-" or value[7] != "-":
+            raise ValueError("trade_date must use YYYY-MM-DD")
+        date.fromisoformat(value)
+        return value
+
+
+class WatchlistAlertScheduleRequest(BaseModel):
+    enabled: bool
+    morning_time: str = "10:00"
+    afternoon_time: str = "14:30"
+    review_time: str = "19:30"
+    timezone: str = "Asia/Shanghai"
+
+
+class WatchlistAlertMuteRequest(BaseModel):
+    days: int = 3
+
+
+class VendorAutoCheckRequest(BaseModel):
+    enabled: bool
 
 
 def _status_item(
@@ -91,12 +193,20 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     init_db(engine)
     app.state.engine = engine
     app.state.report_schedule_task = asyncio.create_task(_report_schedule_loop())
+    app.state.watchlist_alert_schedule_task = asyncio.create_task(_watchlist_alert_schedule_loop())
+    app.state.a_stock_vendor_task = asyncio.create_task(_a_stock_vendor_auto_check_loop())
     try:
         yield
     finally:
         app.state.report_schedule_task.cancel()
+        app.state.watchlist_alert_schedule_task.cancel()
+        app.state.a_stock_vendor_task.cancel()
         with suppress(asyncio.CancelledError):
             await app.state.report_schedule_task
+        with suppress(asyncio.CancelledError):
+            await app.state.watchlist_alert_schedule_task
+        with suppress(asyncio.CancelledError):
+            await app.state.a_stock_vendor_task
 
 
 def _cors_allow_origins() -> list[str]:
@@ -114,11 +224,56 @@ app.add_middleware(
 
 CHINA_TZ = ZoneInfo("Asia/Shanghai")
 logger = logging.getLogger(__name__)
+MORNING_AUCTION_RUNS: dict[str, dict[str, object]] = {}
 
 
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.post("/api/morning-auction/predict")
+def morning_auction_predict(request: MorningAuctionPredictRequest) -> dict[str, object]:
+    try:
+        run = _morning_auction_workbench_service().predict(request.trade_date)
+    except (FileNotFoundError, FreeStockDbError, ValueError) as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    payload = run.model_dump(mode="json")
+    MORNING_AUCTION_RUNS[run.run_id] = payload
+    return payload
+
+
+@app.get("/api/morning-auction/runs/{run_id}")
+def morning_auction_run(run_id: str) -> dict[str, object]:
+    payload = MORNING_AUCTION_RUNS.get(run_id)
+    if payload is None:
+        raise HTTPException(status_code=404, detail="Morning auction run not found")
+    return payload
+
+
+@app.get("/api/morning-auction/trials")
+def morning_auction_trials(trade_date: str | None = None) -> dict[str, object]:
+    return {
+        "items": [
+            entry.model_dump(mode="json")
+            for entry in _morning_auction_trial_store().list_entries(trade_date)
+        ]
+    }
+
+
+@app.post("/api/morning-auction/trials")
+def upsert_morning_auction_trial(request: MorningAuctionTrialRequest) -> dict[str, object]:
+    entry = MorningAuctionTrialEntry.model_validate(request.model_dump())
+    return _morning_auction_trial_store().upsert(entry).model_dump(mode="json")
+
+
+@app.get("/api/tickflow/health")
+def tickflow_health(settings: Settings = Depends(get_settings)) -> dict[str, object]:
+    return check_tickflow_health(
+        api_key=settings.tickflow_api_key,
+        base_url=settings.tickflow_base_url,
+        timeout_seconds=settings.provider_timeout_seconds,
+    )
 
 
 def _watchlist_service() -> WatchlistImportService:
@@ -139,6 +294,48 @@ def _watchlist_ocr_service() -> WatchlistOcrService:
     )
 
 
+def _watchlist_pool_service() -> WatchlistPoolService:
+    return WatchlistPoolService(app.state.engine)
+
+
+def _a_stock_vendor_updater() -> AStockVendorUpdater:
+    injected = getattr(app.state, "a_stock_vendor_updater", None)
+    if injected is not None:
+        return injected
+    settings = get_settings()
+    return AStockVendorUpdater(
+        vendor_dir=Path(settings.a_stock_vendor_dir),
+        timeout_seconds=settings.provider_timeout_seconds,
+    )
+
+
+def _morning_auction_workbench_service() -> MorningAuctionWorkbenchService:
+    injected = getattr(app.state, "morning_auction_workbench_service", None)
+    if injected is not None:
+        return injected
+    settings = get_settings()
+    source = FreeStockDbMorningAuctionDataSource(
+        base_url=settings.morning_auction_free_stockdb_base_url,
+        timeout_seconds=settings.morning_auction_timeout_seconds,
+    )
+    return MorningAuctionWorkbenchService(
+        source=source,
+        model_path=Path(settings.morning_auction_model_path),
+        metadata_path=Path(settings.morning_auction_metadata_path),
+        lookback=settings.morning_auction_lookback,
+        top_n=settings.morning_auction_top_n,
+        max_items=settings.morning_auction_max_items,
+    )
+
+
+def _morning_auction_trial_store() -> MorningAuctionTrialStore:
+    injected = getattr(app.state, "morning_auction_trial_store", None)
+    if injected is not None:
+        return injected
+    settings = get_settings()
+    return MorningAuctionTrialStore(Path(settings.morning_auction_trial_log_path))
+
+
 async def _report_schedule_loop() -> None:
     while True:
         await asyncio.sleep(60)
@@ -146,6 +343,96 @@ async def _report_schedule_loop() -> None:
             await asyncio.to_thread(_run_report_schedule_once)
         except Exception:
             logger.exception("report schedule tick failed")
+
+
+async def _watchlist_alert_schedule_loop() -> None:
+    while True:
+        await asyncio.sleep(60)
+        try:
+            await asyncio.to_thread(_run_watchlist_alert_schedule_once)
+        except Exception:
+            logger.exception("watchlist alert schedule tick failed")
+
+
+async def _a_stock_vendor_auto_check_loop() -> None:
+    while True:
+        await asyncio.sleep(3600)
+        try:
+            await asyncio.to_thread(_a_stock_vendor_updater().run_auto_check_if_due)
+        except Exception:
+            logger.exception("a-stock-data vendor auto check failed")
+
+
+def _run_watchlist_alert_schedule_once() -> dict[str, object]:
+    return run_due_watchlist_alert_schedule(
+        engine=app.state.engine,
+        settings=get_settings(),
+        run_scan=lambda mode, trade_date: _run_watchlist_alert_scan(mode, trade_date),
+    )
+
+
+def _run_watchlist_alert_scan(mode: str, trade_date: str) -> dict[str, object]:
+    items = build_watchlist_alert_event_inputs(app.state.engine)
+    events = build_watchlist_alert_events(
+        items=items,
+        trade_date=trade_date,
+        mode=mode,
+        source_status={"tickflow": "not_checked"},
+        now=datetime.now(UTC),
+    )
+    persisted = upsert_watchlist_alert_events(app.state.engine, events)
+    return {
+        "status": "completed",
+        "mode": mode,
+        "trade_date": trade_date,
+        "item_count": len(items),
+        "event_count": len(persisted),
+    }
+
+
+def _update_watchlist_stock_from_request(
+    service: WatchlistPoolService,
+    stock_id: int,
+    request: WatchlistStockCreateRequest | WatchlistStockUpdateRequest,
+):
+    if "symbol" in request.model_fields_set or "code" in request.model_fields_set or "exchange" in request.model_fields_set or "name" in request.model_fields_set:
+        stock = service.update_stock_identity(
+            stock_id,
+            symbol=request.symbol if "symbol" in request.model_fields_set else None,
+            code=request.code if "code" in request.model_fields_set else None,
+            exchange=request.exchange if "exchange" in request.model_fields_set else None,
+            name=request.name if "name" in request.model_fields_set else None,
+        )
+        stock_id = stock.id
+    fields_set = request.model_fields_set
+    plan_fields = {
+        "entry_reason",
+        "planned_buy_price",
+        "invalid_condition",
+        "themes",
+        "last_review_conclusion",
+        "today_risk_hint",
+    }
+    stock = service.get_stock(stock_id)
+    if fields_set & plan_fields:
+        stock = service.update_observation_plan(
+            stock_id,
+            entry_reason=request.entry_reason if "entry_reason" in fields_set else stock.entry_reason,
+            planned_buy_price=request.planned_buy_price if "planned_buy_price" in fields_set else stock.planned_buy_price,
+            invalid_condition=request.invalid_condition if "invalid_condition" in fields_set else stock.invalid_condition,
+            themes=request.themes if "themes" in fields_set else stock.themes,
+            last_review_conclusion=(
+                request.last_review_conclusion if "last_review_conclusion" in fields_set else stock.last_review_conclusion
+            ),
+            today_risk_hint=request.today_risk_hint if "today_risk_hint" in fields_set else stock.today_risk_hint,
+        )
+    if request.group_ids is not None:
+        stock = service.set_stock_groups(stock.id, request.group_ids)
+    if request.tags is not None:
+        stock = service.set_stock_tags(stock.id, request.tags)
+    if request.status is not None:
+        stock = service.set_stock_status(stock.id, request.status)
+    return stock
 
 
 def _run_report_schedule_once() -> dict[str, object]:
@@ -168,7 +455,7 @@ def _generate_scheduled_close_report(trade_date: str, settings: object):
             structured_review_provider=settings.structured_review_provider,
             structured_review_fallback_enabled=settings.structured_review_fallback_enabled,
             watchlist_service=_watchlist_service(),
-            tickflow_provider=providers.tickflow_provider,
+            quote_provider=providers.quote_provider,
             watchlist_enabled=settings.report_watchlist_enabled,
             review_source_provider=providers.review_source_provider,
             previous_review_html_path=settings.previous_review_html_path,
@@ -224,6 +511,109 @@ def get_latest_watchlist() -> dict[str, object]:
     return _watchlist_service().get_latest().model_dump(mode="json")
 
 
+@app.get("/api/watchlist-pool")
+def get_watchlist_pool() -> dict[str, object]:
+    return _watchlist_pool_service().get_state().model_dump(mode="json")
+
+
+@app.post("/api/watchlist-pool/groups")
+def create_watchlist_group(request: WatchlistGroupRequest) -> dict[str, object]:
+    try:
+        return _watchlist_pool_service().create_group(request.name).model_dump(mode="json")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.patch("/api/watchlist-pool/groups/{group_id}")
+def rename_watchlist_group(group_id: int, request: WatchlistGroupRequest) -> dict[str, object]:
+    try:
+        return _watchlist_pool_service().rename_group(group_id, request.name).model_dump(mode="json")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.delete("/api/watchlist-pool/groups/{group_id}")
+def delete_watchlist_group(group_id: int) -> dict[str, object]:
+    try:
+        _watchlist_pool_service().delete_group(group_id)
+        return {"deleted": True, "id": group_id}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/watchlist-pool/stocks")
+def create_watchlist_stock(request: WatchlistStockCreateRequest) -> dict[str, object]:
+    service = _watchlist_pool_service()
+    try:
+        stock = service.add_stock(
+            symbol=request.symbol,
+            code=request.code,
+            exchange=request.exchange,
+            name=request.name,
+        )
+        return _update_watchlist_stock_from_request(service, stock.id, request).model_dump(mode="json")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.patch("/api/watchlist-pool/stocks/{stock_id}")
+def update_watchlist_stock(
+    stock_id: int,
+    request: WatchlistStockUpdateRequest,
+) -> dict[str, object]:
+    service = _watchlist_pool_service()
+    try:
+        return _update_watchlist_stock_from_request(service, stock_id, request).model_dump(mode="json")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/watchlist-alerts")
+def get_watchlist_alerts() -> dict[str, object]:
+    return {"items": list_watchlist_alert_events(app.state.engine)}
+
+
+@app.post("/api/watchlist-alerts/run")
+def run_watchlist_alerts(request: RunWatchlistAlertRequest) -> dict[str, object]:
+    return _run_watchlist_alert_scan(request.mode, request.trade_date)
+
+
+@app.post("/api/watchlist-alerts/{alert_id}/ack")
+def acknowledge_watchlist_alert(alert_id: int) -> dict[str, object]:
+    try:
+        return acknowledge_watchlist_alert_event(app.state.engine, alert_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.post("/api/watchlist-alerts/{alert_id}/mute")
+def mute_watchlist_alert(alert_id: int, request: WatchlistAlertMuteRequest) -> dict[str, object]:
+    if request.days < 1 or request.days > 30:
+        raise HTTPException(status_code=400, detail="days must be between 1 and 30")
+    try:
+        return mute_watchlist_alert_event(
+            app.state.engine,
+            alert_id,
+            muted_until=datetime.now(UTC) + timedelta(days=request.days),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/watchlist-alert-schedule/status")
+def get_watchlist_alert_schedule() -> dict[str, object]:
+    return get_watchlist_alert_schedule_status(app.state.engine, get_settings())
+
+
+@app.put("/api/watchlist-alert-schedule/status")
+def update_watchlist_alert_schedule(request: WatchlistAlertScheduleRequest) -> dict[str, object]:
+    try:
+        update = WatchlistAlertScheduleUpdate.model_validate(request.model_dump())
+        return update_watchlist_alert_schedule_status(app.state.engine, get_settings(), update)
+    except (ValueError, ZoneInfoNotFoundError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.get("/api/config/status")
 def get_config_status() -> dict[str, object]:
     settings = get_settings()
@@ -268,6 +658,26 @@ def update_data_source_options(request: RuntimeProviderConfigInput) -> dict[str,
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     return build_data_source_options_payload(config, get_settings())
+
+
+@app.get("/api/a-stock-data/vendor/status")
+def get_a_stock_vendor_status() -> dict[str, object]:
+    return _a_stock_vendor_updater().status()
+
+
+@app.post("/api/a-stock-data/vendor/check")
+def check_a_stock_vendor() -> dict[str, object]:
+    return _a_stock_vendor_updater().check()
+
+
+@app.post("/api/a-stock-data/vendor/update")
+def update_a_stock_vendor() -> dict[str, object]:
+    return _a_stock_vendor_updater().update()
+
+
+@app.put("/api/a-stock-data/vendor/auto-check")
+def update_a_stock_vendor_auto_check(request: VendorAutoCheckRequest) -> dict[str, object]:
+    return _a_stock_vendor_updater().set_auto_check(request.enabled)
 
 
 def _external_status(enabled: bool, configured: bool) -> str:
@@ -407,15 +817,13 @@ def _generate_weekly_report(
     reports_root: Path,
     settings: object,
 ) -> WeeklyGeneratedReport:
-    client = TickFlowWeeklyDataClient(
-        api_key=getattr(settings, "tickflow_api_key", ""),
-        base_url=getattr(settings, "tickflow_base_url", "https://api.tickflow.org"),
+    client = AStockWeeklyDataClient(
         timeout_seconds=getattr(settings, "provider_timeout_seconds", 120),
     )
     with create_provider_bundle(settings) as providers:
         generator = WeeklyReportGenerator(
             reports_root=reports_root,
-            tickflow_client=client,
+            market_client=client,
             news_provider=providers.news_provider,
         )
         return generator.generate_weekly_report(start_date, end_date)
@@ -466,7 +874,7 @@ def _create_report_response(request: CreateCloseReportRequest, report_kind: str)
             structured_review_provider=settings.structured_review_provider,
             structured_review_fallback_enabled=settings.structured_review_fallback_enabled,
             watchlist_service=_watchlist_service(),
-            tickflow_provider=providers.tickflow_provider,
+            quote_provider=providers.quote_provider,
             watchlist_enabled=settings.report_watchlist_enabled,
             review_source_provider=providers.review_source_provider,
             previous_review_html_path=settings.previous_review_html_path,

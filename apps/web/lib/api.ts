@@ -1,18 +1,37 @@
 import type {
+  AStockVendorStatus,
   ConfigStatusResponse,
   CreateReportResponse,
   DataSourceOptionsResponse,
   DataSourceOptionsUpdate,
   DeleteReportResponse,
+  MorningAuctionRun,
+  MorningAuctionTrialEntry,
+  MorningAuctionTrialListResponse,
   ReportScheduleStatus,
   ReportScheduleUpdate,
   ReportKind,
   ReportListResponse,
+  TickFlowHealthStatus,
+  WatchlistAlertEvent,
+  WatchlistAlertListResponse,
+  WatchlistAlertScheduleStatus,
   WatchlistImportResult,
   WatchlistOcrPreviewResult,
+  WatchlistPoolGroup,
+  WatchlistPoolState,
+  WatchlistPoolStock,
+  WatchlistStockPayload,
 } from "./types";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+function defaultApiBaseUrl(): string {
+  if (typeof window !== "undefined" && window.location.hostname) {
+    return `${window.location.protocol}//${window.location.hostname}:8000`;
+  }
+  return "http://localhost:8000";
+}
+
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? defaultApiBaseUrl();
 
 export async function createCloseReport(tradeDate: string): Promise<CreateReportResponse> {
   return createReport(tradeDate, "close");
@@ -97,6 +116,177 @@ export async function updateReportScheduleStatus(
   return response.json() as Promise<ReportScheduleStatus>;
 }
 
+export async function listWatchlistAlerts(): Promise<WatchlistAlertListResponse> {
+  const response = await fetch(`${API_BASE_URL}/api/watchlist-alerts`);
+  if (!response.ok) {
+    throw new Error(`读取提醒列表失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<WatchlistAlertListResponse>;
+}
+
+export async function runWatchlistAlerts(
+  mode: string,
+  tradeDate: string,
+): Promise<Record<string, unknown>> {
+  const response = await fetch(`${API_BASE_URL}/api/watchlist-alerts/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode, trade_date: tradeDate }),
+  });
+  if (!response.ok) {
+    throw new Error(`运行提醒失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<Record<string, unknown>>;
+}
+
+export async function acknowledgeWatchlistAlert(alertId: number): Promise<WatchlistAlertEvent> {
+  const response = await fetch(`${API_BASE_URL}/api/watchlist-alerts/${alertId}/ack`, {
+    method: "POST",
+  });
+  if (!response.ok) {
+    throw new Error(`标记提醒失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<WatchlistAlertEvent>;
+}
+
+export async function muteWatchlistAlert(alertId: number, days: number): Promise<WatchlistAlertEvent> {
+  const response = await fetch(`${API_BASE_URL}/api/watchlist-alerts/${alertId}/mute`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ days }),
+  });
+  if (!response.ok) {
+    throw new Error(`暂不提醒失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<WatchlistAlertEvent>;
+}
+
+export async function getWatchlistAlertSchedule(): Promise<WatchlistAlertScheduleStatus> {
+  const response = await fetch(`${API_BASE_URL}/api/watchlist-alert-schedule/status`);
+  if (!response.ok) {
+    throw new Error(`读取提醒计划失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<WatchlistAlertScheduleStatus>;
+}
+
+export async function getTickFlowHealth(): Promise<TickFlowHealthStatus> {
+  const response = await fetch(`${API_BASE_URL}/api/tickflow/health`);
+  if (!response.ok) {
+    throw new Error(`读取TickFlow健康状态失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<TickFlowHealthStatus>;
+}
+
+export async function predictMorningAuction(tradeDate: string): Promise<MorningAuctionRun> {
+  const response = await fetch(`${API_BASE_URL}/api/morning-auction/predict`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ trade_date: tradeDate }),
+  });
+  if (!response.ok) {
+    throw new Error(`运行早盘模型失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<MorningAuctionRun>;
+}
+
+export async function getMorningAuctionRun(runId: string): Promise<MorningAuctionRun> {
+  const response = await fetch(`${API_BASE_URL}/api/morning-auction/runs/${runId}`);
+  if (!response.ok) {
+    throw new Error(`读取早盘模型结果失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<MorningAuctionRun>;
+}
+
+export async function listMorningAuctionTrials(tradeDate?: string): Promise<MorningAuctionTrialListResponse> {
+  const params = tradeDate ? `?trade_date=${encodeURIComponent(tradeDate)}` : "";
+  const response = await fetch(`${API_BASE_URL}/api/morning-auction/trials${params}`);
+  if (!response.ok) {
+    throw new Error(`读取早盘试运行日志失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<MorningAuctionTrialListResponse>;
+}
+
+export async function saveMorningAuctionTrial(entry: MorningAuctionTrialEntry): Promise<MorningAuctionTrialEntry> {
+  const response = await fetch(`${API_BASE_URL}/api/morning-auction/trials`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(entry),
+  });
+  if (!response.ok) {
+    throw new Error(`保存早盘试运行日志失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<MorningAuctionTrialEntry>;
+}
+
+export async function getWatchlistPool(): Promise<WatchlistPoolState> {
+  const response = await fetch(`${API_BASE_URL}/api/watchlist-pool`);
+  if (!response.ok) {
+    throw new Error(`读取自选股池失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<WatchlistPoolState>;
+}
+
+export async function createWatchlistGroup(name: string): Promise<WatchlistPoolGroup> {
+  const response = await fetch(`${API_BASE_URL}/api/watchlist-pool/groups`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (!response.ok) {
+    throw new Error(`新增分组失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<WatchlistPoolGroup>;
+}
+
+export async function renameWatchlistGroup(groupId: number, name: string): Promise<WatchlistPoolGroup> {
+  const response = await fetch(`${API_BASE_URL}/api/watchlist-pool/groups/${groupId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (!response.ok) {
+    throw new Error(`重命名分组失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<WatchlistPoolGroup>;
+}
+
+export async function deleteWatchlistGroup(groupId: number): Promise<{ deleted: boolean; id: number }> {
+  const response = await fetch(`${API_BASE_URL}/api/watchlist-pool/groups/${groupId}`, {
+    method: "DELETE",
+  });
+  if (!response.ok) {
+    throw new Error(`删除分组失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<{ deleted: boolean; id: number }>;
+}
+
+export async function createWatchlistStock(payload: WatchlistStockPayload): Promise<WatchlistPoolStock> {
+  const response = await fetch(`${API_BASE_URL}/api/watchlist-pool/stocks`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(`加入自选股失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<WatchlistPoolStock>;
+}
+
+export async function updateWatchlistStock(
+  stockId: number,
+  payload: WatchlistStockPayload,
+): Promise<WatchlistPoolStock> {
+  const response = await fetch(`${API_BASE_URL}/api/watchlist-pool/stocks/${stockId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(`保存自选股失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<WatchlistPoolStock>;
+}
+
 export async function getDataSourceOptions(): Promise<DataSourceOptionsResponse> {
   const response = await fetch(`${API_BASE_URL}/api/data-sources/options`);
   if (!response.ok) {
@@ -117,6 +307,46 @@ export async function updateDataSourceOptions(
     throw new Error(`保存数据源选项失败：${response.status} ${await response.text()}`);
   }
   return response.json() as Promise<DataSourceOptionsResponse>;
+}
+
+export async function getAStockVendorStatus(): Promise<AStockVendorStatus> {
+  const response = await fetch(`${API_BASE_URL}/api/a-stock-data/vendor/status`);
+  if (!response.ok) {
+    throw new Error(`读取 a-stock-data 更新状态失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<AStockVendorStatus>;
+}
+
+export async function checkAStockVendor(): Promise<AStockVendorStatus> {
+  const response = await fetch(`${API_BASE_URL}/api/a-stock-data/vendor/check`, {
+    method: "POST",
+  });
+  if (!response.ok) {
+    throw new Error(`检查 a-stock-data 更新失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<AStockVendorStatus>;
+}
+
+export async function updateAStockVendor(): Promise<AStockVendorStatus> {
+  const response = await fetch(`${API_BASE_URL}/api/a-stock-data/vendor/update`, {
+    method: "POST",
+  });
+  if (!response.ok) {
+    throw new Error(`更新 a-stock-data 参考接口失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<AStockVendorStatus>;
+}
+
+export async function updateAStockVendorAutoCheck(enabled: boolean): Promise<AStockVendorStatus> {
+  const response = await fetch(`${API_BASE_URL}/api/a-stock-data/vendor/auto-check`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ enabled }),
+  });
+  if (!response.ok) {
+    throw new Error(`保存 a-stock-data 自动检查失败：${response.status} ${await response.text()}`);
+  }
+  return response.json() as Promise<AStockVendorStatus>;
 }
 
 export function reportAssetUrl(path: string): string {

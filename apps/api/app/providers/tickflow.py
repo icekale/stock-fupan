@@ -2,9 +2,9 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 import httpx
-from pydantic import BaseModel
 
 from app.providers.market import MarketBreadth, MarketCloseSnapshot, ProviderFallbackError, ProviderStatus
+from app.providers.quotes import WatchlistQuote
 from app.rules.scoring import RawSectorInput
 from app.schemas.report import IndexSnapshot
 
@@ -27,18 +27,6 @@ THEME_KEYWORDS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("电力", ("电力", "电网", "能源", "发电", "核电", "风电")),
 )
 GENERIC_SYNTHETIC_THEMES = {"新材料"}
-
-
-class WatchlistQuote(BaseModel):
-    symbol: str
-    name: str | None = None
-    last_price: float | None = None
-    pct_change: float | None = None
-    turnover_cny: float | None = None
-    turnover_rate: float | None = None
-    capital_strength: str | None = None
-    volume: float | None = None
-    quote_time: str | None = None
 
 
 @dataclass(frozen=True)
